@@ -347,9 +347,13 @@ body.theme-dark .youtube-downloader-save-to-handrive.is-saved {
     flex: 0 0 auto;
 }
 
-.youtube-downloader-save-to-handrive svg,
 .youtube-downloader-download svg {
     display: block;
+}
+
+.youtube-downloader-save-to-handrive .site-upload-icon {
+    width: 20px;
+    height: 20px;
 }
 
 .youtube-downloader-sr-only {

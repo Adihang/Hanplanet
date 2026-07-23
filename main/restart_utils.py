@@ -1,10 +1,21 @@
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import time
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+
+# This path lives on the persistent Django data volume in Docker Compose.  The
+# host-side Docker health watchdog can see the marker through ``docker compose
+# exec`` even though the Django container intentionally has no Docker socket or
+# host source-tree mount.
+DOCKER_STACK_DEPLOY_REQUEST_PATH = Path(
+    "/data/django/.hanplanet-docker-stack-deploy-request"
+)
 
 
 def _is_port_listening(port: int) -> bool:
@@ -42,6 +53,36 @@ def wait_for_http_ready(url: str, timeout_seconds: int = 120, interval_seconds: 
         if time.monotonic() >= deadline:
             return False
         time.sleep(max(0.1, float(interval_seconds)))
+
+
+def request_docker_stack_deploy() -> None:
+    """Queue a host-side Docker Compose rebuild/restart.
+
+    The web process runs inside the Django container, which deliberately does
+    not have access to the host Docker socket.  Writing an atomic marker to the
+    persistent Django volume lets the host launchd watchdog perform the
+    privileged ``docker compose up -d --build`` operation safely outside the
+    request process.
+    """
+    marker_path = DOCKER_STACK_DEPLOY_REQUEST_PATH
+    marker_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = marker_path.with_name(
+        f".{marker_path.name}.{os.getpid()}.tmp"
+    )
+    try:
+        temporary_path.write_text(
+            f"requested:{time.time_ns()}:{os.getpid()}",
+            encoding="utf-8",
+        )
+        temporary_path.replace(marker_path)
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            # Preserve the original write/replace failure for the caller.
+            pass
 
 
 def restart_gunicorn_and_wait(

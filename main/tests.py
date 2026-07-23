@@ -30,6 +30,7 @@ from django.urls import NoReverseMatch, reverse
 from django.core.cache import cache, caches
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser, Group
+from django.contrib.sessions.models import Session
 from django.utils import timezone
 from datetime import date, datetime, timedelta
 from importlib import import_module
@@ -53,6 +54,7 @@ from .models import (
     OnscripterAccessUser,
     OnscripterGameConfig,
     SyncFile,
+    TrustedDevice,
     UserProfile,
     WargameSolve,
 )
@@ -66,7 +68,7 @@ from portfolio.models import (
     PortfolioProjectImage,
 )
 from stratagem.models import Stratagem_Hero_Score
-from oauth2_provider.models import get_application_model
+from oauth2_provider.models import get_access_token_model, get_application_model
 from git.models import GitHubAccountMapping, GitRepository, GitUserMapping, GoogleAccountMapping
 from .github_auth import GitHubAuthError, GitHubIdentity, GitHubTokenData
 from .google_auth import GoogleIdentity, GoogleTokenData
@@ -100,11 +102,15 @@ from .handrive_views import (
     _apply_forgejo_session_cookie,
     _attach_forgejo_login_session,
     _build_forgejo_authenticated_redirect,
+    _build_forgejo_oidc_login_redirect,
     _build_forgejo_logged_out_redirect,
     _build_forgejo_session_blob,
     _delete_forgejo_session_artifacts,
     _forgejo_db_path,
     _forgejo_server_logout,
+    _invalidate_user_auth_state,
+    _issue_session_token,
+    _set_device_cookie,
     _persist_forgejo_external_login_link,
     _resolve_handrive_post_login_url,
     _send_or_reuse_login_2fa_email,
@@ -340,6 +346,64 @@ class HandriveSyncSettingsTests(TestCase):
 
 
 class OAuthAuthorizeTemplateTests(TestCase):
+    @override_settings(
+        WARGAME_OIDC_CLIENT_ID="hanplanet-wargame-sso",
+        WARGAME_OIDC_REDIRECT_URI="https://wargame.hanplanet.com/auth/callback.php",
+    )
+    def test_wargame_public_oidc_client_completes_pkce_authorization_code_flow(self):
+        user = get_user_model().objects.create_user(
+            username="wargame_oidc_flow_user",
+            password="pw123456",
+            email="wargame-oidc@example.com",
+        )
+        app = get_application_model().objects.create(
+            name="Hanplanet Wargame",
+            client_id="hanplanet-wargame-sso",
+            client_type="public",
+            authorization_grant_type="authorization-code",
+            redirect_uris="https://wargame.hanplanet.com/auth/callback.php",
+            skip_authorization=True,
+            algorithm="RS256",
+        )
+        verifier = "wargame-pkce-verifier-012345678901234567890123456789"
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).decode().rstrip("=")
+        client = Client(HTTP_HOST="www.hanplanet.com", wsgi_url_scheme="https")
+        client.force_login(user)
+
+        authorize = client.get(
+            "/o/authorize/",
+            {
+                "response_type": "code",
+                "client_id": app.client_id,
+                "redirect_uri": "https://wargame.hanplanet.com/auth/callback.php",
+                "scope": "openid profile email",
+                "state": "wargame-state",
+                "code_challenge": challenge,
+                "code_challenge_method": "S256",
+            },
+            follow=False,
+        )
+
+        self.assertEqual(authorize.status_code, 302)
+        callback = urlparse(authorize["Location"])
+        code = parse_qs(callback.query)["code"][0]
+        self.assertEqual(parse_qs(callback.query)["state"], ["wargame-state"])
+
+        token = client.post(
+            "/o/token/",
+            data={
+                "grant_type": "authorization_code",
+                "client_id": app.client_id,
+                "redirect_uri": "https://wargame.hanplanet.com/auth/callback.php",
+                "code": code,
+                "code_verifier": verifier,
+            },
+        )
+
+        self.assertEqual(token.status_code, 200)
+        self.assertTrue(token.json().get("access_token"))
+        self.assertIn("refresh_token", token.json())
+
     def test_authorize_redirects_anonymous_users_to_login(self):
         response = self.client.get(
             "/o/authorize/?response_type=code&client_id=gitea-hanplanet-sso&redirect_uri="
@@ -1418,8 +1482,9 @@ class HandriveHlsThumbnailTests(TestCase):
         self.assertIn('player.on("play", onMediaPlay);', video_editor_js)
         self.assertIn("function enforceSelectedPlaybackRange(options)", video_editor_js)
         self.assertIn("setMediaCurrentTime(settings.clampOnly ? end : start);", video_editor_js)
-        self.assertIn("if (currentTimeEl) currentTimeEl.textContent = formatTime(getStartTime());", video_editor_js)
+        self.assertIn("if (currentTimeEl) currentTimeEl.textContent = formatTime(getMediaCurrentTime());", video_editor_js)
         self.assertIn("if (durationEl) durationEl.textContent = formatTime(getEndTime());", video_editor_js)
+        self.assertIn("duration <= 0 || state.isReady", video_editor_js)
 
     @mock.patch("main.handrive_hls.subprocess.run")
     def test_thumbnail_sprite_preserves_aspect_ratio_with_padding(self, mock_run):
@@ -2553,11 +2618,13 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertIn("min-height: 28px;", handrive_css)
         self.assertIn("padding: 5px 6px 7px;", inline_copy_feedback_block)
         self.assertIn("border: 0;", inline_copy_feedback_block)
-        self.assertIn("--handrive-inline-copy-feedback-bg: color-mix(", inline_copy_feedback_block)
+        self.assertIn("--handrive-inline-copy-feedback-bg: var(--site-modal-surface-bg", inline_copy_feedback_block)
         self.assertIn("background: var(--handrive-inline-copy-feedback-bg);", inline_copy_feedback_block)
+        self.assertIn("-webkit-backdrop-filter: var(--site-modal-surface-filter", inline_copy_feedback_block)
+        self.assertIn("backdrop-filter: var(--site-modal-surface-filter", inline_copy_feedback_block)
         self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", inline_copy_feedback_block)
         self.assertIn("font-weight: var(--site-weight-body);", inline_copy_feedback_block)
-        self.assertIn("line-height: 1;", handrive_css)
+        self.assertIn("line-height: 1.25;", inline_copy_feedback_block)
         self.assertIn(".handrive-inline-copy-feedback::after", handrive_css)
         self.assertNotIn(".handrive-inline-copy-feedback::before", inline_copy_feedback_arrow_block)
         self.assertNotIn("solid var(--handrive-border-soft)", inline_copy_feedback_arrow_block)
@@ -2602,8 +2669,14 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertNotIn('button.classList.add("is-copied");', handrive_page_js)
         self.assertIn('handrive-url-share-input-wrap handrive-inline-copy-field', url_share_template)
         self.assertIn('handrive-url-share-inline-copy-btn handrive-inline-copy-action', url_share_template)
+        self.assertNotIn('title="{{ handrive_text.url_share_copy_button }}"', url_share_template)
+        self.assertNotIn('title="{{ handrive_text.url_share_copy_download_button }}"', url_share_template)
+        self.assertNotIn('button.setAttribute("title", copyLabel);', handrive_page_js)
         self.assertContains(response, 'class="minecraft-address handrive-inline-copy-field"', html=False)
         self.assertContains(response, 'class="minecraft-address-copy handrive-inline-copy-action"', html=False)
+        minecraft_copy_button_start = content.rindex("<button", 0, content.index('id="minecraftAddressCopy"'))
+        minecraft_copy_button_end = content.index("</button>", minecraft_copy_button_start)
+        self.assertNotIn(" title=", content[minecraft_copy_button_start:minecraft_copy_button_end])
         self.assertContains(response, 'data-copy-feedback-label="복사됨!"', html=False)
         self.assertContains(response, "window.showHandriveInlineCopyFeedback(button, feedbackLabel);", html=False)
         self.assertContains(response, MINECRAFT_BEDROCK_SERVER_ADDRESS, html=False)
@@ -3542,6 +3615,8 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, ".minecraft-trade-item.is-completed", html=False)
         self.assertContains(response, "const isCompleted = listing.status === 'completed';", html=False)
         self.assertContains(response, "const canToggle = !isCompleted || Boolean(listing.viewerIsSeller);", html=False)
+        self.assertContains(response, "tradeSettlePartial: '거래 중단'", html=False)
+        self.assertContains(response, "const settleLabel = Number(listing.remainingSellAmount) > 0 ? labels.tradeSettlePartial : labels.tradeCancel;", html=False)
         self.assertContains(response, "(canToggle ? ' data-trade-toggle' : '')", html=False)
         self.assertContains(response, ".minecraft-trade-item[data-trade-toggle]", html=False)
         self.assertContains(response, ".minecraft-trade-item[data-trade-toggle]:hover,", html=False)
@@ -7389,6 +7464,9 @@ class HandriveStyleSourceTests(TestCase):
             self.assertIn("data-sheetjs-script-url", template_source)
             self.assertIn("data-exceljs-script-url", template_source)
             self.assertIn("data-spreadsheet-editor-script-url", template_source)
+            self.assertIn("data-spreadsheet-worker-script-url", template_source)
+        self.assertIn("data-handrive-spreadsheet-cell-address", list_template)
+        self.assertIn("data-handrive-spreadsheet-formula", list_template)
         self.assertIn("function loadSpreadsheetPreviewStack()", page_js)
         self.assertIn("function loadSpreadsheetEditorStack()", page_js)
         self.assertIn("return loadSpreadsheetPreviewStack().then(function (editor)", page_js)
@@ -7401,6 +7479,23 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn("doc_can_show_edit and not doc_is_spreadsheet_file", view_template)
         self.assertNotIn("!isSpreadsheetPreview", preview_helpers_js)
         self.assertIn("previewSpreadsheetSaveButton.hidden = true;", preview_helpers_js)
+
+    def test_handrive_spreadsheet_worker_handles_full_xlsx_and_formula_structure_changes(self):
+        base_dir = Path(settings.BASE_DIR)
+        editor_js = (base_dir / "static/js/handrive/spreadsheet_editor.js").read_text(encoding="utf-8")
+        worker_js = (base_dir / "static/js/handrive/spreadsheet_worker.js").read_text(encoding="utf-8")
+
+        self.assertIn("function parseWorkbookWithExcelJsWorker", editor_js)
+        self.assertIn('type: "parse-full"', editor_js)
+        self.assertIn('message.type === "parse-full"', worker_js)
+        self.assertIn("function parseFull(message)", worker_js)
+        self.assertIn("cellStyles: cellStyles", worker_js)
+        self.assertIn("mergeCells: mergeCells", worker_js)
+        self.assertIn("formulas: formulas", worker_js)
+        self.assertIn("function remapSheetFormulaKeys", editor_js)
+        self.assertIn('remapSheetFormulaKeys(activeState.sheets[activeState.currentIndex], "row", index, amount, false);', editor_js)
+        self.assertIn('remapSheetFormulaKeys(activeState.sheets[activeState.currentIndex], "col", index, amount, true);', editor_js)
+        self.assertIn("desiredFormula", editor_js)
 
     def test_map_viewer_reuses_handrive_url_share_modal(self):
         base_dir = Path(settings.BASE_DIR)
@@ -7490,6 +7585,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn(".handrive-url-share-switch-knob {\n    position: relative;\n    display: block;", handrive_css)
         self.assertIn(".handrive-url-share-switch-knob::after {\n    content: \"\";", handrive_css)
         self.assertIn(".handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob,", handrive_css)
+        self.assertIn(".handrive-shared-toggle:has(input:checked) .handrive-url-share-switch-knob::after", handrive_css)
         self.assertIn(".handrive-url-share-edit-switch {\n    --handrive-url-share-switch-width: 20px;", handrive_css)
         self.assertIn('class="handrive-url-share-enabled-switch"', url_share_template)
         self.assertIn('class="handrive-url-share-edit-switch"', url_share_template)
@@ -7753,6 +7849,8 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn("commitPendingHandriveListItemScale", page_js)
         self.assertNotIn(".handrive-list-items.is-visual-scaling", handrive_css)
         self.assertNotIn("--handrive-list-item-visual-scale", handrive_css)
+        self.assertIn(".handrive-list-items .handrive-item-type-icon.is-file::before,", handrive_css)
+        self.assertIn(".handrive-list-items .handrive-item-type-icon.is-file.is-generic::before,", handrive_css)
 
     def test_handrive_list_item_scale_persists_to_cookie(self):
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -8323,7 +8421,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('url("/static/media/icons/handrive/type-folder.png?v=icon-source-20260721-4")', handrive_css)
         self.assertIn('url("/static/media/icons/handrive/type-folder-empty.png?v=icon-source-20260721-4")', handrive_css)
         self.assertIn('url("/static/media/icons/handrive/type-folder-image.png?v=icon-source-20260721-4")', handrive_css)
-        self.assertIn('url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260721-4")', handrive_css)
+        self.assertIn('url("/static/media/icons/handrive/type-folder-youtube.png?v=youtube-folder-20260722-1")', handrive_css)
         self.assertIn('url("/static/media/icons/handrive/type-audio.png?v=icon-source-20260721-4")', handrive_css)
         self.assertIn('url("/static/media/icons/handrive/type-archive.png?v=icon-source-20260721-4")', handrive_css)
         self.assertIn('url("/static/media/icons/handrive/type-file.png?v=icon-source-20260721-4")', handrive_css)
@@ -8350,10 +8448,16 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('"go": ("go-wordmark.png", (1, 9, 30, 22))', icon_generator)
         self.assertIn('"sql": ("sql-database.png", (4, 2, 27, 29))', icon_generator)
         self.assertIn('"image": ("image-picture.png", (4, 4, 27, 27))', icon_generator)
+        self.assertIn('_write_icon("video", _draw_video_icon())', icon_generator)
+        self.assertIn('icon = _canvas_from_source(*SOURCE_ICONS["image"])', icon_generator)
+        self.assertIn('for index in range(5):', icon_generator)
+        self.assertIn('_scale_box((10, 13, 22, 21))', icon_generator)
+        self.assertIn('(14.4 * SCALE, 14.5 * SCALE)', icon_generator)
         self.assertIn('if extension == ".sql":\n        return "sql"', handrive_views)
         self.assertIn('type-sql.png?v=icon-source-20260721-4', handrive_css)
         self.assertNotIn("data:image/svg+xml", markdown_folder_icon_block)
         self.assertIn('type-folder-image.png?v=icon-source-20260721-4', markdown_folder_icon_block)
+        self.assertIn('type-video.png?v=video-film-20260722-1', handrive_css)
         self.assertNotIn("transform: scale", type_icon_block)
         self.assertNotIn("transform: scaleX", type_icon_block)
         self.assertNotIn("background-size: 115%", type_icon_block)
@@ -8548,6 +8652,121 @@ class HandriveStyleSourceTests(TestCase):
                     self.assertIn("width: 20px;", style_icon_block)
                     self.assertIn("height: 20px;", style_icon_block)
                     self.assertIn("min-width: 20px;", style_icon_block)
+
+    def test_media_editors_use_shared_responsive_workspace_styles(self):
+        base_dir = Path(settings.BASE_DIR)
+        assets_head = (base_dir / "templates/handrive/_assets_head.html").read_text(encoding="utf-8")
+        media_template = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
+        media_css = (base_dir / "static/css/pages/handrive/media_editors.css").read_text(encoding="utf-8")
+        image_editor_js = (base_dir / "static/js/handrive/image_editor.js").read_text(encoding="utf-8")
+        video_editor_js = (base_dir / "static/js/handrive/video_editor.js").read_text(encoding="utf-8")
+
+        self.assertIn("css/pages/handrive/media_editors.css", assets_head)
+        self.assertEqual(media_template.count("handrive-media-editor-surface"), 3)
+        for class_name in (
+            "ie-tool-rail",
+            "ie-inspector",
+            "ie-commandbar",
+            "ve-preview-column",
+            "handrive-media-inspector",
+            "ae-track-card",
+            "ae-track-visual",
+        ):
+            self.assertIn(class_name, media_template)
+        self.assertIn('aria-controls="ve-subtitle-field"', media_template)
+        self.assertIn('aria-controls="ve-image-field"', media_template)
+        self.assertIn("handrive-shared-toggle", media_template)
+        self.assertIn("ve-style-toggle-label", media_template)
+        self.assertIn("handrive-url-share-switch-knob", media_template)
+        self.assertIn("ve-ribbon-scroll", media_template)
+        self.assertIn("ae-ribbon-scroll", media_template)
+        self.assertIn('class="ve-input-icon" width="24" height="24"', media_template)
+        self.assertIn(".handrive-video-editor-surface .ve-ribbon {", media_css)
+        self.assertIn(".handrive-audio-editor-surface .ae-ribbon {", media_css)
+        self.assertIn("radial-gradient(circle at 50% 18%", media_css)
+        self.assertIn("overflow: visible;", media_css)
+        self.assertIn("background: var(--handrive-surface-muted, var(--handrive-bg, #ffffff));", media_css)
+        self.assertIn("width: 24px;\n    height: 24px;", media_css)
+        self.assertIn("flex: 0 0 24px;", media_css)
+        self.assertIn(".handrive-audio-editor-surface .ae-volume-popover #ae-volume-input {", media_css)
+        self.assertIn(".handrive-media-editor-surface .ae-volume-popover {", media_css)
+        self.assertIn("border: 0;", media_css)
+        self.assertIn("var(--site-tooltip-bg, var(--site-modal-surface-bg", media_css)
+        self.assertIn("box-shadow: var(--site-dropdown-menu-shadow", media_css)
+        self.assertIn("#ae-start-input,", media_css)
+        self.assertIn("box-shadow: none;", media_css)
+        self.assertIn(".handrive-media-toolbar :is(.ae-btn, .ae-file-btn, .ae-source-btn) {", media_css)
+        self.assertIn("font-size: 14px;", media_css)
+        self.assertIn('padding: 0 10px;\n    font: 600 14px/1 var(--handrive-code-font-family, monospace);', media_css)
+        self.assertIn(".handrive-image-editor-surface .ie-tool-rail .ie-ribbon-sep {\n    grid-column: 1 / -1;", media_css)
+        self.assertIn('setAttribute("aria-pressed"', image_editor_js)
+        self.assertIn("surface.dataset.inspector", video_editor_js)
+
+        for selector in (
+            ".handrive-media-editor-surface {",
+            ".handrive-image-editor-surface.handrive-media-editor-surface {",
+            ".handrive-video-editor-surface .ve-preview-column {",
+            ".handrive-media-inspector {",
+            ".handrive-audio-editor-surface .ae-track-card {",
+            ".handrive-audio-editor-surface .ae-track-visual {",
+        ):
+            self.assertIn(selector, media_css)
+        self.assertIn(":focus-visible", media_css)
+        self.assertIn("body.handrive-page.theme-dark", media_css)
+        self.assertIn("@media (max-width: 980px)", media_css)
+        self.assertIn("@media (max-width: 720px)", media_css)
+        self.assertIn("@media (max-width: 460px)", media_css)
+        self.assertNotIn("!important", media_css)
+
+    def test_media_editors_guard_loading_history_and_async_preview(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        image_editor_js = (base_dir / "static/js/handrive/image_editor.js").read_text(encoding="utf-8")
+        video_editor_js = (base_dir / "static/js/handrive/video_editor.js").read_text(encoding="utf-8")
+        audio_editor_js = (base_dir / "static/js/handrive/audio_editor.js").read_text(encoding="utf-8")
+        media_template = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
+
+        self.assertIn("commitHistoryState({ markSaved: true });", image_editor_js)
+        self.assertIn("state.currentRevision !== state.savedRevision", image_editor_js)
+        self.assertIn("markRevisionSaved(saveRevision)", image_editor_js)
+        self.assertIn("if (!state.imageReady)", image_editor_js)
+        self.assertIn("if (state.backgroundRemoveRunning)", image_editor_js)
+        self.assertIn("saveSessionToken !== state.imageLoadToken", image_editor_js)
+        self.assertNotIn('getElementById("handrive-list-save-btn")', image_editor_js)
+        self.assertIn("keyboardAlreadyBound = false;", image_editor_js)
+
+        self.assertIn("function hasUnsavedListEditorChanges()", page_js)
+        self.assertIn("function getActiveListVisualEditorSurface()", page_js)
+        self.assertIn("sessionToken === listMediaEditorSessionToken", page_js)
+        self.assertIn("teardownListMediaEditors();", page_js)
+        self.assertIn("!isVisualWriteEditor ||", page_js)
+        self.assertIn("if (state.isSaving) {\n                return;", page_js)
+        self.assertIn("mediaReadyPromise && !(await mediaReadyPromise)", page_js)
+
+        self.assertIn("duration <= 0 || state.isReady", video_editor_js)
+        self.assertIn('player.on("error", onMediaError);', video_editor_js)
+        self.assertIn("state.changeRevision === saveRevision", video_editor_js)
+        self.assertIn("MEDIA_ERROR_RECOVERY_GRACE_MS", video_editor_js)
+        self.assertIn("function selectOverlay(kind, id)", video_editor_js)
+        self.assertIn("function readTimeValue(value, fallback)", video_editor_js)
+        self.assertIn('formData.append("trim_start", String(getStartTime()));', video_editor_js)
+        self.assertIn("saveSessionVersion !== state.sessionVersion", video_editor_js)
+        self.assertIn('readFiniteNumber(volumeInput && volumeInput.value, 1)', video_editor_js)
+
+        self.assertIn("state.previewVersion += 1;", audio_editor_js)
+        self.assertIn("state.appendRequestVersion += 1;", audio_editor_js)
+        self.assertIn("state.decodeAbortController.abort();", audio_editor_js)
+        self.assertIn("sessionVersion !== state.sessionVersion", audio_editor_js)
+        self.assertIn("setWaveformBuffer(preview.buffer);", audio_editor_js)
+        self.assertIn("saveSessionVersion !== state.sessionVersion", audio_editor_js)
+        self.assertIn("function drawWaveform(buffer)", audio_editor_js)
+        self.assertIn("state.changeRevision === saveRevision", audio_editor_js)
+        self.assertIn("function readTimeValue(value, fallback)", audio_editor_js)
+        self.assertIn('formData.append("trim_end", String(getEndTime()));', audio_editor_js)
+        self.assertIn('id="ae-waveform-canvas"', media_template)
+        self.assertIn('id="ae-waveform-playhead"', media_template)
+        self.assertIn('id="ve-start-input" inputmode="text"', media_template)
+        self.assertIn('id="ae-start-input" inputmode="text"', media_template)
 
     def test_pdf_editor_draw_tool_uses_pencil_preview_and_smoothing(self):
         base_dir = Path(settings.BASE_DIR)
@@ -11126,13 +11345,39 @@ class AccountWeatherApiTests(TestCase):
         self.assertEqual(mocked_get.call_args_list[1].args[0], "https://api.met.no/weatherapi/locationforecast/2.0/compact")
 
 
+class SiteUploadIconSourceTests(TestCase):
+    def test_upload_controls_use_the_shared_vector_icon(self):
+        base_dir = Path(settings.BASE_DIR)
+        common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
+        media_tool_css = (base_dir / "static/css/fun/image_color_picker.css").read_text(encoding="utf-8")
+        youtube_downloader_css = (base_dir / "static/css/fun/youtube_downloader.css").read_text(encoding="utf-8")
+        upload_svg = (base_dir / "static/media/icons/upload.svg").read_text(encoding="utf-8")
+        image_picker_template = (base_dir / "templates/fun/image_color_picker.html").read_text(encoding="utf-8")
+        video_to_gif_template = (base_dir / "templates/fun/video_to_gif.html").read_text(encoding="utf-8")
+        youtube_downloader_template = (base_dir / "templates/fun/youtube_downloader.html").read_text(encoding="utf-8")
+
+        self.assertIn('viewBox="0 0 204 192"', upload_svg)
+        self.assertIn('stroke-width="11"', upload_svg)
+        self.assertIn('.site-upload-icon {', common_css)
+        self.assertIn('mask: url("../../media/icons/upload.svg") center / contain no-repeat;', common_css)
+        self.assertIn('.media-upload-mark .site-upload-icon {', media_tool_css)
+        self.assertIn('.youtube-downloader-save-to-handrive .site-upload-icon {', youtube_downloader_css)
+        for template in (image_picker_template, video_to_gif_template, youtube_downloader_template):
+            self.assertIn('class="site-upload-icon" aria-hidden="true"', template)
+
+
 class SiteTooltipSourceTests(TestCase):
     def test_site_tooltips_use_the_shared_inline_copy_bubble_style(self):
         base_dir = Path(settings.BASE_DIR)
         common_css = (base_dir / "static/css/common/style.css").read_text(encoding="utf-8")
         popup_js = (base_dir / "static/js/common/popup_common.js").read_text(encoding="utf-8")
+        auth_modal_js = (base_dir / "static/js/common/site_auth_modal.js").read_text(encoding="utf-8")
         handrive_page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        handrive_media_template = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
+        handrive_svg_template = (base_dir / "templates/handrive/_svg_editor_surface.html").read_text(encoding="utf-8")
         minecraft_template = (base_dir / "templates/main/minecraft_home.html").read_text(encoding="utf-8")
+        auth_login_template = (base_dir / "templates/partials/site_auth_login_form.html").read_text(encoding="utf-8")
+        wordmark_svg = (base_dir / "static/media/icons/hanplanet-wordmark-v4.svg").read_text(encoding="utf-8")
         base_template = (base_dir / "templates/base.html").read_text(encoding="utf-8")
         salvations_template = (base_dir / "templates/fun/Salvations_Edge_4.html").read_text(encoding="utf-8")
 
@@ -11154,6 +11399,19 @@ class SiteTooltipSourceTests(TestCase):
         self.assertNotIn("function syncSiteTooltipSource(element)", popup_js)
         self.assertNotIn('element.setAttribute("data-site-tooltip", title);', popup_js)
         self.assertIn('return element.hasAttribute("data-site-tooltip") &&', popup_js)
+        self.assertIn("function suppressNativeTitleTooltips(root)", popup_js)
+        self.assertIn("const isToolbarTooltipControl", popup_js)
+        self.assertIn('element.setAttribute("data-site-tooltip", titleText);', popup_js)
+        self.assertIn('scope.querySelectorAll("[title]")', popup_js)
+        self.assertIn('scope.querySelectorAll("svg > title")', popup_js)
+        self.assertIn('element.removeAttribute("title");', popup_js)
+        self.assertIn('element.setAttribute("aria-label", titleText);', popup_js)
+        self.assertIn("suppressNativeTitleTooltips(document);", popup_js)
+        self.assertIn('event.target.closest("[title]")', popup_js)
+        self.assertIn('input.getAttribute("data-handrive-auth-safe-message")', auth_modal_js)
+        self.assertNotIn('input.getAttribute("title")', auth_modal_js)
+        self.assertIn('data-handrive-auth-safe-message="{{ handrive_text.auth_username_forbidden_chars }}"', auth_login_template)
+        self.assertNotIn("<title>", wordmark_svg)
         self.assertIn("function positionSiteTooltip(element, anchor)", popup_js)
         self.assertIn("const siteTooltipHoverDelayMs = 500;", popup_js)
         self.assertIn("function scheduleSiteTooltip(anchor)", popup_js)
@@ -11161,7 +11419,11 @@ class SiteTooltipSourceTests(TestCase):
         self.assertIn('anchor.hasAttribute("data-site-tooltip-immediate")', popup_js)
         self.assertIn("scheduleSiteTooltip(findSiteTooltipTarget(event.target));", popup_js)
         self.assertIn("window.SiteTooltip =", popup_js)
-        self.assertIn('attributeFilter: ["hidden", "class", "style", "aria-hidden", "disabled", "data-site-custom-select"]', popup_js)
+        self.assertGreaterEqual(handrive_media_template.count("data-site-tooltip-source"), 7)
+        self.assertIn('id="ve-reset-btn" title="{{ handrive_text.video_editor_reset }}"', handrive_media_template)
+        self.assertIn('id="ae-append-btn" title="{{ handrive_text.audio_editor_append }}"', handrive_media_template)
+        self.assertIn('data-site-tooltip-source', handrive_svg_template)
+        self.assertIn('attributeFilter: ["hidden", "class", "style", "aria-hidden", "disabled", "data-site-custom-select", "title"]', popup_js)
         self.assertIn("commitField.setAttribute(\"data-site-tooltip\", normalizedSubject);", handrive_page_js)
         self.assertNotIn("handrive-commit-tooltip", handrive_page_js)
         self.assertIn('data-site-tooltip="\' + escapeAttribute(tooltipText)', minecraft_template)
@@ -11843,6 +12105,83 @@ class HandriveAuthFlowTests(TestCase):
         panel_response = self.client.get(payload["panel_url"], HTTP_X_SITE_AUTH_MODAL="1")
         self.assertContains(panel_response, "임시 비밀번호를 전송했습니다")
 
+    @mock.patch("main.handrive_views._generate_temporary_password", return_value="HpTemp1234")
+    @mock.patch("django.core.mail.send_mail", return_value=1)
+    def test_forgot_password_from_current_device_clears_current_auth_cookies(self, mock_send_mail, mock_generate_password):
+        self.user.email = "reset@example.com"
+        self.user.save(update_fields=["email"])
+        self.client.force_login(self.user)
+        self.activate_hanplanet_session_token()
+        device_token = "reset-current-device"
+        TrustedDevice.objects.create(user=self.user, device_token=device_token, last_seen_at=timezone.now())
+        self.client.cookies[settings.TWO_FA_DEVICE_COOKIE_NAME] = device_token
+
+        response = self.client.post(
+            "/ko/forgot-password",
+            data={"username": self.user.username, "next": "/ko/handrive/"},
+            HTTP_X_SITE_AUTH_MODAL="1",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ok"], True)
+        self.assertNotIn("_auth_user_id", self.client.session)
+        self.assertFalse(TrustedDevice.objects.filter(user=self.user).exists())
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.session_token, "")
+        self.assertEqual(response.cookies[settings.TWO_FA_DEVICE_COOKIE_NAME]["max-age"], 0)
+
+    def test_auth_cookie_ages_match_one_day_login_and_three_day_email_trust(self):
+        self.assertEqual(settings.SESSION_COOKIE_AGE, 60 * 60 * 24)
+        self.assertEqual(settings.TWO_FA_DEVICE_COOKIE_AGE, 60 * 60 * 24 * 3)
+
+        response = HttpResponse()
+        _set_device_cookie(response, "device-token")
+        self.assertEqual(response.cookies[settings.TWO_FA_DEVICE_COOKIE_NAME]["max-age"], 60 * 60 * 24 * 3)
+
+    def test_login_reuses_account_session_token_across_devices(self):
+        profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        profile.session_token = "stable-account-generation"
+        profile.save(update_fields=["session_token", "updated_at"])
+
+        self.assertEqual(_issue_session_token(self.user), "stable-account-generation")
+        self.assertEqual(_issue_session_token(self.user), "stable-account-generation")
+
+    def test_logout_only_invalidates_current_device_trust(self):
+        self.client.force_login(self.user)
+        self.activate_hanplanet_session_token()
+        current_token = "current-browser-device"
+        other_token = "other-browser-device"
+        TrustedDevice.objects.create(user=self.user, device_token=current_token, last_seen_at=timezone.now())
+        TrustedDevice.objects.create(user=self.user, device_token=other_token, last_seen_at=timezone.now())
+        self.client.cookies[settings.TWO_FA_DEVICE_COOKIE_NAME] = current_token
+
+        response = self.client.post("/ko/logout/", data={"next": "/ko/handrive/list/"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(TrustedDevice.objects.filter(device_token=current_token).exists())
+        self.assertTrue(TrustedDevice.objects.filter(device_token=other_token).exists())
+        self.assertEqual(self.user.profile.session_token, "existing-session-token")
+        self.assertIn(settings.TWO_FA_DEVICE_COOKIE_NAME, response.cookies)
+        self.assertEqual(response.cookies[settings.TWO_FA_DEVICE_COOKIE_NAME]["max-age"], 0)
+
+    def test_password_reset_invalidates_all_sessions_and_trusted_devices(self):
+        self.client.force_login(self.user)
+        self.activate_hanplanet_session_token()
+        first_session_key = self.client.session.session_key
+
+        second_client = Client()
+        second_client.force_login(self.user)
+        second_session_key = second_client.session.session_key
+        TrustedDevice.objects.create(user=self.user, device_token="first-device", last_seen_at=timezone.now())
+        TrustedDevice.objects.create(user=self.user, device_token="second-device", last_seen_at=timezone.now())
+
+        _invalidate_user_auth_state(self.user)
+
+        self.user.profile.refresh_from_db()
+        self.assertEqual(self.user.profile.session_token, "")
+        self.assertFalse(Session.objects.filter(session_key__in=[first_session_key, second_session_key]).exists())
+        self.assertFalse(TrustedDevice.objects.filter(user=self.user).exists())
+
     def test_temp_password_login_opens_password_change_modal(self):
         self.user.set_password("HpTemp1234")
         self.user.email = "reset@example.com"
@@ -11862,8 +12201,7 @@ class HandriveAuthFlowTests(TestCase):
         self.assertContains(response, "임시 비밀번호로 로그인했습니다")
         self.assertEqual(self.client.session.get("_auth_user_id"), str(self.user.pk))
 
-    @mock.patch("main.handrive_views._prepare_forgejo_login_session", return_value=("forgejo-session-key", None))
-    def test_temp_password_change_clears_force_flag_and_finishes_login(self, mock_prepare_session):
+    def test_temp_password_change_invalidates_all_auth_state_and_returns_to_login(self):
         self.client.force_login(self.user)
         profile, _ = UserProfile.objects.get_or_create(user=self.user)
         profile.force_password_change = True
@@ -11882,12 +12220,15 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertTrue(payload["ok"])
-        self.assertTrue(payload["reload"])
+        self.assertIn("/ko/login", payload["panel_url"])
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password("N3wHanplanetPass"))
         self.assertFalse(self.user.profile.force_password_change)
+        self.assertEqual(self.user.profile.session_token, "")
+        self.assertNotIn("_auth_user_id", self.client.session)
         self.assertIn("hp_gitea_session", response.cookies)
-        mock_prepare_session.assert_called_once()
+        self.assertIn(settings.SESSION_COOKIE_NAME, response.cookies)
+        self.assertIn(settings.TWO_FA_DEVICE_COOKIE_NAME, response.cookies)
 
     def test_site_auth_modal_host_selector_is_separate_from_trigger_links(self):
         host_template = (Path(settings.BASE_DIR) / "templates/partials/site_auth_modal_host.html").read_text(encoding="utf-8")
@@ -13758,6 +14099,22 @@ class HandriveAuthFlowTests(TestCase):
         self.assertNotIn("hp_gitea_session", response.cookies)
         mock_attach_session.assert_not_called()
 
+    @override_settings(
+        FORGEJO_OIDC_SSO_ENABLED=True,
+        PUBLIC_GIT_BASE_URL="https://git.hanplanet.com",
+    )
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_forgejo_login_uses_central_oidc_handoff_for_git_target(self, mock_attach_session):
+        response = _build_forgejo_oidc_login_redirect(
+            "https://git.hanplanet.com/hanplanet/repo/src/branch/main/README.md?plain=1"
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("https://git.hanplanet.com/user/oauth2/hanplanet/login?"))
+        query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(query["redirect_to"], ["/hanplanet/repo/src/branch/main/README.md?plain=1"])
+        mock_attach_session.assert_not_called()
+
     @override_settings(WARGAME_PUBLIC_URL="https://wargame.hanplanet.com/")
     @mock.patch("main.handrive_views._attach_forgejo_login_session")
     def test_docs_login_authenticated_keeps_exact_wargame_mission_next(self, mock_attach_session):
@@ -13919,6 +14276,23 @@ class HandriveAuthFlowTests(TestCase):
         self.assertEqual(response.cookies[HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME].value, "1")
         self.assertEqual(response.cookies[HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME]["domain"], ".hanplanet.com")
         mock_attach_session.assert_called_once()
+
+    @override_settings(
+        FORGEJO_OIDC_SSO_ENABLED=True,
+        PUBLIC_GIT_BASE_URL="https://git.hanplanet.com",
+    )
+    @mock.patch("main.handrive_views._attach_forgejo_login_session")
+    def test_gitea_sso_probe_uses_oidc_login_when_enabled(self, mock_attach_session):
+        self.client.force_login(self.user)
+        self.activate_hanplanet_session_token()
+
+        response = self.client.get("/sso/gitea?probe=1&next=https://git.hanplanet.com/hanplanet/repo")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("https://git.hanplanet.com/user/oauth2/hanplanet/login?"))
+        query = parse_qs(urlparse(response["Location"]).query)
+        self.assertEqual(query["redirect_to"], ["/hanplanet/repo"])
+        mock_attach_session.assert_not_called()
 
     @override_settings(
         PUBLIC_BASE_URL="https://www.hanplanet.com",
@@ -21350,6 +21724,70 @@ class HandriveAccessRuleTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("지원하지 않는 스프레드시트 확장자", response.json().get("error", ""))
 
+    def test_handrive_spreadsheet_save_accepts_multipart_binary_and_returns_version(self):
+        editor = self.create_scoped_handrive_user("spreadsheet_multipart_editor")
+        self.client.force_login(editor)
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        workbook_path = handrive_root / "budget.xlsx"
+        workbook_path.write_bytes(b"old-workbook")
+        relative_path = f"users/{editor.username}/budget.xlsx"
+
+        download_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": relative_path},
+        )
+        source_version = download_response.get("X-Handrive-Version")
+        download_response.close()
+        self.assertTrue(source_version)
+
+        response = self.client.post(
+            reverse("main:handrive_api_spreadsheet_save"),
+            data={
+                "original_path": relative_path,
+                "target_dir": f"users/{editor.username}",
+                "filename": "budget",
+                "extension": ".xlsx",
+                "source_version": source_version,
+                "file": SimpleUploadedFile("budget.xlsx", b"new-workbook", content_type="application/octet-stream"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json().get("source_version"))
+        self.assertEqual(workbook_path.read_bytes(), b"new-workbook")
+
+    def test_handrive_spreadsheet_save_rejects_stale_source_version(self):
+        editor = self.create_scoped_handrive_user("spreadsheet_conflict_editor")
+        self.client.force_login(editor)
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        workbook_path = handrive_root / "budget.xlsx"
+        workbook_path.write_bytes(b"original")
+        relative_path = f"users/{editor.username}/budget.xlsx"
+
+        download_response = self.client.get(
+            reverse("main:handrive_api_download"),
+            data={"path": relative_path},
+        )
+        source_version = download_response.get("X-Handrive-Version")
+        download_response.close()
+        workbook_path.write_bytes(b"changed-externally")
+
+        response = self.client.post(
+            reverse("main:handrive_api_spreadsheet_save"),
+            data={
+                "original_path": relative_path,
+                "target_dir": f"users/{editor.username}",
+                "filename": "budget",
+                "extension": ".xlsx",
+                "source_version": source_version,
+                "file": SimpleUploadedFile("budget.xlsx", b"should-not-save", content_type="application/octet-stream"),
+            },
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json().get("code"), "source_version_conflict")
+        self.assertEqual(workbook_path.read_bytes(), b"changed-externally")
+
 
 class HanharnessDownloadTests(TestCase):
     def test_download_serves_latest_timestamped_windows_zip(self):
@@ -21435,6 +21873,32 @@ class WargameApiSecurityTests(TestCase):
         )
         self.assertIsNone(settings.SESSION_COOKIE_DOMAIN)
         self.assertIsNone(settings.CSRF_COOKIE_DOMAIN)
+
+    def test_session_accepts_central_oidc_access_token_without_browser_django_cookie(self):
+        application = get_application_model().objects.create(
+            name="Wargame OIDC Test",
+            client_type="public",
+            authorization_grant_type="authorization-code",
+            redirect_uris="https://wargame.hanplanet.com/auth/callback.php",
+        )
+        token_value = "wargame-oidc-access-token-test"
+        get_access_token_model().objects.create(
+            user=self.user,
+            application=application,
+            token=token_value,
+            expires=timezone.now() + timedelta(minutes=10),
+            scope="openid profile email",
+        )
+
+        response = self.client.get(
+            "/ko/api/wargame/session/",
+            HTTP_AUTHORIZATION=f"Bearer {token_value}",
+            HTTP_ORIGIN="https://wargame.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["authenticated"])
+        self.assertEqual(response.json()["user_id"], self.user.pk)
 
     def test_authenticated_identity_exposes_own_django_profile_image(self):
         PortfolioProfile.objects.create(
@@ -21589,3 +22053,261 @@ class WargameApiSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.get("Access-Control-Allow-Origin"))
+
+
+class HandriveSvgEditorTests(TestCase):
+    def setUp(self):
+        self.temp_dir = TemporaryDirectory()
+        self.override_settings = override_settings(
+            MEDIA_ROOT=self.temp_dir.name,
+            FORGEJO_REPOS_ROOT=str(Path(self.temp_dir.name) / "forgejo-repos"),
+        )
+        self.override_settings.enable()
+        self.addCleanup(self.override_settings.disable)
+        self.addCleanup(self.temp_dir.cleanup)
+
+        self.user = get_user_model().objects.create_user(
+            username="svg_editor_user",
+            email="svg-editor@example.com",
+            password="pw123456",
+        )
+        public_group, _ = Group.objects.get_or_create(name=DOCS_PUBLIC_WRITE_GROUP_NAME)
+        self.user.groups.add(public_group)
+        self.relative_dir = f"users/{self.user.username}"
+        self.relative_path = f"{self.relative_dir}/diagram.svg"
+        self.user_home = Path(settings.MEDIA_ROOT) / "HanDrive" / self.relative_dir
+        self.user_home.mkdir(parents=True, exist_ok=True)
+        self.initial_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">'
+            '<defs><linearGradient id="sky"><stop offset="0" stop-color="#60a5fa"/>'
+            '<stop offset="1" stop-color="#1d4ed8"/></linearGradient></defs>'
+            '<g id="scene" transform="translate(12 8)"><path id="curve" d="M10 100 C70 10 140 170 220 70" '
+            'fill="none" stroke="url(#sky)" stroke-width="8"/>'
+            '<text id="label" x="16" y="32">Vector</text></g></svg>'
+        )
+        (self.user_home / "diagram.svg").write_text(self.initial_svg, encoding="utf-8")
+        self.client.force_login(self.user)
+
+    def test_svg_write_page_uses_dedicated_vector_editor(self):
+        response = self.client.get(
+            reverse("main:handrive_write_lang", kwargs={"ui_lang": "ko"}),
+            data={"path": self.relative_path},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["write_editor_kind"], "svg")
+        self.assertEqual(response.context["initial_content"], self.initial_svg)
+        self.assertContains(response, 'id="handrive-svg-editor-surface"')
+        self.assertContains(response, 'data-svg-editor-script-url="/static/js/handrive/svg_editor.js')
+        self.assertNotContains(response, 'data-write-editor-kind="image"')
+
+    def test_svg_view_exposes_edit_action(self):
+        response = self.client.get(
+            reverse(
+                "main:handrive_view_lang",
+                kwargs={"ui_lang": "ko", "doc_path": self.relative_path},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["doc_can_show_edit"])
+        self.assertIn("/ko/handrive/write", response.context["doc_edit_url"])
+
+    def test_svg_list_preview_exposes_edit_action(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        preview_helpers_js = (base_dir / "static/js/handrive/preview_helpers.js").read_text(encoding="utf-8")
+        non_editable_start = page_js.index("const nonEditableMediaExtensions = new Set([")
+        non_editable_end = page_js.index("const archiveFileExtensions", non_editable_start)
+        non_editable_media_block = page_js[non_editable_start:non_editable_end]
+
+        self.assertNotIn('".svg"', non_editable_media_block)
+        self.assertIn("|| isSvgEditorEntry(entry)", page_js)
+        self.assertIn("isEditableHandriveFileEntry(entry)", preview_helpers_js)
+
+    def test_svg_save_round_trips_vector_structure_without_rasterizing(self):
+        updated_svg = (
+            '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="-10 -20 640 360">'
+            '<defs><radialGradient id="glow"><stop offset="0" stop-color="#fff"/>'
+            '<stop offset="1" stop-color="#2563eb"/></radialGradient>'
+            '<clipPath id="clip"><circle cx="80" cy="80" r="70"/></clipPath></defs>'
+            '<g id="layer-one" transform="rotate(5 80 80)" opacity="0.85">'
+            '<path d="M10 10 Q80 160 160 10" fill="url(#glow)" clip-path="url(#clip)"/>'
+            '<text x="24" y="96">Editable nodes</text></g></svg>'
+        )
+        response = self.client.post(
+            reverse("main:handrive_api_save"),
+            data=json.dumps(
+                {
+                    "original_path": self.relative_path,
+                    "target_dir": self.relative_dir,
+                    "filename": "diagram",
+                    "extension": ".svg",
+                    "content": updated_svg,
+                }
+            ),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        persisted = (self.user_home / "diagram.svg").read_text(encoding="utf-8")
+        self.assertEqual(persisted, updated_svg)
+        self.assertIn('<radialGradient id="glow">', persisted)
+        self.assertIn('transform="rotate(5 80 80)"', persisted)
+        self.assertIn('d="M10 10 Q80 160 160 10"', persisted)
+        self.assertNotIn("data:image/png", persisted)
+        self.assertNotIn("<canvas", persisted)
+
+    def test_svg_save_rejects_active_content_and_keeps_original(self):
+        unsafe_documents = {
+            "doctype": '<!DOCTYPE svg [<!ENTITY x "boom">]><svg xmlns="http://www.w3.org/2000/svg"><text>&x;</text></svg>',
+            "external_stylesheet": '<?xml-stylesheet href="https://evil.invalid/vector.css"?><svg xmlns="http://www.w3.org/2000/svg"/>',
+            "script": '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+            "event": '<svg xmlns="http://www.w3.org/2000/svg"><path onload="alert(1)" d="M0 0L1 1"/></svg>',
+            "app_click_proxy": '<svg xmlns="http://www.w3.org/2000/svg"><rect data-handrive-click-target="#handrive-save-btn" width="10" height="10"/></svg>',
+            "foreign_object": '<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div>HTML</div></foreignObject></svg>',
+            "foreign_namespace": '<svg xmlns="http://www.w3.org/2000/svg" xmlns:evil="https://evil.invalid/ns"><evil:path d="M0 0L1 1"/></svg>',
+            "external_href": '<svg xmlns="http://www.w3.org/2000/svg"><image href="https://evil.invalid/pixel.png"/></svg>',
+            "invalid_fragment": '<svg xmlns="http://www.w3.org/2000/svg"><use href="#"/></svg>',
+            "data_uri_on_use": '<svg xmlns="http://www.w3.org/2000/svg"><use href="data:image/png;base64,iVBORw0KGgo="/></svg>',
+            "external_filter_image": '<svg xmlns="http://www.w3.org/2000/svg"><filter id="f"><feImage href="https://evil.invalid/pixel.png"/></filter></svg>',
+            "css_url": '<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:url(https://evil.invalid/a.svg)"/></svg>',
+            "smil": '<svg xmlns="http://www.w3.org/2000/svg"><set attributeName="href" to="javascript:alert(1)"/></svg>',
+            "xml_base": '<svg xmlns="http://www.w3.org/2000/svg" xml:base="https://evil.invalid/"><image href="#asset"/></svg>',
+            "duplicate_id": '<svg xmlns="http://www.w3.org/2000/svg"><path id="same"/><path id="same"/></svg>',
+            "non_finite_viewbox": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 NaN 100"><path/></svg>',
+            "oversized_viewbox": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10000001 100"><path/></svg>',
+            "relative_size_without_viewbox": '<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"><path/></svg>',
+        }
+
+        for case_name, unsafe_svg in unsafe_documents.items():
+            with self.subTest(case=case_name):
+                response = self.client.post(
+                    reverse("main:handrive_api_save"),
+                    data=json.dumps(
+                        {
+                            "original_path": self.relative_path,
+                            "target_dir": self.relative_dir,
+                            "filename": "diagram",
+                            "extension": ".svg",
+                            "content": unsafe_svg,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertEqual(
+                    (self.user_home / "diagram.svg").read_text(encoding="utf-8"),
+                    self.initial_svg,
+                )
+
+    def test_svg_save_rejects_malformed_or_non_svg_roots(self):
+        for source in ("<svg><path></svg>", "<html><body>not svg</body></html>", ""):
+            with self.subTest(source=source):
+                response = self.client.post(
+                    reverse("main:handrive_api_save"),
+                    data=json.dumps(
+                        {
+                            "original_path": self.relative_path,
+                            "target_dir": self.relative_dir,
+                            "filename": "diagram",
+                            "extension": ".svg",
+                            "content": source,
+                        }
+                    ),
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 400, response.content)
+
+    def test_svg_editor_assets_are_lazy_vector_specific_and_i18n_backed(self):
+        base_dir = Path(settings.BASE_DIR)
+        list_template = (base_dir / "templates/handrive/list.html").read_text(encoding="utf-8")
+        write_template = (base_dir / "templates/handrive/write.html").read_text(encoding="utf-8")
+        surfaces = (base_dir / "templates/handrive/_media_editor_surfaces.html").read_text(encoding="utf-8")
+        svg_surface = (base_dir / "templates/handrive/_svg_editor_surface.html").read_text(encoding="utf-8")
+        assets_head = (base_dir / "templates/handrive/_assets_head.html").read_text(encoding="utf-8")
+        i18n = (base_dir / "templates/partials/ui_i18n.html").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        svg_js = (base_dir / "static/js/handrive/svg_editor.js").read_text(encoding="utf-8")
+        svg_css = (base_dir / "static/css/pages/handrive/svg_editor.css").read_text(encoding="utf-8")
+
+        self.assertIn("handrive/_svg_editor_surface.html", surfaces)
+        self.assertIn("data-svg-editor-script-url", list_template)
+        self.assertIn("data-svg-editor-script-url", write_template)
+        self.assertIn("css/pages/handrive/svg_editor.css", assets_head)
+        self.assertNotIn("js/handrive/svg_editor.js", (base_dir / "templates/handrive/_assets_script.html").read_text(encoding="utf-8"))
+        self.assertIn('id="handrive-svg-editor-surface"', svg_surface)
+        self.assertIn('data-svg-tool="nodes"', svg_surface)
+        self.assertIn("data-svg-layer-list", svg_surface)
+        self.assertIn("data-svg-viewbox", svg_surface)
+        self.assertIn("data-svg-source", svg_surface)
+        self.assertIn("handrive-shared-toggle", svg_surface)
+        self.assertIn("handrive-url-share-switch-knob", svg_surface)
+        self.assertIn('"svg_editor_label"', i18n)
+        self.assertIn('new Set([".svg"])', page_js)
+        self.assertIn("window.HandriveSvgEditor", svg_js)
+        self.assertIn("XMLSerializer", svg_js)
+        self.assertIn("DOMParser", svg_js)
+        self.assertIn("snapEnabled: true", svg_js)
+        self.assertIn('value="1" data-svg-grid-size', svg_surface)
+        self.assertIn('data-svg-snap checked', svg_surface)
+        self.assertIn('<details class="hse-property-section" data-svg-selection-properties open>', svg_surface)
+        self.assertIn('<details class="hse-property-section hse-document-section" open>', svg_surface)
+        self.assertIn(".hse-property-section > summary", svg_css)
+        self.assertNotIn("toDataURL", svg_js)
+        self.assertNotIn("toBlob", svg_js)
+        self.assertNotIn("!important", svg_css)
+
+    @mock.patch("main.handrive_views.create_google_drive_file")
+    @mock.patch("main.handrive_views.list_google_drive_files")
+    def test_google_drive_svg_save_uses_the_same_vector_validation(self, mock_list_files, mock_create_file):
+        mapping = GoogleAccountMapping.objects.create(
+            user=self.user,
+            google_user_id="google-svg-editor-user",
+            google_email="svg-editor@example.com",
+            google_name="SVG Editor",
+            user_access_token="google-access-token",
+            user_refresh_token="google-refresh-token",
+            token_scope="openid email profile https://www.googleapis.com/auth/drive.file",
+            token_type="Bearer",
+            google_drive_enabled=True,
+            google_profile_synced_at=timezone.now(),
+        )
+        root_path = f"users/{self.user.username}/.google-drive-{mapping.id}"
+        mock_list_files.return_value = []
+        mock_create_file.return_value = {
+            "id": "created-svg-id",
+            "name": "diagram.svg",
+            "mimeType": "image/svg+xml",
+            "size": str(len(self.initial_svg.encode("utf-8"))),
+        }
+
+        safe_response = self.client.post(
+            reverse("main:handrive_api_save"),
+            data=json.dumps({
+                "target_dir": root_path,
+                "filename": "diagram",
+                "extension": ".svg",
+                "content": self.initial_svg,
+            }),
+            content_type="application/json",
+        )
+        unsafe_response = self.client.post(
+            reverse("main:handrive_api_save"),
+            data=json.dumps({
+                "target_dir": root_path,
+                "filename": "unsafe",
+                "extension": ".svg",
+                "content": '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(safe_response.status_code, 200, safe_response.content)
+        self.assertEqual(unsafe_response.status_code, 400, unsafe_response.content)
+        mock_create_file.assert_called_once()
+        self.assertEqual(mock_create_file.call_args.args[2], "diagram.svg")
+        self.assertEqual(mock_create_file.call_args.args[3], self.initial_svg.encode("utf-8"))
+
+    def test_svg_is_offered_as_a_save_extension(self):
+        self.assertIn(".svg", get_handrive_save_extension_options())

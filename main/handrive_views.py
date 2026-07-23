@@ -19,6 +19,7 @@ import hashlib
 import io
 import logging
 import json
+import math
 import mimetypes
 import os
 import sqlite3
@@ -32,6 +33,7 @@ import time
 import unicodedata
 import uuid
 import zipfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone as datetime_timezone
 from contextlib import ExitStack, contextmanager, nullcontext
 from contextvars import ContextVar
@@ -42,7 +44,7 @@ from urllib.parse import parse_qs, parse_qsl, quote, urlencode, urlparse, urlunp
 import httpx
 
 from django import forms
-from django.contrib.auth import authenticate, login as auth_login, update_session_auth_hash
+from django.contrib.auth import authenticate, login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -72,12 +74,13 @@ from .views import (
     apply_ui_context,
     get_default_meta_robots_for_path,
     get_account_display_name,
+    is_docker_runtime,
     redirect_to_language_prefixed_path,
     redirect_to_localized_route,
     render_markdown_safely,
     resolve_ui_lang,
 )
-from .restart_utils import restart_gunicorn_and_wait
+from .restart_utils import request_docker_stack_deploy, restart_gunicorn_and_wait
 from .forgejo_client import ForgejoClient
 from .github_auth import (
     GitHubAuthError,
@@ -484,6 +487,32 @@ MAP_IMAGE_ATTACHMENTS_DIR = "_images"
 MAP_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff", ".tif", ".avif"})
 FOLDER_ICON_EXTENSIONS = MAP_IMAGE_EXTENSIONS
 IMAGE_EDITOR_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif"})
+SVG_EDITOR_EXTENSIONS = frozenset({".svg"})
+HANDRIVE_SVG_MAX_SOURCE_BYTES = 5 * 1024 * 1024
+HANDRIVE_SVG_MAX_ELEMENTS = 10_000
+HANDRIVE_SVG_MAX_PATH_DATA_CHARS = 2_000_000
+HANDRIVE_SVG_MAX_DEPTH = 64
+HANDRIVE_SVG_MAX_ATTRIBUTES = 100_000
+HANDRIVE_SVG_MAX_DIMENSION = 10_000_000
+HANDRIVE_SVG_MAX_COORDINATE = 1_000_000_000
+HANDRIVE_SVG_NAMESPACE = "http://www.w3.org/2000/svg"
+HANDRIVE_SVG_ALLOWED_ELEMENTS = frozenset({
+    "svg", "g", "defs", "symbol", "use", "switch", "view",
+    "path", "rect", "circle", "ellipse", "line", "polyline", "polygon",
+    "text", "tspan", "textpath", "title", "desc", "metadata",
+    "image", "lineargradient", "radialgradient", "stop", "pattern",
+    "clippath", "mask", "marker", "filter",
+    "feblend", "fecolormatrix", "fecomponenttransfer", "fecomposite",
+    "feconvolvematrix", "fediffuselighting", "fedisplacementmap",
+    "fedistantlight", "fedropshadow", "feflood", "fefunca", "fefuncb",
+    "fefuncg", "fefuncr", "fegaussianblur", "feimage", "femerge",
+    "femergenode", "femorphology", "feoffset", "fepointlight",
+    "fespecularlighting", "fespotlight", "fetile", "feturbulence",
+})
+HANDRIVE_SVG_UNSAFE_ELEMENTS = frozenset({
+    "script", "foreignobject", "iframe", "object", "embed", "style", "link", "meta", "audio", "video",
+    "animate", "animatemotion", "animatetransform", "set", "handler",
+})
 HANDRIVE_PDF_EDITOR_EXTENSIONS = frozenset({".pdf"})
 MAP_VIDEO_EXTENSIONS = frozenset({".mp4", ".mov", ".webm", ".mkv", ".avi", ".wmv", ".m4v", ".ogv"})
 HANDRIVE_MP3_SOURCE_EXTENSIONS = MAP_VIDEO_EXTENSIONS
@@ -509,6 +538,189 @@ HANDRIVE_VIDEO_EDITOR_CODECS = {
     ".webm": ["-codec:v", "libvpx-vp9", "-crf", "32", "-b:v", "0", "-codec:a", "libopus", "-b:a", "128k"],
     ".ogv": ["-codec:v", "libtheora", "-q:v", "7", "-codec:a", "libvorbis", "-q:a", "5"],
 }
+
+
+def _handrive_svg_local_name(value: str | None) -> str:
+    """Return an XML element/attribute local name without trusting its namespace."""
+    return str(value or "").rsplit("}", 1)[-1].split(":")[-1].strip().lower()
+
+
+def _handrive_svg_namespace(value: str | None) -> str:
+    raw_value = str(value or "")
+    if raw_value.startswith("{") and "}" in raw_value:
+        return raw_value[1:raw_value.index("}")]
+    return ""
+
+
+def _is_safe_handrive_svg_href(value: str | None) -> bool:
+    href = str(value or "").strip()
+    if not href:
+        return True
+    if href.startswith("#"):
+        return bool(re.fullmatch(r"#[^\s\x00-\x1f\"'()<>]{1,512}", href))
+    return bool(
+        re.fullmatch(
+            r"data:image/(?:png|jpe?g|gif|webp|avif);base64,[a-zA-Z0-9+/=\s]+",
+            href,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _parse_handrive_svg_absolute_length(value: str | None) -> float | None:
+    match = re.fullmatch(
+        r"([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(px|pt|pc|in|cm|mm|q)?",
+        str(value or "").strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    number = float(match.group(1))
+    unit = str(match.group(2) or "px").lower()
+    multipliers = {
+        "px": 1,
+        "pt": 96 / 72,
+        "pc": 16,
+        "in": 96,
+        "cm": 96 / 2.54,
+        "mm": 96 / 25.4,
+        "q": 96 / 101.6,
+    }
+    return number * multipliers[unit]
+
+
+def _parse_handrive_svg_relative_length(value: str | None) -> float | None:
+    match = re.fullmatch(
+        r"([+]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(%|em|rem|ex|ch|vw|vh|vmin|vmax)",
+        str(value or "").strip(),
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    number = float(match.group(1))
+    return number if math.isfinite(number) and 0 < number <= HANDRIVE_SVG_MAX_DIMENSION else None
+
+
+def validate_handrive_svg_content(content: str) -> None:
+    """Validate editable SVG before it can be persisted or mounted by the vector editor.
+
+    HanDrive renders normal SVG previews through ``<img>``. The editor, however, mounts
+    a sanitized SVG DOM so it can manipulate real vector nodes. Keep the server-side
+    gate in place as well, since API clients can bypass the browser sanitizer.
+    """
+    if not isinstance(content, str):
+        raise ValueError("SVG 내용 형식이 올바르지 않습니다.")
+    source_bytes = content.encode("utf-8")
+    if not source_bytes or len(source_bytes) > HANDRIVE_SVG_MAX_SOURCE_BYTES:
+        raise ValueError("SVG 파일 크기가 너무 크거나 비어 있습니다.")
+    if re.search(r"<!\s*(?:DOCTYPE|ENTITY)\b|<\?\s*xml-stylesheet\b", content, flags=re.IGNORECASE):
+        raise ValueError("SVG 문서에 사용할 수 없는 선언이 있습니다.")
+
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as exc:
+        raise ValueError("올바른 SVG 문서가 아닙니다.") from exc
+    if (
+        _handrive_svg_local_name(root.tag) != "svg"
+        or _handrive_svg_namespace(root.tag) not in {"", HANDRIVE_SVG_NAMESPACE}
+    ):
+        raise ValueError("SVG 루트 요소가 필요합니다.")
+
+    element_count = 0
+    attribute_count = 0
+    path_data_chars = 0
+    css_url_pattern = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", flags=re.IGNORECASE)
+    element_stack = [(root, 1)]
+    seen_ids = set()
+
+    while element_stack:
+        element, depth = element_stack.pop()
+        if depth > HANDRIVE_SVG_MAX_DEPTH:
+            raise ValueError("SVG 요소 중첩이 너무 깊습니다.")
+        element_count += 1
+        if element_count > HANDRIVE_SVG_MAX_ELEMENTS:
+            raise ValueError("SVG 요소가 너무 많습니다.")
+        local_tag = _handrive_svg_local_name(element.tag)
+        if (
+            _handrive_svg_namespace(element.tag) not in {"", HANDRIVE_SVG_NAMESPACE}
+            or local_tag not in HANDRIVE_SVG_ALLOWED_ELEMENTS
+            or local_tag in HANDRIVE_SVG_UNSAFE_ELEMENTS
+        ):
+            raise ValueError("SVG 문서에 사용할 수 없는 요소가 있습니다.")
+        element_stack.extend((child, depth + 1) for child in reversed(list(element)))
+        if local_tag == "path":
+            path_data_chars += len(str(element.attrib.get("d") or ""))
+            if path_data_chars > HANDRIVE_SVG_MAX_PATH_DATA_CHARS:
+                raise ValueError("SVG 경로 데이터가 너무 큽니다.")
+
+        for raw_name, raw_value in element.attrib.items():
+            attribute_count += 1
+            if attribute_count > HANDRIVE_SVG_MAX_ATTRIBUTES:
+                raise ValueError("SVG 속성이 너무 많습니다.")
+            attr_name = _handrive_svg_local_name(raw_name)
+            attr_value = str(raw_value or "").strip()
+            if len(attr_value) > HANDRIVE_SVG_MAX_PATH_DATA_CHARS:
+                raise ValueError("SVG 속성 값이 너무 큽니다.")
+            if attr_name.startswith("on"):
+                raise ValueError("SVG 이벤트 속성은 사용할 수 없습니다.")
+            if attr_name.startswith("data-"):
+                raise ValueError("SVG 애플리케이션 제어 속성은 사용할 수 없습니다.")
+            if attr_name == "base" and _handrive_svg_namespace(raw_name) == "http://www.w3.org/XML/1998/namespace":
+                raise ValueError("SVG 외부 리소스 URL은 사용할 수 없습니다.")
+            if attr_name == "style":
+                raise ValueError("SVG style 속성은 사용할 수 없습니다.")
+            if "\\" in attr_value or any(ord(character) < 32 and character not in "\t\n\r" for character in attr_value):
+                raise ValueError("SVG 속성 값이 올바르지 않습니다.")
+            if attr_name in {"href", "src"}:
+                is_data_image = attr_value.lower().startswith("data:image/")
+                if (
+                    not _is_safe_handrive_svg_href(attr_value)
+                    or (is_data_image and local_tag not in {"image", "feimage"})
+                ):
+                    raise ValueError("SVG 외부 리소스 URL은 사용할 수 없습니다.")
+            url_matches = list(css_url_pattern.finditer(attr_value))
+            for match in url_matches:
+                if not str(match.group(2) or "").strip().startswith("#"):
+                    raise ValueError("SVG 외부 리소스 URL은 사용할 수 없습니다.")
+            if "url(" in attr_value.lower() and not url_matches:
+                raise ValueError("SVG 외부 리소스 URL은 사용할 수 없습니다.")
+            if attr_name == "id" and attr_value:
+                if len(attr_value) > 512 or re.search(r"[\s\x00-\x1f]", attr_value) or attr_value in seen_ids:
+                    raise ValueError("SVG 오브젝트 ID가 올바르지 않습니다.")
+                seen_ids.add(attr_value)
+
+    raw_view_box = str(root.attrib.get("viewBox") or root.attrib.get("viewbox") or "").strip()
+    if raw_view_box:
+        try:
+            view_box = [float(part) for part in re.split(r"[\s,]+", raw_view_box) if part]
+        except ValueError as exc:
+            raise ValueError("SVG viewBox 형식이 올바르지 않습니다.") from exc
+        if (
+            len(view_box) != 4
+            or not all(math.isfinite(value) and abs(value) <= HANDRIVE_SVG_MAX_COORDINATE for value in view_box)
+            or view_box[2] <= 0
+            or view_box[3] <= 0
+            or view_box[2] > HANDRIVE_SVG_MAX_DIMENSION
+            or view_box[3] > HANDRIVE_SVG_MAX_DIMENSION
+        ):
+            raise ValueError("SVG viewBox 값이 올바르지 않습니다.")
+
+    for dimension_name in ("width", "height"):
+        raw_dimension = str(root.attrib.get(dimension_name) or "").strip()
+        if not raw_dimension:
+            continue
+        relative_dimension = _parse_handrive_svg_relative_length(raw_dimension)
+        dimension = _parse_handrive_svg_absolute_length(raw_dimension)
+        if (
+            (relative_dimension is not None and not raw_view_box)
+            or (relative_dimension is None and dimension is None)
+            or (dimension is not None and (
+                not math.isfinite(dimension)
+                or dimension <= 0
+                or dimension > HANDRIVE_SVG_MAX_DIMENSION
+            ))
+        ):
+            raise ValueError("SVG 문서 크기 값이 올바르지 않습니다.")
 
 
 def _resolve_handrive_ffmpeg_bin() -> Path | None:
@@ -1332,7 +1544,7 @@ DOCS_TEXT = {
         "auth_my_portfolio_button": "내 포트폴리오",
         "auth_logout_button": "로그아웃",
         "admin_button": "Admin",
-        "ops_apply_static_and_restart_button": "Apply Static + Restart Gunicorn",
+        "ops_apply_static_and_restart_button": "Apply Changes + Restart",
         "auth_login_title": "Hanplanet Login",
         "auth_username_label": "아이디",
         "auth_password_label": "비밀번호",
@@ -1886,7 +2098,7 @@ DOCS_TEXT = {
         "auth_my_portfolio_button": "My Portfolio",
         "auth_logout_button": "Logout",
         "admin_button": "Admin",
-        "ops_apply_static_and_restart_button": "Apply Static + Restart Gunicorn",
+        "ops_apply_static_and_restart_button": "Apply Changes + Restart",
         "auth_login_title": "Hanplanet Login",
         "auth_username_label": "Username",
         "auth_password_label": "Password",
@@ -3719,6 +3931,9 @@ def resolve_handrive_render_profile(file_extension: str | None) -> dict[str, str
 def get_handrive_save_extension_options() -> list[str]:
     """쓰기 화면의 빠른 확장자 선택 목록을 만든다."""
     options = list(DOCS_TEXT_CODE_FILE_EXTENSION_OPTIONS)
+    for extension in sorted(SVG_EDITOR_EXTENSIONS):
+        if extension not in options:
+            options.append(extension)
     for extension, profile in DOCS_RENDER_PROFILES_BY_EXTENSION.items():
         if profile.get("mode") in {DOCS_RENDER_MODE_MARKDOWN, DOCS_RENDER_MODE_PLAIN_TEXT} and extension not in options:
             options.append(extension)
@@ -3882,7 +4097,8 @@ def is_handrive_media_editor_extension(file_extension: str | None) -> bool:
     """write 페이지 미디어 에디터로 수정 가능한 확장자인지 판별한다."""
     suffix = str(file_extension or "").lower()
     return (
-        suffix in IMAGE_EDITOR_EXTENSIONS
+        suffix in SVG_EDITOR_EXTENSIONS
+        or suffix in IMAGE_EDITOR_EXTENSIONS
         or suffix in HANDRIVE_AUDIO_EDITOR_EXTENSIONS
         or suffix in HANDRIVE_VIDEO_EDITOR_EXTENSIONS
         or suffix in HANDRIVE_PDF_EDITOR_EXTENSIONS
@@ -5106,6 +5322,11 @@ def _handle_google_drive_save_request(request, payload: dict, *, original_relati
         )
     except ValueError as exc:
         return json_error(str(exc), status=400)
+    if resolved_extension in SVG_EDITOR_EXTENSIONS:
+        try:
+            validate_handrive_svg_content(content)
+        except ValueError as exc:
+            return json_error(str(exc), status=400)
     target_name = f"{filename}{resolved_extension}"
     target_parent_id = target_context["folder_id"]
     target_bytes = content.encode("utf-8")
@@ -9522,7 +9743,9 @@ def _copy_response_cookies(source_response, target_response):
         target_response.cookies[name] = morsel.value
         for attr in morsel.keys():
             value = morsel[attr]
-            if value:
+            # ``delete_cookie`` uses Max-Age=0; falsey numeric attributes
+            # still need to be copied into modal JSON responses.
+            if value not in ("", None):
                 target_response.cookies[name][attr] = value
     return target_response
 
@@ -10270,28 +10493,37 @@ def _register_handrive_login_failure(user):
 
 
 def _issue_session_token(user) -> str:
-    """로그인 시 새 session_token 을 발급해 UserProfile 에 저장하고 반환한다."""
+    """계정 세대 토큰을 반환한다. 로그인마다 재발급하지 않는다.
+
+    이 토큰은 각 Django 세션에 복사되어 세션이 폐기된 뒤에도 오래된
+    세션 요청을 차단하는 용도로만 사용한다. 여러 브라우저·기기에서
+    동시에 로그인할 수 있도록 기존 토큰은 그대로 재사용한다.
+    """
     import secrets
-    import logging
-    log = logging.getLogger(__name__)
-    token = secrets.token_hex(32)
     try:
         from main.models import UserProfile
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        profile.session_token = token
-        profile.save(update_fields=["session_token", "updated_at"])
-        log.warning("[_issue_session_token] saved token=%s for user=%s", token[:8], user.username)
+        with transaction.atomic():
+            profile, _ = UserProfile.objects.select_for_update().get_or_create(user=user)
+            token = str(profile.session_token or "").strip()
+            if token:
+                return token
+            token = secrets.token_hex(32)
+            profile.session_token = token
+            profile.save(update_fields=["session_token", "updated_at"])
+            return token
     except Exception as e:
-        log.warning("[_issue_session_token] FAILED user=%s error=%s", user.username, e)
-    return token
+        logger.warning("[_issue_session_token] FAILED user=%s error=%s", user.username, e)
+        # 저장소 장애가 있더라도 현재 로그인 흐름은 진행하되, 호출자가
+        # 새 토큰을 세션에 넣을 수 있도록 일회성 값을 반환한다.
+        return secrets.token_hex(32)
 
 
 def _revoke_session_token(user):
-    """로그아웃 시 session_token 을 초기화해 기존 세션을 모두 무효화한다."""
+    """계정 세대 토큰을 초기화해 기존 세션 토큰을 모두 무효화한다."""
     try:
         profile = user.profile
         profile.session_token = ""
-        profile.save(update_fields=["session_token"])
+        profile.save(update_fields=["session_token", "updated_at"])
     except Exception:
         pass
 
@@ -10327,6 +10559,47 @@ def _purge_stale_user_sessions(user):
         Session.objects.filter(expire_date__lte=timezone.now()).delete()
     except Exception:
         pass
+
+
+def _invalidate_user_sessions(user) -> int:
+    """사용자의 모든 유효한 Django 세션을 폐기한다.
+
+    DB 세션은 사용자별 foreign key가 없으므로 세션 payload의
+    ``_auth_user_id``를 확인한다. 손상된 세션 하나가 전체 폐기를 막지
+    않도록 decode 실패 항목은 건너뛴다.
+    """
+    user_id = str(getattr(user, "pk", "") or "").strip()
+    if not user_id:
+        return 0
+    try:
+        from django.contrib.sessions.models import Session
+
+        deleted = 0
+        for session in Session.objects.filter(expire_date__gt=timezone.now()).iterator():
+            try:
+                decoded = session.get_decoded()
+            except Exception:
+                continue
+            if str(decoded.get("_auth_user_id", "") or "") != user_id:
+                continue
+            session.delete()
+            deleted += 1
+        return deleted
+    except Exception:
+        logger.exception("Failed to invalidate Django sessions for user %s", user_id)
+        return 0
+
+
+def _invalidate_user_auth_state(user) -> None:
+    """비밀번호 재설정에 필요한 전 기기 인증 상태를 폐기한다."""
+    _invalidate_user_sessions(user)
+    _revoke_session_token(user)
+    try:
+        from main.models import TrustedDevice
+
+        TrustedDevice.objects.filter(user=user).delete()
+    except Exception:
+        logger.exception("Failed to invalidate trusted devices for user %s", getattr(user, "pk", "?"))
 
 
 def _finalize_handrive_login_session(request, user) -> str:
@@ -10821,16 +11094,23 @@ def _register_trusted_device(user, device_token: str) -> None:
 
 
 def _set_device_cookie(response, device_token: str) -> None:
-    """응답에 hp_device_id 쿠키를 설정한다 (90일 유효)."""
+    """응답에 이메일 2FA 신뢰 기기 쿠키를 설정한다 (3일 유효)."""
     cookie_name = getattr(settings, "TWO_FA_DEVICE_COOKIE_NAME", "hp_device_id")
     response.set_cookie(
         cookie_name,
         device_token,
-        max_age=60 * 60 * 24 * 90,
+        max_age=getattr(settings, "TWO_FA_DEVICE_COOKIE_AGE", 60 * 60 * 24 * 3),
         httponly=True,
         secure=not settings.DEBUG,
         samesite="Lax",
     )
+
+
+def _clear_device_cookie(response):
+    """현재 브라우저의 이메일 2FA 신뢰 기기 쿠키를 삭제한다."""
+    cookie_name = getattr(settings, "TWO_FA_DEVICE_COOKIE_NAME", "hp_device_id")
+    response.delete_cookie(cookie_name, path="/")
+    return response
 
 
 def _clear_2fa_pending_session(request) -> None:
@@ -11561,6 +11841,38 @@ def _is_forgejo_oauth_handoff_url(target_url: str) -> bool:
     return parsed.path == "/o/authorize/"
 
 
+def _is_forgejo_oidc_sso_enabled() -> bool:
+    return bool(getattr(settings, "FORGEJO_OIDC_SSO_ENABLED", False))
+
+
+def _is_forgejo_git_target(target_url: str) -> bool:
+    if not _is_forgejo_oidc_sso_enabled():
+        return False
+    public_base = str(getattr(settings, "PUBLIC_GIT_BASE_URL", "") or "").strip().rstrip("/")
+    parsed_base = urlparse(public_base)
+    parsed_target = urlparse(str(target_url or ""))
+    if not parsed_base.netloc or not parsed_target.netloc:
+        return False
+    return parsed_target.netloc.lower() == parsed_base.netloc.lower()
+
+
+def _requires_direct_forgejo_attach(target_url: str) -> bool:
+    return not (_is_forgejo_oauth_handoff_url(target_url) or _is_forgejo_git_target(target_url))
+
+
+def _build_forgejo_oidc_login_redirect(target_url: str):
+    """Start Forgejo's configured Hanplanet OIDC login without writing its DB session."""
+    parsed_target = urlparse(str(target_url or ""))
+    public_base = str(getattr(settings, "PUBLIC_GIT_BASE_URL", "") or "").strip().rstrip("/")
+    redirect_to = parsed_target.path or "/"
+    if parsed_target.query:
+        redirect_to = f"{redirect_to}?{parsed_target.query}"
+    login_url = f"{public_base}/user/oauth2/hanplanet/login"
+    query = urlencode({"redirect_to": redirect_to})
+    response = redirect(f"{login_url}?{query}")
+    return _clear_forgejo_sync_cookies(response)
+
+
 def _apply_forgejo_session_cookie(response, session_key: str):
     """준비된 Forgejo session key 를 응답 쿠키에 반영한다."""
     _secure = bool(getattr(settings, "DEFAULT_SECURE_TRANSPORT", True))
@@ -11603,7 +11915,7 @@ def _build_forgejo_redirect_base(target_url: str):
 
 
 def _build_forgejo_authenticated_redirect(target_url: str, user):
-    """레거시 연동 쿠키를 정리한 뒤 Forgejo 세션까지 붙인 redirect 응답을 만든다."""
+    """OIDC 전환 전 배포와 비-Git 호환 흐름을 위한 legacy direct attach 응답."""
     response = _build_forgejo_redirect_base(target_url)
     return _attach_forgejo_login_session(response, user)
 
@@ -11616,11 +11928,14 @@ def _build_forgejo_logged_out_redirect(target_url: str):
     response.delete_cookie("gitea_flash", domain=".hanplanet.com", path="/")
     response.delete_cookie(HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME, domain=HANPLANET_SHARED_COOKIE_DOMAIN, path="/")
     response.delete_cookie(settings.SESSION_COOKIE_NAME, path=getattr(settings, "SESSION_COOKIE_PATH", "/"))
+    _clear_device_cookie(response)
     return response
 
 
 def _build_post_hanplanet_login_response(target_url: str, user):
-    """로그인 후 direct Forgejo attach 와 OAuth handoff 를 구분한다."""
+    """로그인 후 중앙 OAuth/OIDC handoff와 기존 호환 attach를 구분한다."""
+    if _is_forgejo_git_target(target_url):
+        return _build_forgejo_oidc_login_redirect(target_url)
     if _is_forgejo_oauth_handoff_url(target_url):
         return redirect(target_url)
     return _build_forgejo_authenticated_redirect(target_url, user)
@@ -12521,7 +12836,7 @@ def handrive_github_auth_callback(request):
         return _render_github_auth_error(request, resolved_lang, mode, next_url, generic_error)
 
     target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
-    requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+    requires_direct_attach = _requires_direct_forgejo_attach(target_url)
     forgejo_session_key = None
     if requires_direct_attach:
         forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(user)
@@ -12966,7 +13281,7 @@ def handrive_google_auth_callback(request):
         return _render_google_auth_error(request, resolved_lang, mode, next_url, generic_error)
 
     target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
-    requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+    requires_direct_attach = _requires_direct_forgejo_attach(target_url)
     forgejo_session_key = None
     if requires_direct_attach:
         forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(user)
@@ -13225,8 +13540,8 @@ def handrive_api_github_unlink(request):
 def handrive_gitea_sso_relay(request):
     """레거시 Gitea SSO 릴레이 엔드포인트.
 
-    이제 Hanplanet 로그인 응답에서 Forgejo 세션을 직접 생성하므로
-    git.hanplanet.com 경유 리다이렉트 없이 next 로 바로 복귀시킨다.
+    운영에서는 Forgejo가 Django OIDC provider를 직접 거치도록 넘긴다.
+    테스트/이전 배포 호환을 위해 직접 세션 attach fallback은 남겨 둔다.
     """
     next_url = resolve_next_url(request, "/")
     resolved_lang = resolve_ui_lang(request)
@@ -13246,7 +13561,10 @@ def handrive_gitea_sso_relay(request):
             return response
         login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
         return redirect(f"{login_url}?{urlencode({'next': next_url})}")
-    response = _build_forgejo_authenticated_redirect(next_url, request.user)
+    if _is_forgejo_oidc_sso_enabled():
+        response = _build_forgejo_oidc_login_redirect(next_url)
+    else:
+        response = _build_forgejo_authenticated_redirect(next_url, request.user)
     if is_probe:
         response.set_cookie(
             HANPLANET_SSO_PROBE_ATTEMPTED_COOKIE_NAME,
@@ -13446,7 +13764,7 @@ def handrive_login(request, ui_lang=None):
                 target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user)
                 if _is_force_password_change_required(authed_user):
                     return _render_password_change_for_temp_login(authed_user, target_url, captcha_was_shown=True)
-                requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+                requires_direct_attach = _requires_direct_forgejo_attach(target_url)
                 forgejo_session_key = None
                 if requires_direct_attach:
                     forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(authed_user)
@@ -13488,7 +13806,7 @@ def handrive_login(request, ui_lang=None):
             target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, authed_user)
             if _is_force_password_change_required(authed_user):
                 return _render_password_change_for_temp_login(authed_user, target_url, captcha_was_shown=False)
-            requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+            requires_direct_attach = _requires_direct_forgejo_attach(target_url)
             forgejo_session_key = None
             if requires_direct_attach:
                 forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(authed_user)
@@ -13757,6 +14075,7 @@ def handrive_forgot_password(request, ui_lang=None):
 
         user = _resolve_handrive_login_target_user(username)
         should_send = bool(user and getattr(user, "is_active", False) and str(getattr(user, "email", "") or "").strip())
+        reset_logged_out_current_session = False
         if should_send:
             old_password_hash = user.password
             old_force_password_change = _is_force_password_change_required(user)
@@ -13766,7 +14085,6 @@ def handrive_forgot_password(request, ui_lang=None):
                 with transaction.atomic():
                     user.save(update_fields=["password"])
                     _set_force_password_change_required(user, True)
-                    _revoke_session_token(user)
                 email_sent = _send_temporary_password_email(user, temporary_password, resolved_lang)
                 if not email_sent:
                     user.password = old_password_hash
@@ -13778,6 +14096,21 @@ def handrive_forgot_password(request, ui_lang=None):
                         "임시 비밀번호 전송에 실패했습니다. 잠시 후 다시 시도해주세요.",
                     )
                     return _render_handrive_forgot_password_page(request, context, form, next_url, error_message)
+
+                # 임시 비밀번호가 발급되는 순간 기존 로그인·이메일 인증을
+                # 전 기기에서 폐기한다. 메일 발송 실패 시에는 기존 상태를
+                # 유지해야 하므로 성공 이후에만 수행한다.
+                _invalidate_user_auth_state(user)
+                current_request_user = getattr(request, "user", None)
+                if (
+                    current_request_user
+                    and current_request_user.is_authenticated
+                    and current_request_user.pk == user.pk
+                ):
+                    forgejo_session_key = str(request.COOKIES.get(FORGEJO_SESSION_COOKIE_NAME, "") or "").strip()
+                    _forgejo_server_logout(current_request_user, forgejo_session_key=forgejo_session_key)
+                    auth_logout(request)
+                    reset_logged_out_current_session = True
             except Exception:
                 logger.exception("[password-reset] Failed to issue temporary password for user %s", username)
                 try:
@@ -13800,7 +14133,13 @@ def handrive_forgot_password(request, ui_lang=None):
         request.session.modified = True
         login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
         redirect_url = f"{login_url}?{urlencode({'next': next_url or ''})}"
-        return _site_auth_modalize_response(request, redirect(redirect_url))
+        response = redirect(redirect_url)
+        if reset_logged_out_current_session:
+            # 현재 요청이 로그인 상태에서 발생한 비밀번호 재설정이라면
+            # 방금 폐기한 브라우저의 인증 쿠키도 명시적으로 삭제한다.
+            response.delete_cookie(settings.SESSION_COOKIE_NAME, path=getattr(settings, "SESSION_COOKIE_PATH", "/"))
+            _clear_device_cookie(response)
+        return _site_auth_modalize_response(request, response)
 
     if request.method == "POST":
         error_message = _first_auth_safety_error_message(form) or handrive_text.get(
@@ -13838,12 +14177,24 @@ def handrive_password_change_required(request, ui_lang=None):
     error_message = ""
     if request.method == "POST":
         if form.is_valid():
-            request.user.set_password(form.cleaned_data["password1"])
-            request.user.save(update_fields=["password"])
-            _set_force_password_change_required(request.user, False)
-            update_session_auth_hash(request, request.user)
-            target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, request.user)
-            return _site_auth_modalize_response(request, _build_post_hanplanet_login_response(target_url, request.user))
+            user = request.user
+            target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
+            user.set_password(form.cleaned_data["password1"])
+            user.save(update_fields=["password"])
+            _set_force_password_change_required(user, False)
+
+            # 임시 비밀번호 로그인 후 새 비밀번호를 확정하는 경우에도
+            # 현재 브라우저를 포함한 모든 인증 상태를 폐기하고 다시
+            # 로그인하게 한다. 그래야 모든 기기의 쿠키가 동일하게 무효화된다.
+            forgejo_session_key = str(request.COOKIES.get(FORGEJO_SESSION_COOKIE_NAME, "") or "").strip()
+            _forgejo_server_logout(user, forgejo_session_key=forgejo_session_key)
+            _invalidate_user_auth_state(user)
+            auth_logout(request)
+
+            login_url = reverse("main:handrive_login_lang", kwargs={"ui_lang": resolved_lang})
+            redirect_url = f"{login_url}?{urlencode({'next': target_url or ''})}"
+            response = _build_forgejo_logged_out_redirect(redirect_url)
+            return _site_auth_modalize_response(request, response)
         error_message = (
             _first_auth_safety_error_message(form)
             or form.errors.get("password2", [None])[0]
@@ -13960,7 +14311,7 @@ def handrive_signup(request, ui_lang=None):
             if authed_user is None:
                 authed_user = user
             target_url = _resolve_handrive_post_login_url(request, resolved_lang, next_url, user)
-            requires_direct_attach = not _is_forgejo_oauth_handoff_url(target_url)
+            requires_direct_attach = _requires_direct_forgejo_attach(target_url)
             forgejo_session_key = None
             if requires_direct_attach:
                 forgejo_session_key, forgejo_error_code = _prepare_forgejo_login_session(authed_user)
@@ -14142,10 +14493,19 @@ def handrive_logout(request, ui_lang=None):
     context = handrive_common_context(request, resolved_lang)
     next_url = resolve_next_url(request, context["handrive_base_url"])
     forgejo_session_key = str(request.COOKIES.get(FORGEJO_SESSION_COOKIE_NAME, "") or "").strip()
+    device_token = _read_device_token(request)
     # Forgejo 세션/토큰 서버사이드 선제 삭제 (로그아웃 전에 user 정보 참조)
     _forgejo_server_logout(request.user, forgejo_session_key=forgejo_session_key)
-    # session_token 무효화 → 기존 세션이 남아있어도 OAuth dispatch에서 차단
-    _revoke_session_token(request.user)
+    # 로그아웃은 현재 브라우저의 Django 세션과 신뢰 기기만 폐기한다.
+    # 계정 세대 토큰은 유지해야 다른 브라우저·기기의 로그인 상태가
+    # 영향을 받지 않는다.
+    if request.user.is_authenticated and device_token:
+        try:
+            from main.models import TrustedDevice
+
+            TrustedDevice.objects.filter(user=request.user, device_token=device_token).delete()
+        except Exception:
+            logger.exception("Failed to revoke current trusted device for user %s", request.user.pk)
     auth_logout(request)
     return _build_forgejo_logged_out_redirect(next_url)
 
@@ -14170,9 +14530,24 @@ def _forgejo_server_logout(user, forgejo_session_key: str = ""):
 @with_request_handrive_root
 @require_handrive_superuser
 def handrive_ops_apply_static(request, ui_lang=None):
+    """Apply source/static changes using the active production runtime.
+
+    Docker production is rebuilt by the host launchd watchdog after this view
+    queues a marker on the persistent Django volume.  The native fallback keeps
+    the historical collectstatic + Gunicorn kickstart flow.
+    """
     resolved_lang = resolve_ui_lang(request, ui_lang)
     context = handrive_common_context(request, resolved_lang)
     next_url = resolve_next_url(request, context["handrive_base_url"])
+
+    if is_docker_runtime():
+        try:
+            request_docker_stack_deploy()
+        except OSError:
+            logger.exception("Failed to queue Docker static/resource deployment")
+            return json_error("Docker 운영 반영 요청을 기록하지 못했습니다.", status=503)
+        return redirect(next_url)
+
     venv_python = settings.BASE_DIR / ".venv" / "bin" / "python"
     python_executable = str(venv_python) if venv_python.exists() else sys.executable
 
@@ -15091,6 +15466,8 @@ def handrive_write(request, ui_lang=None):
                 )
             except Http404:
                 raise Http404("수정할 파일을 찾을 수 없습니다.")
+            if initial_extension in SVG_EDITOR_EXTENSIONS:
+                write_editor_kind = "svg"
         elif git_virtual is None:
             try:
                 file_path, original_relative_path = resolve_path(original_relative_path, must_exist=True)
@@ -15101,7 +15478,13 @@ def handrive_write(request, ui_lang=None):
             file_name = file_path.name
             initial_filename = file_path.stem
             initial_extension = file_path.suffix.lower() if file_path.suffix else DOCS_FILE_EXTENSION
-            if initial_extension in IMAGE_EDITOR_EXTENSIONS:
+            if initial_extension in SVG_EDITOR_EXTENSIONS:
+                write_editor_kind = "svg"
+                try:
+                    initial_content = file_path.read_text(encoding="utf-8")
+                except UnicodeDecodeError:
+                    raise Http404("수정할 파일을 찾을 수 없습니다.")
+            elif initial_extension in IMAGE_EDITOR_EXTENSIONS:
                 write_editor_kind = "image"
             elif initial_extension in HANDRIVE_AUDIO_EDITOR_EXTENSIONS:
                 write_editor_kind = "audio"
@@ -15128,6 +15511,8 @@ def handrive_write(request, ui_lang=None):
                 ).decode("utf-8")
             except UnicodeDecodeError:
                 raise Http404("수정할 파일을 찾을 수 없습니다.")
+            if initial_extension in SVG_EDITOR_EXTENSIONS:
+                write_editor_kind = "svg"
             write_requires_commit_message = True
             write_public_direct_save = True
         tutorial_scope_allowed = (
@@ -15355,6 +15740,27 @@ HANDRIVE_JSON_ERROR_MESSAGE_TRANSLATIONS = {
     "비디오 저장 시간이 초과되었습니다.": "Video saving timed out.",
     "오디오 저장에 실패했습니다.": "Failed to save audio.",
     "비디오 저장에 실패했습니다.": "Failed to save video.",
+    "SVG 내용 형식이 올바르지 않습니다.": "The SVG content format is invalid.",
+    "SVG 파일 크기가 너무 크거나 비어 있습니다.": "The SVG is too large or empty.",
+    "SVG 문서에 사용할 수 없는 선언이 있습니다.": "The SVG contains a disallowed declaration.",
+    "올바른 SVG 문서가 아닙니다.": "This is not a valid SVG document.",
+    "SVG 루트 요소가 필요합니다.": "An SVG root element is required.",
+    "SVG 요소가 너무 많습니다.": "The SVG contains too many elements.",
+    "SVG 요소 중첩이 너무 깊습니다.": "The SVG element nesting is too deep.",
+    "SVG 속성이 너무 많습니다.": "The SVG contains too many attributes.",
+    "SVG 속성 값이 너무 큽니다.": "An SVG attribute value is too large.",
+    "SVG 속성 값이 올바르지 않습니다.": "An SVG attribute value is invalid.",
+    "SVG 문서에 사용할 수 없는 요소가 있습니다.": "The SVG contains a disallowed element.",
+    "SVG 경로 데이터가 너무 큽니다.": "The SVG path data is too large.",
+    "SVG 이벤트 속성은 사용할 수 없습니다.": "SVG event attributes are not allowed.",
+    "SVG 애플리케이션 제어 속성은 사용할 수 없습니다.": "SVG application control attributes are not allowed.",
+    "SVG 외부 리소스 URL은 사용할 수 없습니다.": "External resource URLs are not allowed in SVG files.",
+    "SVG 스타일에 사용할 수 없는 값이 있습니다.": "The SVG style contains a disallowed value.",
+    "SVG style 속성은 사용할 수 없습니다.": "SVG style attributes are not allowed.",
+    "SVG 오브젝트 ID가 올바르지 않습니다.": "An SVG object ID is invalid.",
+    "SVG viewBox 형식이 올바르지 않습니다.": "The SVG viewBox format is invalid.",
+    "SVG viewBox 값이 올바르지 않습니다.": "The SVG viewBox values are invalid.",
+    "SVG 문서 크기 값이 올바르지 않습니다.": "The SVG document dimensions are invalid.",
 }
 
 
@@ -15368,17 +15774,16 @@ def _handrive_json_error_messages(message):
     return {"ko": text, "en": text}
 
 
-def json_error(message, status=400):
+def json_error(message, status=400, **extra):
     messages = _handrive_json_error_messages(message)
-    return JsonResponse(
-        {
-            "ok": False,
-            "error": str(message or ""),
-            "error_message": str(message or ""),
-            "error_messages": messages,
-        },
-        status=status,
-    )
+    payload = {
+        "ok": False,
+        "error": str(message or ""),
+        "error_message": str(message or ""),
+        "error_messages": messages,
+    }
+    payload.update(extra)
+    return JsonResponse(payload, status=status)
 
 
 def get_folder_icon_owner_key_for_user(user) -> str:
@@ -18484,6 +18889,8 @@ def handrive_api_save(request):
             fallback_extension=target_extension,
         )
         target_extension = resolved_extension
+        if target_extension in SVG_EDITOR_EXTENSIONS:
+            validate_handrive_svg_content(content)
         if git_virtual_target is not None:
             destination_repo_relative = (
                 f"{git_virtual_target['repo_relative_path']}/{filename}{target_extension}"
@@ -18628,23 +19035,37 @@ def handrive_api_save(request):
 HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS = {".csv", ".xls", ".xlsx"}
 
 
+def _handrive_file_version(file_path: Path) -> str:
+    """파일을 다시 읽지 않고 충돌 검사에 사용할 파일 메타데이터 버전."""
+    stat = file_path.stat()
+    return f"{stat.st_size:x}-{stat.st_mtime_ns:x}-{stat.st_ino:x}"
+
+
 @require_http_methods(["POST"])
 @csrf_protect
 @with_request_handrive_root
 def handrive_api_spreadsheet_save(request):
     """Handsontable 기반 스프레드시트 에디터의 바이너리 저장 API."""
     try:
-        payload = parse_json_body(request)
+        is_multipart = request.content_type.startswith("multipart/form-data")
+        payload = request.POST if is_multipart else parse_json_body(request)
         original_relative_path = normalize_relative_path(payload.get("original_path"), allow_empty=True)
         target_dir = normalize_relative_path(payload.get("target_dir"), allow_empty=True)
         requested_extension = normalize_file_extension(payload.get("extension"), allow_empty=True)
-        data_base64 = payload.get("data_base64", "")
-        if not isinstance(data_base64, str) or not data_base64.strip():
-            raise ValueError("저장할 스프레드시트 데이터가 없습니다.")
-        try:
-            file_bytes = base64.b64decode(data_base64.encode("ascii"), validate=True)
-        except (binascii.Error, UnicodeEncodeError) as exc:
-            raise ValueError("스프레드시트 데이터 형식이 올바르지 않습니다.") from exc
+        expected_source_version = str(payload.get("source_version") or "").strip()
+        if is_multipart:
+            uploaded_file = request.FILES.get("file")
+            if uploaded_file is None:
+                raise ValueError("저장할 스프레드시트 데이터가 없습니다.")
+            file_bytes = uploaded_file.read()
+        else:
+            data_base64 = payload.get("data_base64", "")
+            if not isinstance(data_base64, str) or not data_base64.strip():
+                raise ValueError("저장할 스프레드시트 데이터가 없습니다.")
+            try:
+                file_bytes = base64.b64decode(data_base64.encode("ascii"), validate=True)
+            except (binascii.Error, UnicodeEncodeError) as exc:
+                raise ValueError("스프레드시트 데이터 형식이 올바르지 않습니다.") from exc
 
         if requested_extension and requested_extension not in HANDRIVE_SPREADSHEET_EDITOR_EXTENSIONS:
             raise ValueError("지원하지 않는 스프레드시트 확장자입니다.")
@@ -18671,6 +19092,15 @@ def handrive_api_spreadsheet_save(request):
             if not has_handrive_write_access(request, source_relative):
                 return json_error("파일을 수정할 권한이 없습니다.", status=403)
             source_is_public_write = is_handrive_public_write_enabled(request, source_relative)
+            if expected_source_version:
+                current_source_version = _handrive_file_version(source_path)
+                if current_source_version != expected_source_version:
+                    return json_error(
+                        "파일이 다른 곳에서 변경되었습니다. 새로고침 후 다시 시도해주세요.",
+                        status=409,
+                        code="source_version_conflict",
+                        current_version=current_source_version,
+                    )
         else:
             if not has_handrive_directory_write_access(request, target_dir_rel):
                 return json_error("파일을 수정할 권한이 없습니다.", status=403)
@@ -18771,6 +19201,7 @@ def handrive_api_spreadsheet_save(request):
             "slug_path": destination_slug,
             "view_url": view_url,
             "list_url": list_url,
+            "source_version": _handrive_file_version(destination),
         }
     )
 
@@ -18868,6 +19299,7 @@ def handrive_api_download(request):
     except ValueError:
         raise Http404("다운로드할 파일을 찾을 수 없습니다.")
     trash_download_item = None
+    download_version = ""
     if is_handrive_trash_item_relative(rel_path) and not shared_context:
         try:
             _trash_dir, _trash_root, _trash_items, resolved_items = _get_scoped_handrive_trash_items(request, [rel_path])
@@ -18889,6 +19321,7 @@ def handrive_api_download(request):
         filename = trash_download_item["name"]
         file_handle = file_path.open("rb")
         file_size = file_path.stat().st_size
+        download_version = _handrive_file_version(file_path)
     elif google_drive is not None:
         if google_drive["is_root"]:
             raise Http404("다운로드할 파일을 찾을 수 없습니다.")
@@ -18927,6 +19360,7 @@ def handrive_api_download(request):
         filename = file_path.name
         file_handle = file_path.open("rb")
         file_size   = file_path.stat().st_size
+        download_version = _handrive_file_version(file_path)
     else:
         if git_virtual["kind"] != "branch_file":
             raise Http404("다운로드할 파일을 찾을 수 없습니다.")
@@ -18946,17 +19380,29 @@ def handrive_api_download(request):
 
     ext = Path(filename).suffix.lower()
     if ext in _STREAM_MIME:
-        return _stream_response(request, file_handle, file_size, _STREAM_MIME[ext], filename)
+        response = _stream_response(request, file_handle, file_size, _STREAM_MIME[ext], filename)
+        if download_version:
+            response["X-Handrive-Version"] = download_version
+            response["ETag"] = f'"{download_version}"'
+        return response
 
     if ext in _DOWNLOAD_MIME_BY_EXTENSION:
-        return FileResponse(
+        response = FileResponse(
             file_handle,
             as_attachment=True,
             filename=filename,
             content_type=_DOWNLOAD_MIME_BY_EXTENSION[ext],
         )
+        if download_version:
+            response["X-Handrive-Version"] = download_version
+            response["ETag"] = f'"{download_version}"'
+        return response
 
-    return FileResponse(file_handle, as_attachment=True, filename=filename)
+    response = FileResponse(file_handle, as_attachment=True, filename=filename)
+    if download_version:
+        response["X-Handrive-Version"] = download_version
+        response["ETag"] = f'"{download_version}"'
+    return response
 
 
 # ── HLS 스트리밍 API ──────────────────────────────────────────────────────

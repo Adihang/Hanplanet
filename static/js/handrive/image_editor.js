@@ -53,6 +53,12 @@
         redoHistory: [],
         MAX_UNDO: 50,
         isDirty: false,
+        currentRevision: 0,
+        savedRevision: 0,
+        nextRevision: 0,
+        imageReady: false,
+        isSaving: false,
+        isDisabled: false,
         textOverlayActive: false,
         textFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif',
         textSize: 18,
@@ -65,6 +71,7 @@
         imageLoadToken: 0,
         backgroundRemoveUrl: "",
         backgroundRemoveRunning: false,
+        backgroundRemoveSessionToken: 0,
         forcePngOnSave: false,
         panDragging: false,
         panStartClientX: 0,
@@ -100,14 +107,17 @@
     // ── 초기화 ────────────────────────────────────────────────────────────
     function init(options) {
         var opts = options || {};
+        invalidateBackgroundRemoveSession();
         state.entry = opts.entry || null;
         state.onDirtyChange = opts.onDirtyChange || null;
         state.onImageLoad = typeof opts.onImageLoad === "function" ? opts.onImageLoad : null;
         state.onImageLoadError = typeof opts.onImageLoadError === "function" ? opts.onImageLoadError : null;
         state.backgroundRemoveUrl = opts.backgroundRemoveUrl || "";
-        state.backgroundRemoveRunning = false;
         state.forcePngOnSave = false;
         state.panDragging = false;
+        state.imageReady = false;
+        state.isSaving = false;
+        setDisabled(false);
 
         imageEditorSurface = document.getElementById("handrive-image-editor-surface");
         mainCanvas    = document.getElementById("ie-main-canvas");
@@ -136,6 +146,9 @@
         state.isDirty = false;
         state.undoHistory = [];
         state.redoHistory = [];
+        state.currentRevision = 0;
+        state.savedRevision = 0;
+        state.nextRevision = 0;
         state.selection = null;
         state.selectionMask = null;
         state.selectionImageData = null;
@@ -178,10 +191,9 @@
             cancelAnimationFrame(state.marchingRafId);
             state.marchingRafId = null;
         }
-        if (boundKeyDown)     document.removeEventListener("keydown",      boundKeyDown);
-        if (boundWheel)       canvasArea && canvasArea.removeEventListener("wheel", boundWheel);
-        if (boundContextMenu) overlayCanvas && overlayCanvas.removeEventListener("contextmenu", boundContextMenu);
-        boundKeyDown = boundWheel = boundContextMenu = null;
+        if (boundKeyDown) document.removeEventListener("keydown", boundKeyDown);
+        boundKeyDown = null;
+        keyboardAlreadyBound = false;
 
         if (resizeHandleBoundMove) document.removeEventListener("pointermove", resizeHandleBoundMove);
         if (resizeHandleBoundUp)   document.removeEventListener("pointerup",   resizeHandleBoundUp);
@@ -206,11 +218,13 @@
         state.onImageLoadError = null;
         state.imageLoadToken += 1;
         state.backgroundRemoveUrl = "";
-        state.backgroundRemoveRunning = false;
+        invalidateBackgroundRemoveSession();
         state.forcePngOnSave = false;
         state.panDragging = false;
+        state.imageReady = false;
+        state.isSaving = false;
         if (canvasArea) canvasArea.classList.remove("is-panning");
-        setEditorBusy(false);
+        setDisabled(false);
         state.isDirty = false;
     }
 
@@ -226,7 +240,8 @@
             resizeCanvasTo(w, h);
             mainCtx.drawImage(img, 0, 0);
             state.MAX_UNDO = (w > 2048 || h > 2048) ? 20 : 50;
-            commitHistoryState();
+            commitHistoryState({ markSaved: true });
+            state.imageReady = true;
             updateSizeDisplay();
             // 레이아웃 완료 후 zoomFit 실행
             setTimeout(function () {
@@ -346,6 +361,7 @@
         });
 
         ribbon.querySelectorAll(".ie-tool-btn[data-tool]").forEach(function (btn) {
+            btn.setAttribute("aria-pressed", btn.dataset.tool === state.activeTool ? "true" : "false");
             btn.addEventListener("click", function (event) {
                 event.preventDefault();
                 setActiveTool(btn.dataset.tool);
@@ -361,11 +377,14 @@
         });
 
         ribbon.querySelectorAll(".ie-mode-btn[data-shape-mode]").forEach(function (btn) {
+            btn.setAttribute("aria-pressed", btn.dataset.shapeMode === state.shapeMode ? "true" : "false");
             btn.addEventListener("click", function (event) {
                 event.preventDefault();
                 state.shapeMode = btn.dataset.shapeMode;
                 ribbon.querySelectorAll(".ie-mode-btn[data-shape-mode]").forEach(function (b) {
-                    b.classList.toggle("is-active", b === btn);
+                    var isActive = b === btn;
+                    b.classList.toggle("is-active", isActive);
+                    b.setAttribute("aria-pressed", isActive ? "true" : "false");
                 });
             });
         });
@@ -447,7 +466,9 @@
         var ribbon = document.getElementById("ie-ribbon");
         if (ribbon) {
             ribbon.querySelectorAll(".ie-tool-btn[data-tool]").forEach(function (btn) {
-                btn.classList.toggle("is-active", btn.dataset.tool === tool);
+                var isActive = btn.dataset.tool === tool;
+                btn.classList.toggle("is-active", isActive);
+                btn.setAttribute("aria-pressed", isActive ? "true" : "false");
             });
         }
         if (overlayCanvas) {
@@ -1651,13 +1672,21 @@
     }
 
     // ── Undo / Redo ───────────────────────────────────────────────────────
-    function commitHistoryState() {
+    function commitHistoryState(options) {
         if (!mainCanvas) return;
+        var settings = options || {};
         var snapshot = mainCtx.getImageData(0, 0, state.canvasWidth, state.canvasHeight);
-        state.undoHistory.push(snapshot);
+        var entry = {
+            imageData: snapshot,
+            revision: state.nextRevision + 1,
+        };
+        state.nextRevision = entry.revision;
+        state.currentRevision = entry.revision;
+        state.undoHistory.push(entry);
         if (state.undoHistory.length > state.MAX_UNDO) state.undoHistory.shift();
         state.redoHistory = [];
-        setDirty(true);
+        if (settings.markSaved) state.savedRevision = entry.revision;
+        syncDirtyFromRevision();
     }
 
     function undoEditorChange() {
@@ -1665,20 +1694,33 @@
         var current = state.undoHistory.pop();
         state.redoHistory.push(current);
         var prev = state.undoHistory[state.undoHistory.length - 1];
-        resizeCanvasTo(prev.width, prev.height);
-        mainCtx.putImageData(prev, 0, 0);
+        resizeCanvasTo(prev.imageData.width, prev.imageData.height);
+        mainCtx.putImageData(prev.imageData, 0, 0);
+        state.currentRevision = prev.revision;
         clearSelection();
         updateSizeDisplay();
+        syncDirtyFromRevision();
     }
 
     function redoEditorChange() {
         if (!state.redoHistory.length) return;
         var next = state.redoHistory.pop();
         state.undoHistory.push(next);
-        resizeCanvasTo(next.width, next.height);
-        mainCtx.putImageData(next, 0, 0);
+        resizeCanvasTo(next.imageData.width, next.imageData.height);
+        mainCtx.putImageData(next.imageData, 0, 0);
+        state.currentRevision = next.revision;
         clearSelection();
         updateSizeDisplay();
+        syncDirtyFromRevision();
+    }
+
+    function syncDirtyFromRevision() {
+        setDirty(state.currentRevision !== state.savedRevision);
+    }
+
+    function markRevisionSaved(revision) {
+        state.savedRevision = revision;
+        syncDirtyFromRevision();
     }
 
     // ── 이미지 조작 ───────────────────────────────────────────────────────
@@ -1885,8 +1927,22 @@
     }
 
     function setDirty(isDirty) {
-        state.isDirty = isDirty;
-        if (state.onDirtyChange) state.onDirtyChange(isDirty);
+        state.isDirty = Boolean(isDirty);
+        notifyDirtyChange();
+    }
+
+    function notifyDirtyChange() {
+        if (state.onDirtyChange) {
+            state.onDirtyChange(state.isDirty || state.backgroundRemoveRunning);
+        }
+    }
+
+    function setDisabled(disabled) {
+        state.isDisabled = Boolean(disabled);
+        if (!imageEditorSurface) return;
+        imageEditorSurface.inert = state.isDisabled;
+        imageEditorSurface.classList.toggle("is-disabled", state.isDisabled);
+        imageEditorSurface.setAttribute("aria-disabled", state.isDisabled ? "true" : "false");
     }
 
     function getEditorText(key, fallback) {
@@ -1932,11 +1988,32 @@
         if (overlay) overlay.hidden = !busy;
     }
 
-    function drawBlobToCanvas(blob, onDone) {
+    function invalidateBackgroundRemoveSession() {
+        state.backgroundRemoveSessionToken += 1;
+        state.backgroundRemoveRunning = false;
+        setActionButtonBusy("remove-bg", false);
+        setEditorBusy(false);
+    }
+
+    function isBackgroundRemoveSessionCurrent(sessionToken) {
+        return state.backgroundRemoveRunning && sessionToken === state.backgroundRemoveSessionToken;
+    }
+
+    function finishBackgroundRemoveSession(sessionToken) {
+        if (!isBackgroundRemoveSessionCurrent(sessionToken)) return false;
+        state.backgroundRemoveRunning = false;
+        setActionButtonBusy("remove-bg", false);
+        setEditorBusy(false);
+        notifyDirtyChange();
+        return true;
+    }
+
+    function drawBlobToCanvas(blob, sessionToken, onDone) {
         var img = new Image();
         var objectUrl = URL.createObjectURL(blob);
         img.onload = function () {
             URL.revokeObjectURL(objectUrl);
+            if (!isBackgroundRemoveSessionCurrent(sessionToken)) return;
             state.canvasWidth = img.naturalWidth || img.width;
             state.canvasHeight = img.naturalHeight || img.height;
             resizeCanvasTo(state.canvasWidth, state.canvasHeight);
@@ -1945,31 +2022,33 @@
             clearSelection();
             updateSizeDisplay();
             commitHistoryState();
-            if (typeof onDone === "function") onDone();
+            if (typeof onDone === "function") onDone(true);
         };
         img.onerror = function () {
             URL.revokeObjectURL(objectUrl);
-            window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
-            if (typeof onDone === "function") onDone();
+            if (!isBackgroundRemoveSessionCurrent(sessionToken)) return;
+            if (typeof onDone === "function") onDone(false);
         };
         img.src = objectUrl;
     }
 
     function removeBackground() {
-        if (!mainCanvas || state.backgroundRemoveRunning) return;
+        if (!mainCanvas || !state.imageReady || state.backgroundRemoveRunning || state.isSaving || state.isDisabled) return;
         if (!state.backgroundRemoveUrl) {
             window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
             return;
         }
         if (state.selectionFloating) flattenFloatingSelection();
+        var sessionToken = state.backgroundRemoveSessionToken + 1;
+        state.backgroundRemoveSessionToken = sessionToken;
         state.backgroundRemoveRunning = true;
+        notifyDirtyChange();
         setActionButtonBusy("remove-bg", true);
         setEditorBusy(true);
         mainCanvas.toBlob(function (blob) {
+            if (!isBackgroundRemoveSessionCurrent(sessionToken)) return;
             if (!blob) {
-                state.backgroundRemoveRunning = false;
-                setActionButtonBusy("remove-bg", false);
-                setEditorBusy(false);
+                finishBackgroundRemoveSession(sessionToken);
                 window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
                 return;
             }
@@ -1986,6 +2065,7 @@
                 body: fd,
             })
                 .then(function (response) {
+                    if (!isBackgroundRemoveSessionCurrent(sessionToken)) return null;
                     if (!response.ok) {
                         return response.json().catch(function () { return {}; }).then(function (data) {
                             throw new Error(selectServerMessage(data, getEditorText("image_editor_remove_bg_error", "배경제거 실패")));
@@ -1994,17 +2074,20 @@
                     return response.blob();
                 })
                 .then(function (resultBlob) {
-                    drawBlobToCanvas(resultBlob, function () {
-                        state.forcePngOnSave = true;
-                        state.backgroundRemoveRunning = false;
-                        setActionButtonBusy("remove-bg", false);
-                        setEditorBusy(false);
+                    if (!resultBlob || !isBackgroundRemoveSessionCurrent(sessionToken)) return;
+                    drawBlobToCanvas(resultBlob, sessionToken, function (succeeded) {
+                        if (!isBackgroundRemoveSessionCurrent(sessionToken)) return;
+                        if (succeeded) {
+                            state.forcePngOnSave = true;
+                        }
+                        finishBackgroundRemoveSession(sessionToken);
+                        if (!succeeded) {
+                            window.alert(getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
+                        }
                     });
                 })
                 .catch(function (error) {
-                    state.backgroundRemoveRunning = false;
-                    setActionButtonBusy("remove-bg", false);
-                    setEditorBusy(false);
+                    if (!finishBackgroundRemoveSession(sessionToken)) return;
                     window.alert(error && error.message ? error.message : getEditorText("image_editor_remove_bg_error", "배경제거 실패"));
                 });
         }, "image/png");
@@ -2015,16 +2098,10 @@
         if (keyboardAlreadyBound) return;
         keyboardAlreadyBound = true;
         boundKeyDown = function (e) {
+            if (state.isDisabled || state.backgroundRemoveRunning) return;
             var tag = e.target.tagName;
             var isEditing = tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable;
             var ctrl = e.ctrlKey || e.metaKey;
-
-            if (ctrl && !e.shiftKey && e.key.toLowerCase() === "s") {
-                e.preventDefault();
-                var saveBtn = document.getElementById("handrive-list-save-btn");
-                if (saveBtn) saveBtn.click();
-                return;
-            }
 
             if (isEditing) return;
 
@@ -2215,14 +2292,28 @@
         var saveOptions = options || {};
         var targetFilename = String(saveOptions.filename || "").trim();
         if (!mainCanvas) { onDone && onDone({ ok: false, error: "캔버스 없음" }); return; }
+        if (!state.imageReady) { onDone && onDone({ ok: false, error: "이미지 로드가 완료되지 않았습니다." }); return; }
+        if (state.backgroundRemoveRunning) {
+            onDone && onDone({
+                ok: false,
+                error: getEditorText("image_editor_remove_bg_processing", "배경제거 중..."),
+                busy: true,
+            });
+            return;
+        }
+        if (state.isSaving) { onDone && onDone({ ok: false, error: "이미 저장 중입니다." }); return; }
+        state.isSaving = true;
+        var saveSessionToken = state.imageLoadToken;
         if (state.selectionFloating) {
             flattenFloatingSelection();
             clearSelection();
         }
+        var saveRevision = state.currentRevision;
         var selectionCanvas = createSelectionExportCanvas();
         if (selectionCanvas) {
             selectionCanvas.toBlob(function (blob) {
-                if (!blob) { onDone && onDone({ ok: false, error: "변환 실패" }); return; }
+                if (saveSessionToken !== state.imageLoadToken) return;
+                if (!blob) { state.isSaving = false; onDone && onDone({ ok: false, error: "변환 실패" }); return; }
                 var stem = (path.split("/").pop() || "image").replace(/\.[^.]+$/, "") || "image";
                 var fd = new FormData();
                 fd.append("image_blob", blob, stem + ".png");
@@ -2233,8 +2324,17 @@
                 fd.append("csrfmiddlewaretoken", csrfToken);
                 fetch(saveUrl, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body: fd })
                     .then(function (r) { return r.json(); })
-                    .then(function (data) { if (data.ok) setDirty(false); onDone && onDone(data); })
-                    .catch(function (err) { onDone && onDone({ ok: false, error: String(err) }); });
+                    .then(function (data) {
+                        if (saveSessionToken !== state.imageLoadToken) return;
+                        state.isSaving = false;
+                        if (data.ok) markRevisionSaved(saveRevision);
+                        onDone && onDone(data);
+                    })
+                    .catch(function (err) {
+                        if (saveSessionToken !== state.imageLoadToken) return;
+                        state.isSaving = false;
+                        onDone && onDone({ ok: false, error: String(err) });
+                    });
             }, "image/png");
             return;
         }
@@ -2244,7 +2344,8 @@
             ? "image/jpeg" : ext.toLowerCase() === "webp" ? "image/webp" : "image/png";
 
         mainCanvas.toBlob(function (blob) {
-            if (!blob) { onDone && onDone({ ok: false, error: "변환 실패" }); return; }
+            if (saveSessionToken !== state.imageLoadToken) return;
+            if (!blob) { state.isSaving = false; onDone && onDone({ ok: false, error: "변환 실패" }); return; }
             var filename = path.split("/").pop() || "image.png";
             if (forcePng) filename = filename.replace(/\.[^.]+$/, "") + ".png";
             var fd = new FormData();
@@ -2255,8 +2356,20 @@
             fd.append("csrfmiddlewaretoken", csrfToken);
             fetch(saveUrl, { method: "POST", headers: { "X-Requested-With": "XMLHttpRequest" }, body: fd })
                 .then(function (r) { return r.json(); })
-                .then(function (data) { if (data.ok) { state.forcePngOnSave = false; setDirty(false); } onDone && onDone(data); })
-                .catch(function (err) { onDone && onDone({ ok: false, error: String(err) }); });
+                .then(function (data) {
+                    if (saveSessionToken !== state.imageLoadToken) return;
+                    state.isSaving = false;
+                    if (data.ok) {
+                        state.forcePngOnSave = false;
+                        markRevisionSaved(saveRevision);
+                    }
+                    onDone && onDone(data);
+                })
+                .catch(function (err) {
+                    if (saveSessionToken !== state.imageLoadToken) return;
+                    state.isSaving = false;
+                    onDone && onDone({ ok: false, error: String(err) });
+                });
         }, mime);
     }
 
@@ -2311,7 +2424,9 @@
         init: init,
         destroy: destroy,
         saveToServer: saveToServer,
-        getIsDirty: function () { return state.isDirty; },
+        getIsDirty: function () { return state.isDirty || state.backgroundRemoveRunning; },
+        getIsReady: function () { return state.imageReady; },
+        setDisabled: setDisabled,
         getSaveExtensionOverride: function () {
             return state.forcePngOnSave || state.selectionFloating ? ".png" : "";
         },

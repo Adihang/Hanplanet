@@ -9,14 +9,14 @@
         <div class="handrive-folder-icon-preview-wrap" id="handrive-folder-icon-preview-wrap" hidden>
             <img class="handrive-folder-icon-preview-img" id="handrive-folder-icon-preview-img" src="" alt="">
         </div>
-        <label class="handrive-field handrive-field-full handrive-folder-icon-file-field" for="handrive-folder-icon-file-input">
+        <div class="handrive-field handrive-field-full handrive-folder-icon-file-field">
             <span class="handrive-field-label">{{ handrive_text.folder_icon_file_label }}</span>
             <input class="handrive-folder-icon-file-input" type="file" id="handrive-folder-icon-file-input" accept="image/*" aria-describedby="handrive-folder-icon-file-name">
             <span class="handrive-folder-icon-file-control">
-                <span class="handrive-folder-icon-file-button" aria-hidden="true">{{ handrive_text.folder_icon_file_button }}</span>
+                <button type="button" class="handrive-folder-icon-file-button" id="handrive-folder-icon-file-button">{{ handrive_text.folder_icon_file_button }}</button>
                 <span class="handrive-folder-icon-file-name" id="handrive-folder-icon-file-name" data-empty-label="{{ handrive_text.folder_icon_file_empty }}">{{ handrive_text.folder_icon_file_empty }}</span>
             </span>
-        </label>
+        </div>
         <div class="handrive-popup-actions">
             <button type="button" class="ui-btn handrive-folder-icon-delete-btn" id="handrive-folder-icon-delete-btn" hidden>{{ handrive_text.folder_icon_delete_button }}</button>
             <button type="button" class="ui-btn" id="handrive-folder-icon-cancel-btn">{{ handrive_text.cancel }}</button>

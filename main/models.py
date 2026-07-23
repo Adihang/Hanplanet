@@ -866,7 +866,8 @@ class UserProfile(models.Model):
         null=True,
         blank=True,
     )
-    # 로그인마다 새 토큰 발급, 로그아웃 시 초기화 → 기존 세션 일괄 무효화
+    # 로그인 세션이 공유하는 계정 세대 토큰. 로그인마다 재발급하지 않고
+    # 비밀번호 재설정처럼 전체 인증 상태를 폐기할 때만 초기화한다.
     session_token = models.CharField(
         "세션 토큰",
         max_length=64,

@@ -6,6 +6,7 @@ DOCKER_BIN="${DOCKER_BIN:-/opt/homebrew/bin/docker}"
 LAUNCHCTL_BIN="${LAUNCHCTL_BIN:-/bin/launchctl}"
 DOCKER_STACK_LABEL="${HANPLANET_DOCKER_STACK_LABEL:-com.hanplanet.docker-stack}"
 LOCK_DIR="${HANPLANET_DOCKER_WATCHDOG_LOCK_DIR:-/tmp/hanplanet-docker-health-watchdog.lock}"
+DEPLOY_REQUEST_PATH="${HANPLANET_DOCKER_DEPLOY_REQUEST_PATH:-/data/django/.hanplanet-docker-stack-deploy-request}"
 
 timestamp() {
   date "+%Y-%m-%dT%H:%M:%S%z"
@@ -61,6 +62,27 @@ restart_services=""
 checked_count=0
 starting_count=0
 unhealthy_count=0
+failed=0
+
+# Django cannot access the host Docker socket by design.  The superuser-only
+# maintenance button leaves this marker on the persistent Django volume; this
+# host-side watchdog owns the rebuild and service replacement. Keep the marker
+# token so a second click during a build is not accidentally discarded.
+deploy_request_token="$("$DOCKER_BIN" compose exec -T django sh -c 'cat "$1"' sh "$DEPLOY_REQUEST_PATH" 2>/dev/null || true)"
+if [ -n "$deploy_request_token" ]; then
+  log "static/resource deployment requested; rebuilding Django, Celery, and Nginx services"
+  if "$DOCKER_BIN" compose up -d --build django celery celery-beat nginx; then
+    if "$DOCKER_BIN" compose exec -T django sh -c '[ "$(cat "$1" 2>/dev/null)" = "$2" ] && rm -f "$1"' sh "$DEPLOY_REQUEST_PATH" "$deploy_request_token"; then
+      log "static/resource deployment completed"
+    else
+      log "deployment completed but request marker changed or could not be cleared; retrying next cycle"
+      failed=1
+    fi
+  else
+    log "static/resource deployment failed; request marker retained for retry"
+    failed=1
+  fi
+fi
 
 for service in $services; do
   container_ids="$("$DOCKER_BIN" compose ps -q "$service" 2>/dev/null || true)"
@@ -111,8 +133,6 @@ for service in $services; do
     esac
   done
 done
-
-failed=0
 
 for service in $restart_services; do
   log "restarting service=$service"

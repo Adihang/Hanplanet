@@ -1625,7 +1625,6 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
             button.innerHTML = HANDRIVE_MARKDOWN_CODE_COPY_ICON;
             var copyLabel = t("markdown_code_copy_button", textByLang("코드 복사", "Copy code"));
             button.setAttribute("aria-label", copyLabel);
-            button.setAttribute("title", copyLabel);
             button.addEventListener("click", function (event) {
                 event.preventDefault();
                 event.stopPropagation();

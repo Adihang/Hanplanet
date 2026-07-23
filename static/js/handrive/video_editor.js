@@ -4,7 +4,15 @@
     var state = {
         entry: null,
         onDirtyChange: null,
+        onReady: null,
+        onError: null,
         isDirty: false,
+        isReady: false,
+        loadFailed: false,
+        isSaving: false,
+        isDisabled: false,
+        changeRevision: 0,
+        sessionVersion: 0,
         duration: 0,
         subtitles: [],
         selectedSubtitleId: "",
@@ -14,6 +22,7 @@
         nextImageIndex: 1,
         drag: null,
         appendFile: null,
+        appendRequestVersion: 0,
         buildDownloadUrl: null,
         listApiUrl: "",
         imageDriveDir: "",
@@ -33,14 +42,25 @@
     var surface, videoStage, subtitleLayer;
     var videoStageSizeFrame = 0;
     var videoStageResizeObserver = null;
+    var mediaErrorTimer = 0;
     var OVERLAY_BASE_WIDTH = 860;
     var RANGE_EPSILON_SECONDS = 0.05;
+    var MEDIA_ERROR_RECOVERY_GRACE_MS = 1800;
 
     function init(options) {
         var opts = options || {};
+        clearPendingMediaError();
         state.entry = opts.entry || null;
         state.onDirtyChange = opts.onDirtyChange || null;
+        state.onReady = typeof opts.onReady === "function" ? opts.onReady : null;
+        state.onError = typeof opts.onError === "function" ? opts.onError : null;
         state.isDirty = false;
+        state.isReady = false;
+        state.loadFailed = false;
+        state.isSaving = false;
+        state.isDisabled = false;
+        state.changeRevision = 0;
+        state.sessionVersion += 1;
         state.duration = 0;
         state.subtitles = [];
         state.selectedSubtitleId = "";
@@ -50,6 +70,7 @@
         state.nextImageIndex = 1;
         state.drag = null;
         state.appendFile = null;
+        state.appendRequestVersion += 1;
         state.buildDownloadUrl = typeof opts.buildDownloadUrl === "function" ? opts.buildDownloadUrl : null;
         state.listApiUrl = opts.listApiUrl || "";
         state.scopedHomeDir = normalizePath(opts.scopedHomeDir || "");
@@ -120,6 +141,8 @@
 
         if (!videoEl) return;
         unbindEvents();
+        setDisabled(false);
+        setMediaLoading(true);
         resetControls();
         bindEvents();
         bindResizeObserver();
@@ -129,6 +152,7 @@
     }
 
     function destroy() {
+        clearPendingMediaError();
         unbindEvents();
         closeVolumePopover();
         if (videoEl) {
@@ -149,7 +173,13 @@
         }
         state.entry = null;
         state.onDirtyChange = null;
+        state.onReady = null;
+        state.onError = null;
         state.isDirty = false;
+        state.isReady = false;
+        state.loadFailed = false;
+        state.isSaving = false;
+        state.sessionVersion += 1;
         state.duration = 0;
         state.subtitles = [];
         state.selectedSubtitleId = "";
@@ -160,8 +190,11 @@
         state.selectedImageId = "";
         state.drag = null;
         state.appendFile = null;
+        state.appendRequestVersion += 1;
         state.buildDownloadUrl = null;
         state.scopedHomeDir = "";
+        setMediaLoading(false);
+        setDisabled(false);
         if (videoStageSizeFrame) {
             cancelAnimationFrame(videoStageSizeFrame);
             videoStageSizeFrame = 0;
@@ -170,8 +203,8 @@
     }
 
     function resetControls() {
-        if (startInput) startInput.value = "0";
-        if (endInput) endInput.value = "0";
+        if (startInput) startInput.value = formatTime(0);
+        if (endInput) endInput.value = formatTime(0);
         if (volumeInput) volumeInput.value = "1";
         showEditorField("");
         if (startRange) {
@@ -192,6 +225,7 @@
         state.selectedImageId = "";
         state.nextImageIndex = 1;
         state.appendFile = null;
+        state.appendRequestVersion += 1;
         closeImageUploadDialog();
         syncVolumeDisplay();
         syncRangeSelection();
@@ -204,6 +238,7 @@
 
     function bindEvents() {
         videoEl.addEventListener("loadedmetadata", onLoadedMetadata);
+        videoEl.addEventListener("error", onMediaError);
         videoEl.addEventListener("timeupdate", onTimeUpdate);
         videoEl.addEventListener("play", onMediaPlay);
         videoEl.addEventListener("seeking", onMediaSeek);
@@ -211,6 +246,8 @@
         if (resetBtn) resetBtn.addEventListener("click", onResetClick);
         if (startInput) startInput.addEventListener("input", onTimeInput);
         if (endInput) endInput.addEventListener("input", onTimeInput);
+        if (startInput) startInput.addEventListener("change", onTimeInputCommit);
+        if (endInput) endInput.addEventListener("change", onTimeInputCommit);
         if (volumeButton) volumeButton.addEventListener("click", onVolumeButtonClick);
         if (volumeInput) volumeInput.addEventListener("input", onVolumeInput);
         if (startRange) startRange.addEventListener("input", onStartRangeInput);
@@ -251,7 +288,10 @@
             imageDropZone.addEventListener("dragover", onImageDialogDragOver);
             imageDropZone.addEventListener("drop", onImageDialogDrop);
         }
-        if (subtitleLayer) subtitleLayer.addEventListener("pointerdown", onSubtitlePointerDown);
+        if (subtitleLayer) {
+            subtitleLayer.addEventListener("pointerdown", onSubtitlePointerDown);
+            subtitleLayer.addEventListener("focusin", onOverlayFocus);
+        }
         if (surface) {
             surface.addEventListener("dragover", onEditorDragOver);
             surface.addEventListener("drop", onEditorDrop);
@@ -267,6 +307,7 @@
         unbindVideoPlayerMetadataEvents();
         if (videoEl) {
             videoEl.removeEventListener("loadedmetadata", onLoadedMetadata);
+            videoEl.removeEventListener("error", onMediaError);
             videoEl.removeEventListener("timeupdate", onTimeUpdate);
             videoEl.removeEventListener("play", onMediaPlay);
             videoEl.removeEventListener("seeking", onMediaSeek);
@@ -275,6 +316,8 @@
         if (resetBtn) resetBtn.removeEventListener("click", onResetClick);
         if (startInput) startInput.removeEventListener("input", onTimeInput);
         if (endInput) endInput.removeEventListener("input", onTimeInput);
+        if (startInput) startInput.removeEventListener("change", onTimeInputCommit);
+        if (endInput) endInput.removeEventListener("change", onTimeInputCommit);
         if (volumeButton) volumeButton.removeEventListener("click", onVolumeButtonClick);
         if (volumeInput) volumeInput.removeEventListener("input", onVolumeInput);
         if (startRange) startRange.removeEventListener("input", onStartRangeInput);
@@ -315,7 +358,10 @@
             imageDropZone.removeEventListener("dragover", onImageDialogDragOver);
             imageDropZone.removeEventListener("drop", onImageDialogDrop);
         }
-        if (subtitleLayer) subtitleLayer.removeEventListener("pointerdown", onSubtitlePointerDown);
+        if (subtitleLayer) {
+            subtitleLayer.removeEventListener("pointerdown", onSubtitlePointerDown);
+            subtitleLayer.removeEventListener("focusin", onOverlayFocus);
+        }
         if (surface) {
             surface.removeEventListener("dragover", onEditorDragOver);
             surface.removeEventListener("drop", onEditorDrop);
@@ -328,14 +374,40 @@
     }
 
     function onLoadedMetadata() {
-        state.duration = getMediaDuration();
-        if (endInput) endInput.value = state.duration ? state.duration.toFixed(2) : "0";
+        var duration = getMediaDuration();
+        if (!Number.isFinite(duration) || duration <= 0 || state.isReady) return;
+        clearPendingMediaError();
+        state.loadFailed = false;
+        state.duration = duration;
+        if (endInput) endInput.value = state.duration ? formatTime(state.duration) : formatTime(0);
         syncRangeInputs();
         syncSubtitleRangeInputs();
         syncImageRangeInputs();
         syncTimeDisplays();
         renderSubtitleOverlays();
         setDirty(false);
+        state.isReady = true;
+        setMediaLoading(false);
+        if (state.onReady) state.onReady();
+    }
+
+    function onMediaError() {
+        if (state.isReady || state.loadFailed) return;
+        state.loadFailed = true;
+        setMediaLoading(true);
+        var sessionVersion = state.sessionVersion;
+        mediaErrorTimer = window.setTimeout(function () {
+            mediaErrorTimer = 0;
+            if (sessionVersion !== state.sessionVersion || state.isReady || !state.loadFailed) return;
+            setMediaLoading(false);
+            if (state.onError) state.onError(new Error("video load failed"));
+        }, MEDIA_ERROR_RECOVERY_GRACE_MS);
+    }
+
+    function clearPendingMediaError() {
+        if (!mediaErrorTimer) return;
+        window.clearTimeout(mediaErrorTimer);
+        mediaErrorTimer = 0;
     }
 
     function onTimeUpdate() {
@@ -358,7 +430,7 @@
 
     function onResetClick() {
         resetControls();
-        if (endInput && state.duration) endInput.value = state.duration.toFixed(2);
+        if (endInput && state.duration) endInput.value = formatTime(state.duration);
         setMediaCurrentTime(0);
         syncRangeInputs();
         syncSubtitleRangeInputs();
@@ -367,17 +439,22 @@
     }
 
     function onTimeInput() {
-        clampTimeInputs();
         syncRangeInputs();
         playFromStart();
         setDirty(true);
+    }
+
+    function onTimeInputCommit() {
+        clampTimeInputs();
+        syncRangeInputs();
+        playFromStart();
     }
 
     function onStartRangeInput() {
         var start = Math.max(0, Number(startRange && startRange.value) || 0);
         var end = getEndTime();
         if (end && start > end) start = end;
-        if (startInput) startInput.value = start.toFixed(2);
+        if (startInput) startInput.value = formatTime(start);
         clampTimeInputs();
         syncRangeInputs();
         playFromStart();
@@ -388,7 +465,7 @@
         var start = getStartTime();
         var end = Math.max(0, Number(endRange && endRange.value) || 0);
         if (end < start) end = start;
-        if (endInput) endInput.value = end.toFixed(2);
+        if (endInput) endInput.value = formatTime(end);
         clampTimeInputs();
         syncRangeInputs();
         playFromStart();
@@ -423,6 +500,9 @@
     function showEditorField(kind) {
         if (subtitleField) subtitleField.hidden = kind !== "subtitle";
         if (imageField) imageField.hidden = kind !== "image";
+        if (inputSubtitleButton) inputSubtitleButton.setAttribute("aria-expanded", kind === "subtitle" ? "true" : "false");
+        if (inputImageButton) inputImageButton.setAttribute("aria-expanded", kind === "image" ? "true" : "false");
+        if (surface) surface.dataset.inspector = kind || "none";
         scheduleVideoStageSizeSync();
     }
 
@@ -438,8 +518,9 @@
 
     function onSubtitleSelectChange() {
         showEditorField("subtitle");
-        state.selectedSubtitleId = subtitleSelect ? subtitleSelect.value : "";
+        selectOverlay("subtitle", subtitleSelect ? subtitleSelect.value : "");
         renderSubtitleControls();
+        renderImageControls();
         renderSubtitleOverlays();
     }
 
@@ -455,8 +536,9 @@
         state.subtitles = state.subtitles.filter(function (subtitle) {
             return subtitle.id !== selected.id;
         });
-        state.selectedSubtitleId = state.subtitles.length ? state.subtitles[0].id : "";
+        selectOverlay("subtitle", state.subtitles.length ? state.subtitles[0].id : "");
         renderSubtitleControls();
+        renderImageControls();
         renderSubtitleOverlays();
         setDirty(true);
     }
@@ -521,7 +603,8 @@
 
     function onImageSelectChange() {
         showEditorField("image");
-        state.selectedImageId = imageSelect ? imageSelect.value : "";
+        selectOverlay("image", imageSelect ? imageSelect.value : "");
+        renderSubtitleControls();
         renderImageControls();
         renderSubtitleOverlays();
     }
@@ -533,7 +616,8 @@
         state.images = state.images.filter(function (image) {
             return image.id !== selected.id;
         });
-        state.selectedImageId = state.images.length ? state.images[0].id : "";
+        selectOverlay("image", state.images.length ? state.images[0].id : "");
+        renderSubtitleControls();
         renderImageControls();
         renderSubtitleOverlays();
         setDirty(true);
@@ -685,6 +769,7 @@
     }
 
     function setAppendFile(file) {
+        state.appendRequestVersion += 1;
         state.appendFile = file || null;
         setDirty(Boolean(state.appendFile) || getHasEditChanges());
     }
@@ -693,12 +778,16 @@
         if (!path || !state.buildDownloadUrl || !isVideoPath(path) || !isPathInPickerScope(path)) return;
         var url = state.buildDownloadUrl(path);
         if (!url) return;
+        var sessionVersion = state.sessionVersion;
+        state.appendRequestVersion += 1;
+        var requestVersion = state.appendRequestVersion;
         fetch(url, { credentials: "same-origin" })
             .then(function (response) {
                 if (!response.ok) throw new Error("download failed");
                 return response.blob();
             })
             .then(function (blob) {
+                if (sessionVersion !== state.sessionVersion || requestVersion !== state.appendRequestVersion) return;
                 var fileName = path.split("/").pop() || "append-video";
                 setAppendFile(new File([blob], fileName, { type: blob.type || "video/*" }));
             })
@@ -717,9 +806,11 @@
         if (!subtitle) return;
         event.preventDefault();
         showEditorField("subtitle");
-        state.selectedSubtitleId = subtitle.id;
+        selectOverlay("subtitle", subtitle.id);
         renderSubtitleControls();
+        renderImageControls();
         renderSubtitleOverlays();
+        focusSelectedOverlay();
 
         state.drag = {
             type: "subtitle",
@@ -761,9 +852,11 @@
         if (!image) return;
         event.preventDefault();
         showEditorField("image");
-        state.selectedImageId = image.id;
+        selectOverlay("image", image.id);
+        renderSubtitleControls();
         renderImageControls();
         renderSubtitleOverlays();
+        focusSelectedOverlay();
         var mode = event.target && event.target.classList && event.target.classList.contains("ve-image-resize-handle") ? "resize" : "move";
         state.drag = {
             type: "image",
@@ -818,7 +911,71 @@
     }
 
     function onDocumentKeydown(event) {
-        if (event && event.key === "Escape") closeVolumePopover();
+        if (!event) return;
+        if (event.key === "Escape") {
+            closeVolumePopover();
+            return;
+        }
+        if (!surface || surface.hidden || state.isDisabled) return;
+        var target = event.target;
+        if (!target || !surface.contains(target)) return;
+        var tagName = target && target.tagName ? target.tagName : "";
+        if (tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || (target && target.isContentEditable)) {
+            return;
+        }
+        if (event.key === "Delete" || event.key === "Backspace") {
+            if (getSelectedImage()) {
+                event.preventDefault();
+                onImageDeleteClick();
+            } else if (getSelectedSubtitle()) {
+                event.preventDefault();
+                onSubtitleDeleteClick();
+            }
+            return;
+        }
+        if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(event.key) === -1) return;
+        var selected = getSelectedImage() || getSelectedSubtitle();
+        if (!selected) return;
+        event.preventDefault();
+        var step = event.shiftKey ? 2 : 0.5;
+        var width = getSelectedImage() ? selected.width : getSubtitleWidth(selected);
+        var height = getSelectedImage() ? selected.height : getSubtitleHeight(selected);
+        if (event.key === "ArrowLeft") selected.x = clamp(selected.x - step, 0, 100 - width);
+        if (event.key === "ArrowRight") selected.x = clamp(selected.x + step, 0, 100 - width);
+        if (event.key === "ArrowUp") selected.y = clamp(selected.y - step, 0, 100 - height);
+        if (event.key === "ArrowDown") selected.y = clamp(selected.y + step, 0, 100 - height);
+        renderSubtitleOverlays();
+        focusSelectedOverlay();
+        setDirty(true);
+    }
+
+    function onOverlayFocus(event) {
+        var imageBox = event.target && event.target.closest ? event.target.closest(".ve-image-box") : null;
+        var subtitleBox = event.target && event.target.closest ? event.target.closest(".ve-subtitle-box") : null;
+        if (imageBox) {
+            selectOverlay("image", imageBox.dataset.imageId || "");
+            showEditorField("image");
+            renderImageControls();
+            renderSubtitleControls();
+            return;
+        }
+        if (subtitleBox) {
+            selectOverlay("subtitle", subtitleBox.dataset.subtitleId || "");
+            showEditorField("subtitle");
+            renderSubtitleControls({ keepFocus: true });
+            renderImageControls();
+        }
+    }
+
+    function focusSelectedOverlay() {
+        if (!subtitleLayer) return;
+        var selector = state.selectedImageId
+            ? '.ve-image-box[data-image-id="' + state.selectedImageId + '"]'
+            : state.selectedSubtitleId
+                ? '.ve-subtitle-box[data-subtitle-id="' + state.selectedSubtitleId + '"]'
+                : "";
+        var selectedBox = selector ? subtitleLayer.querySelector(selector) : null;
+        if (selectedBox) selectedBox.focus({ preventScroll: true });
     }
 
     function openVolumePopover() {
@@ -914,8 +1071,9 @@
         };
         state.nextSubtitleIndex += 1;
         state.subtitles.push(subtitle);
-        state.selectedSubtitleId = subtitle.id;
+        selectOverlay("subtitle", subtitle.id);
         renderSubtitleControls();
+        renderImageControls();
         renderSubtitleOverlays();
         return subtitle;
     }
@@ -938,9 +1096,10 @@
         };
         state.nextImageIndex += 1;
         state.images.push(image);
-        state.selectedImageId = image.id;
+        selectOverlay("image", image.id);
         showEditorField("image");
         closeImageUploadDialog();
+        renderSubtitleControls();
         renderImageControls();
         renderSubtitleOverlays();
         setDirty(true);
@@ -948,12 +1107,14 @@
 
     function addImageOverlayFromDrivePath(path) {
         if (!path || !state.buildDownloadUrl || !isImagePath(path) || !isPathInPickerScope(path)) return;
+        var sessionVersion = state.sessionVersion;
         fetch(state.buildDownloadUrl(path), { credentials: "same-origin" })
             .then(function (response) {
                 if (!response.ok) throw new Error("download failed");
                 return response.blob();
             })
             .then(function (blob) {
+                if (sessionVersion !== state.sessionVersion) return;
                 var fileName = path.split("/").pop() || "overlay-image";
                 addImageOverlayFromFile(new File([blob], fileName, { type: blob.type || "image/*" }));
             })
@@ -1038,6 +1199,7 @@
 
     function renderSubtitleOverlays() {
         if (!subtitleLayer) return;
+        var restoreOverlayFocus = subtitleLayer.contains(document.activeElement);
         subtitleLayer.innerHTML = "";
         var currentTime = getMediaCurrentTime();
         var layerRect = subtitleLayer.getBoundingClientRect();
@@ -1049,6 +1211,8 @@
             var box = document.createElement("div");
             box.className = "ve-subtitle-box" + (subtitle.id === state.selectedSubtitleId ? " is-selected" : "");
             box.dataset.subtitleId = subtitle.id;
+            box.tabIndex = 0;
+            box.setAttribute("aria-label", subtitle.label || "자막");
             box.textContent = subtitle.text || subtitle.label || "자막";
             var fontSize = getSubtitleFontSize(subtitle, layerRect);
             var size = estimateSubtitleBoxPercent(subtitle, layerRect, fontSize);
@@ -1088,6 +1252,8 @@
             var box = document.createElement("div");
             box.className = "ve-image-box" + (image.id === state.selectedImageId ? " is-selected" : "");
             box.dataset.imageId = image.id;
+            box.tabIndex = 0;
+            box.setAttribute("aria-label", image.label || "image");
             box.style.left = clamp(image.x, 0, 100 - image.width) + "%";
             box.style.top = clamp(image.y, 0, 100 - image.height) + "%";
             box.style.width = clamp(image.width, 4, 100) + "%";
@@ -1111,6 +1277,7 @@
             }
             subtitleLayer.appendChild(box);
         });
+        if (restoreOverlayFocus) focusSelectedOverlay();
     }
 
     function isSubtitleActive(subtitle, currentTime) {
@@ -1228,15 +1395,35 @@
     }
 
     function clampTimeInputs() {
-        var start = Math.max(0, Number(startInput && startInput.value) || 0);
-        var end = Math.max(0, Number(endInput && endInput.value) || 0);
+        var start = Math.max(0, readTimeValue(startInput && startInput.value, 0));
+        var end = Math.max(0, readTimeValue(endInput && endInput.value, 0));
         if (state.duration) {
             start = Math.min(start, state.duration);
             end = Math.min(end || state.duration, state.duration);
         }
         if (end && end < start) end = start;
-        if (startInput) startInput.value = start.toFixed(2);
-        if (endInput) endInput.value = end.toFixed(2);
+        if (startInput) startInput.value = formatTime(start);
+        if (endInput) endInput.value = formatTime(end);
+    }
+
+    function readFiniteNumber(value, fallback) {
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function readTimeValue(value, fallback) {
+        var raw = String(value == null ? "" : value).trim();
+        if (!raw) return fallback;
+        if (!raw.includes(":")) return readFiniteNumber(raw, fallback);
+        var parts = raw.split(":");
+        if (parts.length > 3) return fallback;
+        var total = 0;
+        for (var index = 0; index < parts.length; index += 1) {
+            var part = Number(parts[index]);
+            if (!Number.isFinite(part) || part < 0) return fallback;
+            total = total * 60 + part;
+        }
+        return total;
     }
 
     function syncRangeInputs() {
@@ -1340,24 +1527,27 @@
     }
 
     function syncTimeDisplays() {
-        if (currentTimeEl) currentTimeEl.textContent = formatTime(getStartTime());
+        if (currentTimeEl) currentTimeEl.textContent = formatTime(getMediaCurrentTime());
         if (durationEl) durationEl.textContent = formatTime(getEndTime());
     }
 
     function getStartTime() {
-        return Math.max(0, Number(startInput && startInput.value) || 0);
+        return Math.max(0, readTimeValue(startInput && startInput.value, 0));
     }
 
     function getEndTime() {
-        var end = Math.max(0, Number(endInput && endInput.value) || 0);
+        var end = Math.max(0, readTimeValue(endInput && endInput.value, 0));
         return end || state.duration || 0;
     }
 
     function formatTime(seconds) {
         var total = Math.max(0, Number(seconds) || 0);
-        var minutes = Math.floor(total / 60);
-        var rest = total - minutes * 60;
-        return minutes + ":" + (rest < 10 ? "0" : "") + rest.toFixed(2);
+        var centiseconds = Math.round(total * 100);
+        var minutes = Math.floor(centiseconds / 6000);
+        var rest = centiseconds % 6000;
+        var secondsPart = Math.floor(rest / 100);
+        var fractionalPart = rest % 100;
+        return minutes + ":" + (secondsPart < 10 ? "0" : "") + secondsPart + "." + (fractionalPart < 10 ? "0" : "") + fractionalPart;
     }
 
     function setVideoSource(src) {
@@ -1374,25 +1564,27 @@
             player.src({ src: src || "", type: mimeType });
             player.load();
             player.ready(function () {
-                syncDurationFromMedia();
+                onLoadedMetadata();
             });
             return;
         }
         videoEl.src = src || "";
         videoEl.load();
-        syncDurationFromMedia();
+        onLoadedMetadata();
     }
 
     function bindVideoPlayerMetadataEvents(player) {
         if (!player) return;
         player.off("loadedmetadata", onLoadedMetadata);
         player.off("durationchange", onLoadedMetadata);
+        player.off("error", onMediaError);
         player.off("timeupdate", onTimeUpdate);
         player.off("play", onMediaPlay);
         player.off("seeking", onMediaSeek);
         player.off("seeked", onMediaSeek);
         player.on("loadedmetadata", onLoadedMetadata);
         player.on("durationchange", onLoadedMetadata);
+        player.on("error", onMediaError);
         player.on("timeupdate", onTimeUpdate);
         player.on("play", onMediaPlay);
         player.on("seeking", onMediaSeek);
@@ -1404,6 +1596,7 @@
         if (!player) return;
         player.off("loadedmetadata", onLoadedMetadata);
         player.off("durationchange", onLoadedMetadata);
+        player.off("error", onMediaError);
         player.off("timeupdate", onTimeUpdate);
         player.off("play", onMediaPlay);
         player.off("seeking", onMediaSeek);
@@ -1435,18 +1628,6 @@
             return Boolean(player.paused());
         }
         return !videoEl || Boolean(videoEl.paused);
-    }
-
-    function syncDurationFromMedia() {
-        var duration = getMediaDuration();
-        if (!duration) return;
-        state.duration = duration;
-        if (endInput) endInput.value = duration.toFixed(2);
-        syncRangeInputs();
-        syncSubtitleRangeInputs();
-        syncImageRangeInputs();
-        syncTimeDisplays();
-        renderSubtitleOverlays();
     }
 
     function setMediaCurrentTime(value) {
@@ -1498,6 +1679,12 @@
         return getImageById(state.selectedImageId);
     }
 
+    function selectOverlay(kind, id) {
+        var selectedId = String(id || "");
+        state.selectedSubtitleId = kind === "subtitle" ? selectedId : "";
+        state.selectedImageId = kind === "image" ? selectedId : "";
+    }
+
     function getSubtitleById(id) {
         return state.subtitles.find(function (subtitle) {
             return subtitle.id === id;
@@ -1511,9 +1698,9 @@
     }
 
     function getHasEditChanges() {
-        var start = Number(startInput && startInput.value) || 0;
-        var end = Number(endInput && endInput.value) || 0;
-        var volume = Number(volumeInput && volumeInput.value) || 1;
+        var start = readTimeValue(startInput && startInput.value, 0);
+        var end = readTimeValue(endInput && endInput.value, 0);
+        var volume = readFiniteNumber(volumeInput && volumeInput.value, 1);
         return Math.abs(start) > 0.001 ||
             (state.duration && Math.abs(end - state.duration) > 0.01) ||
             Math.abs(volume - 1) > 0.001 ||
@@ -1579,8 +1766,24 @@
     }
 
     function setDirty(isDirty) {
-        state.isDirty = Boolean(isDirty);
+        var nextDirty = Boolean(isDirty);
+        if (nextDirty) state.changeRevision += 1;
+        state.isDirty = nextDirty;
         if (state.onDirtyChange) state.onDirtyChange(state.isDirty);
+    }
+
+    function setMediaLoading(loading) {
+        if (!surface) return;
+        surface.classList.toggle("is-loading", Boolean(loading));
+        surface.setAttribute("aria-busy", loading ? "true" : "false");
+    }
+
+    function setDisabled(disabled) {
+        state.isDisabled = Boolean(disabled);
+        if (!surface) return;
+        surface.inert = state.isDisabled;
+        surface.classList.toggle("is-disabled", state.isDisabled);
+        surface.setAttribute("aria-disabled", state.isDisabled ? "true" : "false");
     }
 
     function saveToServer(saveUrl, csrfToken, path, onDone, options) {
@@ -1590,13 +1793,24 @@
             onDone && onDone({ ok: false, error: "요청 처리 중 오류가 발생했습니다." });
             return;
         }
+        if (!state.isReady) {
+            onDone && onDone({ ok: false, error: "비디오 로드가 완료되지 않았습니다." });
+            return;
+        }
+        if (state.isSaving) {
+            onDone && onDone({ ok: false, error: "이미 저장 중입니다." });
+            return;
+        }
+        state.isSaving = true;
+        var saveSessionVersion = state.sessionVersion;
+        var saveRevision = state.changeRevision;
         clampTimeInputs();
         var serializableSubtitles = getSerializableSubtitles();
         var formData = new FormData();
         formData.append("path", path);
-        formData.append("trim_start", String(Number(startInput && startInput.value) || 0));
-        formData.append("trim_end", String(Number(endInput && endInput.value) || 0));
-        formData.append("volume", String(Number(volumeInput && volumeInput.value) || 1));
+        formData.append("trim_start", String(getStartTime()));
+        formData.append("trim_end", String(getEndTime()));
+        formData.append("volume", String(readFiniteNumber(volumeInput && volumeInput.value, 1)));
         formData.append("subtitles_json", JSON.stringify(serializableSubtitles));
         formData.append("images_json", JSON.stringify(getSerializableImages()));
         if (targetFilename) {
@@ -1624,10 +1838,14 @@
             })
             .then(function (response) { return response.json(); })
             .then(function (data) {
-                if (data && data.ok) setDirty(false);
+                if (saveSessionVersion !== state.sessionVersion) return;
+                state.isSaving = false;
+                if (data && data.ok && state.changeRevision === saveRevision) setDirty(false);
                 onDone && onDone(data || { ok: false });
             })
             .catch(function (error) {
+                if (saveSessionVersion !== state.sessionVersion) return;
+                state.isSaving = false;
                 onDone && onDone({ ok: false, error: String(error) });
             });
     }
@@ -1748,6 +1966,8 @@
     function loadImageDriveDirectory(dirPath) {
         if (!state.listApiUrl || !imageDriveList) return;
         state.imageDriveDir = normalizePickerPath(dirPath || "");
+        var requestedDir = state.imageDriveDir;
+        var sessionVersion = state.sessionVersion;
         if (imageDrivePathEl) imageDrivePathEl.textContent = state.imageDriveDir || "/";
         imageDriveList.textContent = "";
         fetch(appendQuery(state.listApiUrl, "path", state.imageDriveDir), {
@@ -1756,9 +1976,11 @@
         })
             .then(function (response) { return response.json(); })
             .then(function (data) {
+                if (sessionVersion !== state.sessionVersion || requestedDir !== state.imageDriveDir) return;
                 renderImageDriveEntries(Array.isArray(data && data.entries) ? data.entries : []);
             })
             .catch(function () {
+                if (sessionVersion !== state.sessionVersion || requestedDir !== state.imageDriveDir) return;
                 renderImageDriveEntries([]);
             });
     }
@@ -1803,6 +2025,8 @@
         init: init,
         destroy: destroy,
         getIsDirty: function () { return state.isDirty; },
+        getIsReady: function () { return state.isReady; },
+        setDisabled: setDisabled,
         saveToServer: saveToServer,
     };
 })();

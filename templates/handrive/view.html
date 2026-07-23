@@ -68,7 +68,7 @@
                 {% endif %}
                 {% if doc_can_delete %}
                     <button class="handrive-icon-btn" type="button" id="handrive-delete-btn" aria-label="{{ handrive_text.delete_button }}" title="{{ handrive_text.delete_button }}"
-                    ><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5h4v2.5H8z"/><line x1="3" y1="5.5" x2="17" y2="5.5"/><rect x="5" y="6.5" width="10" height="11" rx="1.5"/><line x1="8.5" y1="9" x2="8.5" y2="15"/><line x1="11.5" y1="9" x2="11.5" y2="15"/></svg></button>
+                    ><span class="handrive-delete-icon" aria-hidden="true"></span></button>
                 {% endif %}
             </div>
         </div>
@@ -120,6 +120,7 @@
     data-sheetjs-script-url="{% static_v 'vendor/sheetjs/xlsx.full.min.js' %}"
     data-exceljs-script-url="{% static_v 'vendor/exceljs/exceljs.min.js' %}"
     data-spreadsheet-editor-script-url="{% static_v 'js/handrive/spreadsheet_editor.js' %}"
+    data-spreadsheet-worker-script-url="{% static_v 'js/handrive/spreadsheet_worker.js' %}"
     data-videojs-script-url="{% static_v 'vendor/videojs/video.min.js' %}"
     data-videojs-compat-script-url="{% static_v 'js/handrive/videojs_compat.js' %}"
     data-videojs-seek-buttons-script-url="{% static_v 'vendor/videojs/videojs-seek-buttons.min.js' %}"

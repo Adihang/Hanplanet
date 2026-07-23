@@ -97,6 +97,51 @@
     let siteTooltipIdCounter = 0;
     let lastTooltipPointerDownAt = 0;
 
+    function removeNativeTooltipTitle(element) {
+        if (!element || element.nodeType !== 1 || !element.hasAttribute("title")) {
+            return;
+        }
+        const titleText = String(element.getAttribute("title") || "").trim();
+        const isToolbarTooltipControl = element.matches &&
+            element.matches("button, a, [role='button']") &&
+            element.closest && element.closest("[data-site-tooltip-source]");
+        const isUnnamedControl = element.matches && (
+            element.matches("iframe, input[type='button'], input[type='submit'], input[type='reset']") ||
+            (element.matches("button, a, [role='button']") && !String(element.textContent || "").trim())
+        );
+        if (titleText && isToolbarTooltipControl) {
+            element.setAttribute("data-site-tooltip", titleText);
+        }
+        if (titleText && isUnnamedControl && !element.hasAttribute("aria-label")) {
+            element.setAttribute("aria-label", titleText);
+        }
+        element.removeAttribute("title");
+    }
+
+    function removeNativeSvgTooltipTitle(element) {
+        if (!element || element.nodeType !== 1 || element.tagName.toLowerCase() !== "title") {
+            return;
+        }
+        const svg = element.parentElement;
+        const titleText = String(element.textContent || "").trim();
+        if (svg && svg.tagName && svg.tagName.toLowerCase() === "svg" && titleText && !svg.hasAttribute("aria-label")) {
+            svg.setAttribute("aria-label", titleText);
+        }
+        element.remove();
+    }
+
+    function suppressNativeTitleTooltips(root) {
+        const scope = root && root.querySelectorAll ? root : document;
+        if (scope.matches && scope.matches("[title]")) {
+            removeNativeTooltipTitle(scope);
+        }
+        Array.prototype.slice.call(scope.querySelectorAll("[title]")).forEach(removeNativeTooltipTitle);
+        if (scope.matches && scope.matches("svg > title")) {
+            removeNativeSvgTooltipTitle(scope);
+        }
+        Array.prototype.slice.call(scope.querySelectorAll("svg > title")).forEach(removeNativeSvgTooltipTitle);
+    }
+
     function isVisible(element) {
         // Popups are repositioned only when actually visible; hidden-but-mounted nodes
         // are ignored so style resets do not waste layout work.
@@ -1663,6 +1708,7 @@
     }
 
     function initializeCommonPopupState() {
+        suppressNativeTitleTooltips(document);
         enhanceCustomSelects(document);
         refreshCommonPopupStateDeferred();
     }
@@ -1676,6 +1722,7 @@
                     if (!node || node.nodeType !== 1) {
                         return;
                     }
+                    suppressNativeTitleTooltips(node);
                     if ((node.matches && node.matches("select:not([multiple])")) ||
                         (node.querySelector && node.querySelector("select:not([multiple])"))) {
                         shouldEnhanceSelects = true;
@@ -1685,6 +1732,9 @@
             }
             if (record.type === "attributes") {
                 const target = record.target;
+                if (record.attributeName === "title") {
+                    removeNativeTooltipTitle(target);
+                }
                 if (target && target.matches && target.matches("select")) {
                     if (record.attributeName === "data-site-custom-select") {
                         shouldEnhanceSelects = true;
@@ -1780,6 +1830,10 @@
     }, true);
 
     document.addEventListener("pointerover", function (event) {
+        const nativeTooltipTarget = event.target && event.target.closest
+            ? event.target.closest("[title]")
+            : null;
+        removeNativeTooltipTitle(nativeTooltipTarget);
         if (event.pointerType === "touch") {
             return;
         }
@@ -1859,6 +1913,6 @@
         subtree: true,
         childList: true,
         attributes: true,
-        attributeFilter: ["hidden", "class", "style", "aria-hidden", "disabled", "data-site-custom-select"],
+        attributeFilter: ["hidden", "class", "style", "aria-hidden", "disabled", "data-site-custom-select", "title"],
     });
 })();

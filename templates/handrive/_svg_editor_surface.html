@@ -1,0 +1,174 @@
+{% load template_utils %}
+<section
+    class="handrive-svg-editor-surface"
+    id="handrive-svg-editor-surface"
+    aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_label' %}"
+    data-label-loading="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_loading' %}"
+    data-label-load-error="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_load_error' %}"
+    data-label-invalid-source="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_invalid_source' %}"
+    data-label-ready="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_status_ready' %}"
+    data-label-selected="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_status_selected' %}"
+    data-label-empty-layers="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_no_objects' %}"
+    data-label-visibility="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_visibility' %}"
+    data-label-lock="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_lock' %}"
+    hidden
+>
+        <div class="hse-toolbar" role="toolbar" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_label' %}" data-site-tooltip-source>
+        <div class="hse-toolbar-group" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='edit' %}">
+            <button class="hse-tool is-active" type="button" data-svg-tool="select" aria-pressed="true" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_select' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l13 9-6 1.2L9 19z"/><path d="M12 13l5 6"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-tool="nodes" aria-pressed="false" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_nodes' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 18C8 5 16 5 19 18"/><circle cx="5" cy="18" r="2"/><circle cx="12" cy="8" r="2"/><circle cx="19" cy="18" r="2"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-tool="pen" aria-pressed="false" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_pen' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l6 6-7.5 11H4v-6.5z"/><circle cx="12" cy="10" r="1.8"/><path d="M12 10L7 17"/></svg>
+            </button>
+        </div>
+        <span class="hse-toolbar-divider" aria-hidden="true"></span>
+        <div class="hse-toolbar-group" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_properties' %}">
+            <button class="hse-tool" type="button" data-svg-tool="rect" aria-pressed="false" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_rectangle' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="1"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-tool="ellipse" aria-pressed="false" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_ellipse' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-tool="line" aria-pressed="false" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_line' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19L19 5"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-tool="text" aria-pressed="false" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_text' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M12 5v14M8 19h8"/></svg>
+            </button>
+        </div>
+        <span class="hse-toolbar-divider" aria-hidden="true"></span>
+            <div class="hse-toolbar-group">
+            <button class="hse-tool" type="button" data-svg-action="undo" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_undo' %}" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7L4 12l5 5"/><path d="M5 12h8a6 6 0 016 6"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-action="redo" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_redo' %}" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 7l5 5-5 5"/><path d="M19 12h-8a6 6 0 00-6 6"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-action="group" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_group' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/><path d="M8 14v2h2M14 8h2v2" stroke-dasharray="2 2"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-action="ungroup" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_ungroup' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/><path d="M11 7h3M17 11v3"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-action="duplicate" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_duplicate' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12"/><path d="M16 8V4H4v12h4"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-action="delete" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_delete' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg>
+            </button>
+        </div>
+        <span class="hse-toolbar-spacer"></span>
+        <div class="hse-toolbar-group hse-zoom-tools">
+            <button class="hse-tool" type="button" data-svg-action="grid" aria-pressed="true" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_toggle_grid' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM4 10h16M4 16h16M10 4v16M16 4v16"/></svg>
+            </button>
+            <button class="hse-tool" type="button" data-svg-action="zoom-out" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_zoom_out' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M7.5 10.5h6"/></svg>
+            </button>
+            <button class="hse-zoom-value" type="button" data-svg-action="zoom-fit" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_zoom_fit' %}">100%</button>
+            <button class="hse-tool" type="button" data-svg-action="zoom-in" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_zoom_in' %}">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21M7.5 10.5h6M10.5 7.5v6"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="hse-layout">
+        <aside class="hse-sidebar hse-layers-panel" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_layers' %}">
+            <header class="hse-panel-heading">
+                <strong>{% include 'partials/ui_i18n.html' with key='svg_editor_layers' %}</strong>
+                <span class="hse-layer-count" data-svg-layer-count>0</span>
+            </header>
+            <div class="hse-layer-list" data-svg-layer-list role="tree"></div>
+            <footer class="hse-layer-actions" data-site-tooltip-source>
+                <button type="button" data-svg-action="lower" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_lower' %}">↓</button>
+                <button type="button" data-svg-action="raise" title="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_raise' %}">↑</button>
+            </footer>
+        </aside>
+
+        <div class="hse-canvas-viewport" data-svg-viewport tabindex="0">
+            <div class="hse-canvas-grid" data-svg-grid aria-hidden="true"></div>
+            <div class="hse-canvas-scene" data-svg-scene>
+                <div class="hse-artboard" data-svg-artboard></div>
+            </div>
+            <div class="hse-selection-box" data-svg-selection-box hidden>
+                <button type="button" class="hse-resize-handle hse-resize-nw" data-svg-resize="nw" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_resize' %}"></button>
+                <button type="button" class="hse-resize-handle hse-resize-ne" data-svg-resize="ne" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_resize' %}"></button>
+                <button type="button" class="hse-resize-handle hse-resize-se" data-svg-resize="se" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_resize' %}"></button>
+                <button type="button" class="hse-resize-handle hse-resize-sw" data-svg-resize="sw" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_resize' %}"></button>
+            </div>
+        </div>
+
+        <aside class="hse-sidebar hse-properties-panel" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_properties' %}">
+            <details class="hse-property-section" data-svg-selection-properties open>
+                <summary class="hse-panel-heading"><strong>{% include 'partials/ui_i18n.html' with key='svg_editor_properties' %}</strong></summary>
+                <p class="hse-empty-selection" data-svg-empty-selection>{% include 'partials/ui_i18n.html' with key='svg_editor_no_selection' %}</p>
+                <div class="hse-property-fields" data-svg-property-fields hidden>
+                    <label class="hse-wide-field">
+                        <span>{% include 'partials/ui_i18n.html' with key='svg_editor_element_id' %}</span>
+                        <input type="text" data-svg-property="id" autocomplete="off" spellcheck="false">
+                    </label>
+                    <label class="hse-toggle-color-field handrive-shared-toggle">
+                        <span>{% include 'partials/ui_i18n.html' with key='svg_editor_fill' %}</span>
+                        <input type="checkbox" data-svg-property="fill-enabled" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_fill' %}">
+                        <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
+                        <input type="color" data-svg-property="fill" value="#2563eb">
+                    </label>
+                    <label class="hse-toggle-color-field handrive-shared-toggle">
+                        <span>{% include 'partials/ui_i18n.html' with key='svg_editor_stroke' %}</span>
+                        <input type="checkbox" data-svg-property="stroke-enabled" aria-label="{% include_trimmed 'partials/ui_i18n.html' key='svg_editor_stroke' %}">
+                        <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
+                        <input type="color" data-svg-property="stroke" value="#111827">
+                    </label>
+                    <label>
+                        <span>{% include 'partials/ui_i18n.html' with key='svg_editor_stroke_width' %}</span>
+                        <input type="number" data-svg-property="stroke-width" min="0" max="10000" step="0.25" value="1">
+                    </label>
+                    <label>
+                        <span>{% include 'partials/ui_i18n.html' with key='svg_editor_opacity' %}</span>
+                        <input type="number" data-svg-property="opacity" min="0" max="100" step="1" value="100">
+                    </label>
+                    <label class="hse-wide-field" data-svg-text-field hidden>
+                        <span>{% include 'partials/ui_i18n.html' with key='svg_editor_text_content' %}</span>
+                        <textarea data-svg-property="text" rows="3"></textarea>
+                    </label>
+                </div>
+            </details>
+
+            <details class="hse-property-section hse-document-section" open>
+                <summary class="hse-panel-heading"><strong>{% include 'partials/ui_i18n.html' with key='svg_editor_document' %}</strong></summary>
+                <div class="hse-viewbox-grid">
+                    <label><span>{% include 'partials/ui_i18n.html' with key='svg_editor_x' %}</span><input type="number" step="any" data-svg-viewbox="x"></label>
+                    <label><span>{% include 'partials/ui_i18n.html' with key='svg_editor_y' %}</span><input type="number" step="any" data-svg-viewbox="y"></label>
+                    <label><span>{% include 'partials/ui_i18n.html' with key='svg_editor_width' %}</span><input type="number" min="0.01" step="any" data-svg-viewbox="width"></label>
+                    <label><span>{% include 'partials/ui_i18n.html' with key='svg_editor_height' %}</span><input type="number" min="0.01" step="any" data-svg-viewbox="height"></label>
+                </div>
+                <label class="hse-grid-size-field">
+                    <span>{% include 'partials/ui_i18n.html' with key='svg_editor_grid_size' %}</span>
+                    <input type="number" min="1" max="10000" step="1" value="1" data-svg-grid-size>
+                </label>
+                <label class="hse-checkbox-field handrive-shared-toggle">
+                    <span>{% include 'partials/ui_i18n.html' with key='svg_editor_snap' %}</span>
+                    <input type="checkbox" data-svg-snap checked>
+                    <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
+                </label>
+            </details>
+
+            <details class="hse-source-panel">
+                <summary>{% include 'partials/ui_i18n.html' with key='svg_editor_source' %}</summary>
+                <p>{% include 'partials/ui_i18n.html' with key='svg_editor_source_hint' %}</p>
+                <textarea data-svg-source spellcheck="false" wrap="off"></textarea>
+                <button class="ui-btn" type="button" data-svg-action="apply-source">{% include 'partials/ui_i18n.html' with key='svg_editor_apply_source' %}</button>
+            </details>
+        </aside>
+    </div>
+
+    <footer class="hse-statusbar" aria-live="polite">
+        <span data-svg-status>{% include 'partials/ui_i18n.html' with key='svg_editor_loading' %}</span>
+        <span data-svg-coordinates>X: –, Y: –</span>
+        <span data-svg-document-size></span>
+    </footer>
+</section>

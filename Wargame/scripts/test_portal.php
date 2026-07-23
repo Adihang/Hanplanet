@@ -171,19 +171,30 @@ try {
 }
 $assert($malformedBearerRejected, 'non-JWT bearer token is rejected before internal API access');
 $missionReturnPath = '/?mission=web-v1-01-http&launch=1';
-$missionLoginUrl = django_login_url($missionReturnPath);
+$missionLoginUrl = wargame_oidc_login_url($missionReturnPath);
 $missionLoginQuery = [];
 parse_str((string) parse_url($missionLoginUrl, PHP_URL_QUERY), $missionLoginQuery);
 $assert(
-    (string) ($missionLoginQuery['next'] ?? '') === 'https://wargame.hanplanet.com' . $missionReturnPath,
-    'Django login preserves exact email mission deep-link'
+    (string) ($missionLoginQuery['redirect_uri'] ?? '') === 'https://wargame.hanplanet.com/auth/callback.php'
+        && (string) ($missionLoginQuery['client_id'] ?? '') === wargame_oidc_client_id()
+        && (string) ($missionLoginQuery['scope'] ?? '') === 'openid profile email',
+    'OIDC login uses the first-party client and expected scopes'
 );
-$invalidLoginQuery = [];
-parse_str((string) parse_url(django_login_url('//evil.example/steal'), PHP_URL_QUERY), $invalidLoginQuery);
-$assert((string) ($invalidLoginQuery['next'] ?? '') === 'https://wargame.hanplanet.com/', 'Django login rejects protocol-relative return paths');
-$backslashLoginQuery = [];
-parse_str((string) parse_url(django_login_url('/\\evil.example/steal'), PHP_URL_QUERY), $backslashLoginQuery);
-$assert((string) ($backslashLoginQuery['next'] ?? '') === 'https://wargame.hanplanet.com/', 'Django login rejects backslash return paths');
+$assert(
+    preg_match('/\A[A-Fa-f0-9]{48}\z/', (string) ($missionLoginQuery['state'] ?? '')) === 1
+        && preg_match('/\A[A-Za-z0-9_-]{43}\z/', (string) ($missionLoginQuery['code_challenge'] ?? '')) === 1
+        && (string) ($missionLoginQuery['code_challenge_method'] ?? '') === 'S256',
+    'OIDC login uses state and S256 PKCE'
+);
+$pending = $_SESSION['oidc_pending'] ?? [];
+$assert((string) ($pending['return_path'] ?? '') === $missionReturnPath, 'OIDC login preserves exact email mission deep-link');
+$invalidPendingRejected = false;
+try {
+    wargame_oidc_pending_state('invalid-state');
+} catch (InvalidArgumentException) {
+    $invalidPendingRejected = true;
+}
+$assert($invalidPendingRejected, 'OIDC callback rejects an unknown state');
 $assert(wargame_return_path('/?mission=web-v1-01-http') === '/?mission=web-v1-01-http', 'local return path preserves a valid mission query');
 $assert(wargame_return_path('/\\evil.example/steal') === '/', 'local redirect rejects browser-normalized backslash host');
 $assert(wargame_return_path("/safe\r\nLocation: https://evil.example") === '/', 'local redirect rejects control characters');
@@ -209,9 +220,7 @@ $assert(is_file(__DIR__ . '/../public/assets/fonts/kakao/KakaoSmallSans-Regular.
 $themeBootstrap = (string) file_get_contents(__DIR__ . '/../public/assets/theme.js');
 $assert(str_contains($themeBootstrap, "localStorage.getItem('wargame-theme')") && str_contains($themeBootstrap, 'document.documentElement.dataset.theme = theme'), 'theme applies before page styles');
 $portalScript = (string) file_get_contents(__DIR__ . '/../public/assets/portal.js');
-$syncAwaitAt = strpos($portalScript, 'const accountState = await syncAccount();');
-$autoLaunchAt = strpos($portalScript, "if (accountState.status === 'ready') openTargetFromEmail();");
-$assert(is_int($syncAwaitAt) && is_int($autoLaunchAt) && $autoLaunchAt > $syncAwaitAt, 'email auto-launch waits for account refresh');
+$assert(!str_contains($portalScript, 'syncAccount') && str_contains($portalScript, "body.dataset.authenticated !== '1'"), 'portal login no longer depends on browser Django-cookie synchronization');
 
 $dispatchUser = [
     'user_id' => (string) random_int(920000, 929999),

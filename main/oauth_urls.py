@@ -1,6 +1,7 @@
 import logging
 
 from django.contrib.auth.views import redirect_to_login
+from django.conf import settings
 from django.urls import path, re_path, reverse
 
 from oauth2_provider import views as oauth2_views
@@ -51,7 +52,8 @@ class HanplanetAuthorizationView(oauth2_views.AuthorizationView):
         )
 
     def _ensure_forgejo_oauth_link_if_needed(self, request):
-        if str(request.GET.get("client_id") or "").strip() != "gitea-hanplanet-sso":
+        configured_client_id = str(getattr(settings, "FORGEJO_OIDC_CLIENT_ID", "gitea-hanplanet-sso") or "").strip()
+        if str(request.GET.get("client_id") or "").strip() != configured_client_id:
             return
         try:
             from .handrive_views import _ensure_forgejo_oauth_link_for_user

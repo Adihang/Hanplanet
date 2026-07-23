@@ -201,7 +201,7 @@ $cssVersion = (string) (filemtime(__DIR__ . '/assets/wargame.css') ?: time());
 $themeVersion = (string) (filemtime(__DIR__ . '/assets/theme.js') ?: time());
 $jsVersion = (string) (filemtime(__DIR__ . '/assets/portal.js') ?: time());
 $faviconVersion = (string) (filemtime(__DIR__ . '/assets/favicon.ico') ?: time());
-$loginUrl = django_login_url();
+$loginUrl = is_array($user) ? '' : wargame_oidc_login_url(wargame_return_path());
 $initial = is_array($user) ? account_initial((string) ($user['display_name'] ?: $user['username'])) : 'OP';
 $profileImageUrl = is_array($user) ? trim((string) ($user['profile_image_url'] ?? '')) : '';
 $djangoHomeUrl = django_base_url() . '/';
@@ -239,9 +239,7 @@ $metaImage = 'https://wargame.hanplanet.com/assets/operations-map.svg';
     <script src="/assets/portal.js?v=<?= wargame_html($jsVersion) ?>" defer></script>
 </head>
 <body
-    data-needs-auth-refresh="<?= !is_array($user) || auth_refresh_needed() ? '1' : '0' ?>"
-    data-django-session-url="<?= wargame_html(django_api_url('session/')) ?>"
-    data-csrf="<?= wargame_html(csrf_token()) ?>"
+    data-authenticated="<?= is_array($user) ? '1' : '0' ?>"
     data-auto-launch="<?= $autoLaunchRequested ? '1' : '0' ?>"
     data-login-url="<?= wargame_html($loginUrl) ?>"
 >

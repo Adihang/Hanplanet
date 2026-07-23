@@ -48,7 +48,7 @@
                 autocomplete="username"
                 data-handrive-auth-safe-input="username"
                 pattern="{{ handrive_auth_safe_input_pattern }}"
-                title="{{ handrive_text.auth_username_forbidden_chars }}"
+                data-handrive-auth-safe-message="{{ handrive_text.auth_username_forbidden_chars }}"
                 {% if not handrive_login_show_2fa %}required{% endif %}
                 {% if handrive_login_show_2fa %}disabled{% endif %}
                 {% if not handrive_login_show_2fa %}autofocus{% endif %}
@@ -63,7 +63,7 @@
                 autocomplete="current-password"
                 data-handrive-auth-safe-input="password"
                 pattern="{{ handrive_auth_safe_input_pattern }}"
-                title="{{ handrive_text.auth_password_forbidden_chars }}"
+                data-handrive-auth-safe-message="{{ handrive_text.auth_password_forbidden_chars }}"
                 {% if not handrive_login_show_2fa %}required{% endif %}
                 {% if handrive_login_show_2fa %}disabled{% endif %}
             >
@@ -71,7 +71,6 @@
     </div>
 
     <label class="auth-field auth-field-full" id="handrive-login-captcha-block"{% if not handrive_login_show_captcha %} hidden{% endif %}>
-        <span>{{ handrive_text.auth_login_captcha_label }}</span>
         <span class="ui-subtitle">{{ handrive_text.auth_login_captcha_hint }}</span>
         <span id="handrive-login-captcha-question">{{ handrive_login_captcha_question }}</span>
         <input

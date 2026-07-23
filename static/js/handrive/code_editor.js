@@ -111,6 +111,7 @@
         foldControls.appendChild(foldControlCanvas);
         const Range = window.ace.require("ace/range").Range;
         const session = editor.getSession();
+        const aceTextInput = host.querySelector(".ace_text-input");
         const editorGutter = host.querySelector(".ace_gutter");
         let syncingFromEditor = false;
         let applyingTextareaValue = false;
@@ -140,6 +141,57 @@
         let editorLineScrollSelectionMarkerIds = [];
         const collapsedFoldStarts = new Set();
         const codeStructure = window.HandriveCodeStructure;
+
+        let compositionPaddingFrame = 0;
+
+        function hasWideCompositionCharacter(value) {
+            return /[\u1100-\u115f\u2329\u232a\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe10-\ufe19\ufe30-\ufe6f\uff00-\uff60\uffe0-\uffe6]/i.test(value);
+        }
+
+        function syncCompositionInputPadding() {
+            compositionPaddingFrame = 0;
+            if (
+                !aceTextInput
+                || !aceTextInput.classList.contains("ace_composition")
+            ) {
+                return;
+            }
+
+            const value = String(aceTextInput.value || "");
+            aceTextInput.style.paddingLeft = hasWideCompositionCharacter(value)
+                ? "calc(1px + 0.17em)"
+                : "1px";
+        }
+
+        function scheduleCompositionInputPadding() {
+            if (compositionPaddingFrame) {
+                return;
+            }
+            compositionPaddingFrame = window.requestAnimationFrame(
+                syncCompositionInputPadding,
+            );
+        }
+
+        if (aceTextInput) {
+            aceTextInput.addEventListener(
+                "compositionstart",
+                scheduleCompositionInputPadding,
+            );
+            aceTextInput.addEventListener(
+                "compositionupdate",
+                scheduleCompositionInputPadding,
+            );
+            aceTextInput.addEventListener("input", function (event) {
+                if (event.isComposing || aceTextInput.classList.contains("ace_composition")) {
+                    scheduleCompositionInputPadding();
+                }
+            });
+            aceTextInput.addEventListener("compositionend", function () {
+                window.requestAnimationFrame(function () {
+                    aceTextInput.style.removeProperty("padding-left");
+                });
+            });
+        }
 
         session.setUseWorker(false);
         session.setTabSize(4);

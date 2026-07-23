@@ -5,13 +5,13 @@
 ## 보안 경계
 
 - PHP는 Django DB, 세션 저장소, 모델, `config/`, `main/`, `media/`, Redis, Celery, Gitea 또는 게임 서버 파일을 직접 읽지 않습니다.
-- Django 연동은 허용된 Wargame API의 짧은 Bearer token으로만 수행합니다. 계정과 solve 기록은 Wargame SQLite에 저장하지 않습니다.
+- Django 연동은 Hanplanet OIDC Authorization Code + PKCE 로그인으로 시작하고, 콜백 이후 서버 간 Wargame API 호출에만 Bearer token을 사용합니다. 계정과 solve 기록은 Wargame SQLite에 저장하지 않습니다.
 - solve 쓰기는 Bearer token만으로 허용하지 않습니다. instance 완료 ticket의 SHA-256, 90초 수명의 timestamp/nonce, portal만 가진 `WARGAME_COMPLETION_SECRET` HMAC 영수증이 함께 검증되어야 합니다.
-- Bearer token은 portal의 host-only PHP session에만 보관합니다. HTML, JavaScript, 실습 instance 또는 메일 payload에 넣지 않습니다.
+- OIDC access token과 Wargame API Bearer token은 portal의 host-only PHP session에만 보관합니다. HTML, JavaScript, 실습 instance 또는 메일 payload에 넣지 않습니다.
 - Lab engine은 Django API와 메일 transport를 사용하지 않으며, instance 전용 SQLite·파일만 다룹니다.
 - `public/` 밖의 `app/`, `data/`, `database/`, `deploy/`, `scripts/`는 HTTP로 접근할 수 없습니다.
 - 실제 SMTP outbound는 portal의 의뢰 발송 흐름에서만 호출합니다. 실습의 SSRF·명령 실행·메일 기능은 외부 네트워크에 연결하지 않는 격리된 동작이어야 합니다.
-- Wargame cookie에는 `Domain`을 지정하지 않습니다. Django session/CSRF cookie도 `www.hanplanet.com` host-only여야 합니다.
+- Wargame cookie에는 `Domain`을 지정하지 않습니다. Wargame은 Django session/CSRF cookie를 직접 읽지 않고 OIDC 콜백만 사용합니다.
 
 ## 디렉터리
 

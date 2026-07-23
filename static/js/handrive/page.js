@@ -934,11 +934,19 @@
     }
 
     function getMediaEditorGlobalName(kind) {
+        if (kind === "svg") return "HandriveSvgEditor";
         if (kind === "image") return "HandriveImageEditor";
         if (kind === "video") return "HandriveVideoEditor";
         if (kind === "audio") return "HandriveAudioEditor";
         if (kind === "pdf") return "HandrivePdfEditor";
         return "";
+    }
+
+    function getSvgEditorLoadErrorMessage(surface) {
+        const surfaceLabel = surface && surface.dataset
+            ? String(surface.dataset.labelLoadError || "").trim()
+            : "";
+        return surfaceLabel || t("svg_editor_load_error", "SVG 편집기를 불러오지 못했습니다.");
     }
 
     let videoPlayerStackPromise = null;
@@ -3731,7 +3739,6 @@
             button.innerHTML = HANDRIVE_MARKDOWN_CODE_COPY_ICON;
             const copyLabel = t("markdown_code_copy_button", textByLang("복사", "Copy"));
             button.setAttribute("aria-label", copyLabel);
-            button.setAttribute("title", copyLabel);
             button.addEventListener("click", function (event) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -7547,6 +7554,7 @@
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
         const pdfEditorSurface = document.getElementById("handrive-pdf-editor-surface");
+        const svgEditorSurface = document.getElementById("handrive-svg-editor-surface");
         const spreadsheetEditorSurface = document.getElementById("handrive-spreadsheet-editor-surface");
         const imageEditorSaveUrl = root.dataset.imageEditorSaveUrl || "";
         const imageEditorRemoveBackgroundUrl = root.dataset.imageEditorRemoveBackgroundUrl || "";
@@ -7560,6 +7568,7 @@
         const videoEditorScriptUrl = root.dataset.videoEditorScriptUrl || "";
         const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
         const pdfEditorScriptUrl = root.dataset.pdfEditorScriptUrl || "";
+        const svgEditorScriptUrl = root.dataset.svgEditorScriptUrl || "";
         const editorSuggest = document.getElementById("handrive-list-editor-suggest");
         const listCodeEditor = createHandriveCodeEditor(editorSurface, editorContentInput, "");
         const markdownSnippetMenu = document.getElementById("ui-markdown-snippet-menu");
@@ -7665,6 +7674,7 @@
         const folderIconModalBackdrop = document.getElementById("handrive-folder-icon-modal-backdrop");
         const folderIconTarget = document.getElementById("handrive-folder-icon-target");
         const folderIconFileInput = document.getElementById("handrive-folder-icon-file-input");
+        const folderIconFileButton = document.getElementById("handrive-folder-icon-file-button");
         const folderIconFileName = document.getElementById("handrive-folder-icon-file-name");
         const folderIconPreviewWrap = document.getElementById("handrive-folder-icon-preview-wrap");
         const folderIconPreviewImg = document.getElementById("handrive-folder-icon-preview-img");
@@ -7694,7 +7704,7 @@
             ".jpeg",
             ".gif",
             ".webp",
-            ".svg",
+            // SVG is vector-editable and must keep the preview/context edit actions visible.
             ".bmp",
             ".avif",
             ".ico",
@@ -7717,6 +7727,7 @@
         const imageEditorExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".tif", ".avif",
         ]);
+        const svgEditorExtensions = new Set([".svg"]);
         const audioEditorExtensions = new Set([
             ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".weba",
         ]);
@@ -7734,6 +7745,9 @@
         }
         function isImageEditorEntry(entry) {
             return imageEditorExtensions.has(getEntryFileExtension(entry));
+        }
+        function isSvgEditorEntry(entry) {
+            return Boolean(entry && canEditOrDemoEntry(entry) && svgEditorExtensions.has(getEntryFileExtension(entry)));
         }
         function isAudioEditorEntry(entry) {
             return audioEditorExtensions.has(getEntryFileExtension(entry));
@@ -8954,6 +8968,9 @@
         let listEditorCompletionSession = null;
         let listEditorCompletionMutation = false;
         let activeListEditorEntry = null;
+        let listSvgEditorSessionToken = 0;
+        let listMediaEditorSessionToken = 0;
+        let bypassListEditorUnsavedGuard = false;
         let listSuggestEventsBound = false;
         let listMarkdownSnippetEventsBound = false;
         let listMarkdownImageEventsBound = false;
@@ -9602,6 +9619,7 @@
                 editorSurface,
                 editorContentInput,
                 editorHighlight,
+                svgEditorSurface,
                 imageEditorSurface,
                 videoEditorSurface,
                 audioEditorSurface,
@@ -11635,6 +11653,14 @@
             editorBodyHeightRafId = window.requestAnimationFrame(function () {
                 editorBodyHeightRafId = null;
                 syncEditorBodyHeight();
+                if (
+                    svgEditorSurface &&
+                    !svgEditorSurface.hidden &&
+                    window.HandriveSvgEditor &&
+                    typeof window.HandriveSvgEditor.resize === "function"
+                ) {
+                    window.HandriveSvgEditor.resize();
+                }
             });
         }
 
@@ -12207,6 +12233,7 @@
                 return false;
             }
             return !nonEditableMediaExtensions.has(entryExtension)
+                || isSvgEditorEntry(entry)
                 || isImageEditorEntry(entry)
                 || isVideoEditorEntry(entry)
                 || isAudioEditorEntry(entry)
@@ -12782,15 +12809,17 @@
 
         function ensureListMediaEditorScript(kind) {
             const normalizedKind = String(kind || "").trim().toLowerCase();
-            const scriptUrl = normalizedKind === "image"
-                ? imageEditorScriptUrl
-                : normalizedKind === "video"
-                    ? videoEditorScriptUrl
-                    : normalizedKind === "audio"
-                        ? audioEditorScriptUrl
-                        : normalizedKind === "pdf"
-                            ? pdfEditorScriptUrl
-                            : "";
+            const scriptUrl = normalizedKind === "svg"
+                ? svgEditorScriptUrl
+                : normalizedKind === "image"
+                    ? imageEditorScriptUrl
+                    : normalizedKind === "video"
+                        ? videoEditorScriptUrl
+                        : normalizedKind === "audio"
+                            ? audioEditorScriptUrl
+                            : normalizedKind === "pdf"
+                                ? pdfEditorScriptUrl
+                                : "";
             if (normalizedKind === "video") {
                 return loadVideoPlayerStack().then(function () {
                     return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
@@ -12809,6 +12838,92 @@
             editorHighlightCode.textContent = content;
         }
 
+        function hideListSvgEditor() {
+            listSvgEditorSessionToken += 1;
+            if (svgEditorSurface && !svgEditorSurface.hidden && window.HandriveSvgEditor) {
+                window.HandriveSvgEditor.destroy();
+            }
+            if (svgEditorSurface) {
+                svgEditorSurface.hidden = true;
+            }
+            if (editorSaveButton) {
+                editorSaveButton.classList.remove("is-dirty");
+            }
+        }
+
+        function getActiveListVisualEditor() {
+            const candidates = [
+                [svgEditorSurface, window.HandriveSvgEditor],
+                [imageEditorSurface, window.HandriveImageEditor],
+                [videoEditorSurface, window.HandriveVideoEditor],
+                [audioEditorSurface, window.HandriveAudioEditor],
+                [pdfEditorSurface, window.HandrivePdfEditor],
+                [spreadsheetEditorSurface, window.HandriveSpreadsheetEditor],
+            ];
+            const active = candidates.find(function (candidate) {
+                return candidate[0] && !candidate[0].hidden;
+            });
+            return active ? active[1] : null;
+        }
+
+        function getActiveListVisualEditorSurface() {
+            return [
+                svgEditorSurface,
+                imageEditorSurface,
+                videoEditorSurface,
+                audioEditorSurface,
+                pdfEditorSurface,
+                spreadsheetEditorSurface,
+            ].find(function (candidate) {
+                return candidate && !candidate.hidden;
+            }) || null;
+        }
+
+        function hasUnsavedListEditorChanges() {
+            const editor = getActiveListVisualEditor();
+            if (!editor || !activeListEditorEntry) {
+                return false;
+            }
+            const filenameChanged = Boolean(
+                editorFilenameInput &&
+                String(editorFilenameInput.value || "") !== String(activeListEditorEntry.name || "")
+            );
+            const editorDirty = Boolean(
+                typeof editor.getIsDirty === "function" &&
+                editor.getIsDirty()
+            );
+            return filenameChanged || editorDirty;
+        }
+
+        function confirmDiscardUnsavedListEditorChanges() {
+            if (!hasUnsavedListEditorChanges()) {
+                return true;
+            }
+            const confirmed = window.confirm(
+                t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?")
+            );
+            if (confirmed) {
+                bypassListEditorUnsavedGuard = true;
+                window.setTimeout(function () {
+                    bypassListEditorUnsavedGuard = false;
+                }, 1200);
+            }
+            return confirmed;
+        }
+
+        function teardownListMediaEditors() {
+            listMediaEditorSessionToken += 1;
+            setListEditorSaving(false);
+            [
+                window.HandriveImageEditor,
+                window.HandriveVideoEditor,
+                window.HandriveAudioEditor,
+            ].forEach(function (editor) {
+                if (editor && typeof editor.destroy === "function") editor.destroy();
+            });
+            if (editorSaveButton) editorSaveButton.classList.remove("is-dirty");
+        }
+
         function switchToEditor(entry) {
             if (!editorPanel || !editorFilenameInput) {
                 return Promise.resolve();
@@ -12816,7 +12931,11 @@
             stopPreviewMediaElements(previewContent);
             destroyModelPreviews(previewContent);
             setListEditorBodyLoading(false);
+            teardownListMediaEditors();
 
+            if (isSvgEditorEntry(entry)) {
+                return switchToSvgEditor(entry);
+            }
             if (isPdfEditorEntry(entry)) {
                 return switchToPdfEditor(entry);
             }
@@ -12838,6 +12957,7 @@
             activeListEditorEntry = entry || null;
             listMarkdownUploadedImagePaths = [];
             clearListEditorSuggestion();
+            hideListSvgEditor();
             if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden) {
                 if (window.HandriveSpreadsheetEditor) window.HandriveSpreadsheetEditor.destroy();
                 spreadsheetEditorSurface.hidden = true;
@@ -12888,10 +13008,143 @@
             return switchPromise;
         }
 
+        async function switchToSvgEditor(entry) {
+            const sessionToken = listSvgEditorSessionToken + 1;
+            listSvgEditorSessionToken = sessionToken;
+            activeListEditorEntry = entry || null;
+            stopPreviewMediaElements(previewContent);
+            destroyModelPreviews(previewContent);
+            setListEditorBodyLoading(true);
+
+            if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
+                window.HandriveImageEditor.destroy();
+            }
+            if (videoEditorSurface && !videoEditorSurface.hidden && window.HandriveVideoEditor) {
+                window.HandriveVideoEditor.destroy();
+            }
+            if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
+                window.HandriveAudioEditor.destroy();
+            }
+            if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
+                window.HandrivePdfEditor.destroy();
+            }
+            if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
+                window.HandriveSpreadsheetEditor.destroy();
+            }
+            if (window.HandriveSvgEditor) {
+                window.HandriveSvgEditor.destroy();
+            }
+
+            if (editorSurface) editorSurface.hidden = true;
+            if (imageEditorSurface) imageEditorSurface.hidden = true;
+            if (videoEditorSurface) videoEditorSurface.hidden = true;
+            if (audioEditorSurface) audioEditorSurface.hidden = true;
+            if (pdfEditorSurface) pdfEditorSurface.hidden = true;
+            if (spreadsheetEditorSurface) spreadsheetEditorSurface.hidden = true;
+            if (svgEditorSurface) svgEditorSurface.hidden = false;
+
+            if (editorFilenameInput) editorFilenameInput.value = entry.name || "";
+            if (editorSaveButton) {
+                editorSaveButton.disabled = true;
+                editorSaveButton.classList.remove("is-dirty");
+            }
+
+            if (previewPanel) {
+                previewPanel.hidden = true;
+                previewPanel.setAttribute("aria-hidden", "true");
+            }
+            if (editorPanel) {
+                editorPanel.hidden = false;
+                editorPanel.setAttribute("aria-hidden", "false");
+            }
+            if (listLayout) {
+                listLayout.classList.remove("has-preview");
+                listLayout.classList.add("has-editor");
+            }
+            scheduleSyncCurrentDirRowHeightWithSideHead();
+            syncSearchFormVisibility();
+            syncListEditorPreviewButtonVisibility();
+            restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
+            setupEditorEvents(entry);
+
+            let loadFailed = false;
+            const isCurrentSession = function () {
+                return Boolean(
+                    sessionToken === listSvgEditorSessionToken &&
+                    activeListEditorEntry === entry &&
+                    svgEditorSurface &&
+                    !svgEditorSurface.hidden
+                );
+            };
+            const reportLoadError = function (error) {
+                if (loadFailed || !isCurrentSession()) {
+                    return;
+                }
+                loadFailed = true;
+                const fallback = getSvgEditorLoadErrorMessage(svgEditorSurface);
+                alertError(error instanceof Error ? error : new Error(String(error || fallback)));
+            };
+            const finishLoading = function (ready) {
+                if (!isCurrentSession()) {
+                    return;
+                }
+                setListEditorBodyLoading(false);
+                scheduleListEditorHorizontalScrollReset();
+                scheduleEditorBodyHeight();
+                if (editorSaveButton) {
+                    editorSaveButton.disabled = !ready;
+                }
+                if (ready && window.HandriveSvgEditor && typeof window.HandriveSvgEditor.resize === "function") {
+                    window.requestAnimationFrame(function () {
+                        if (svgEditorSurface && !svgEditorSurface.hidden) {
+                            window.HandriveSvgEditor.resize();
+                        }
+                    });
+                }
+            };
+
+            try {
+                await ensureListMediaEditorScript("svg");
+                if (!isCurrentSession()) {
+                    return;
+                }
+                if (!window.HandriveSvgEditor || typeof window.HandriveSvgEditor.init !== "function") {
+                    throw new Error(getSvgEditorLoadErrorMessage(svgEditorSurface));
+                }
+                await window.HandriveSvgEditor.init({
+                    sourceUrl: appendAdminHandriveUserQuery(buildDownloadUrl(entry.path)),
+                    onDirtyChange: function (dirty) {
+                        if (editorSaveButton) {
+                            editorSaveButton.classList.toggle("is-dirty", Boolean(dirty));
+                        }
+                    },
+                    onReady: function () {
+                        finishLoading(true);
+                    },
+                    onError: function (error) {
+                        reportLoadError(error);
+                        finishLoading(false);
+                    },
+                });
+            } catch (error) {
+                if (!isCurrentSession()) {
+                    return;
+                }
+                reportLoadError(error);
+                finishLoading(false);
+                return;
+            }
+
+            if (!loadFailed && isCurrentSession()) {
+                finishLoading(true);
+            }
+        }
+
         async function switchToPdfEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
             destroyModelPreviews(previewContent);
+            hideListSvgEditor();
 
             if (editorSurface) editorSurface.hidden = true;
             if (imageEditorSurface) imageEditorSurface.hidden = true;
@@ -12965,8 +13218,10 @@
 
         async function switchToImageEditor(entry) {
             activeListEditorEntry = entry || null;
+            const sessionToken = listMediaEditorSessionToken;
             stopPreviewMediaElements(previewContent);
             destroyModelPreviews(previewContent);
+            hideListSvgEditor();
             setListEditorBodyLoading(true);
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
@@ -13004,18 +13259,28 @@
 
             // ImageEditor 초기화
             const imageServeUrl = buildDownloadUrl(entry.path);
+            const isCurrentSession = function () {
+                return Boolean(
+                    sessionToken === listMediaEditorSessionToken &&
+                    activeListEditorEntry === entry &&
+                    imageEditorSurface &&
+                    !imageEditorSurface.hidden
+                );
+            };
             if (editorSaveButton) editorSaveButton.disabled = true;
             try {
                 await ensureListMediaEditorScript("image");
             } catch (error) {
+                if (!isCurrentSession()) return;
                 setListEditorBodyLoading(false);
-                if (editorSaveButton) editorSaveButton.disabled = false;
+                if (editorSaveButton) editorSaveButton.disabled = true;
                 alertError(error);
                 return;
             }
+            if (!isCurrentSession()) return;
             let imageEditorLoadFinished = false;
             const finishImageEditorLoading = function (loaded) {
-                if (imageEditorLoadFinished) {
+                if (imageEditorLoadFinished || !isCurrentSession()) {
                     return;
                 }
                 imageEditorLoadFinished = true;
@@ -13035,11 +13300,12 @@
                         finishImageEditorLoading(true);
                     },
                     onImageLoadError: function (error) {
+                        if (!isCurrentSession()) return;
                         finishImageEditorLoading(false);
                         alertError(error || new Error(t("image_editor_load_error", "이미지 로드 실패")));
                     },
                     onDirtyChange: function (dirty) {
-                        if (editorSaveButton) {
+                        if (isCurrentSession() && editorSaveButton) {
                             editorSaveButton.classList.toggle("is-dirty", dirty);
                         }
                     },
@@ -13048,13 +13314,15 @@
                 finishImageEditorLoading(false);
             }
 
-            setupEditorEvents(entry);
+            if (isCurrentSession()) setupEditorEvents(entry);
         }
 
         async function switchToVideoEditor(entry) {
             activeListEditorEntry = entry || null;
+            const sessionToken = listMediaEditorSessionToken;
             stopPreviewMediaElements(previewContent);
             destroyModelPreviews(previewContent);
+            hideListSvgEditor();
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -13087,17 +13355,41 @@
             restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             const videoServeUrl = buildDownloadUrl(entry.path);
+            const isCurrentSession = function () {
+                return Boolean(
+                    sessionToken === listMediaEditorSessionToken &&
+                    activeListEditorEntry === entry &&
+                    videoEditorSurface &&
+                    !videoEditorSurface.hidden
+                );
+            };
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
             try {
                 await ensureListMediaEditorScript("video");
             } catch (error) {
+                if (!isCurrentSession()) return;
                 setListEditorSaving(false);
-                if (editorSaveButton) editorSaveButton.disabled = false;
+                if (editorSaveButton) editorSaveButton.disabled = true;
                 alertError(error);
                 return;
             }
-            setListEditorSaving(false);
+            if (!isCurrentSession()) return;
+            let videoEditorLoadFinished = false;
+            let videoEditorErrorShown = false;
+            const finishVideoEditorLoading = function (loaded, error) {
+                if (videoEditorLoadFinished || !isCurrentSession()) return;
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = !loaded;
+                if (loaded) {
+                    videoEditorLoadFinished = true;
+                    return;
+                }
+                if (error && !videoEditorErrorShown) {
+                    videoEditorErrorShown = true;
+                    alertError(error);
+                }
+            };
             if (window.HandriveVideoEditor) {
                 window.HandriveVideoEditor.init({
                     entry: entry,
@@ -13105,23 +13397,34 @@
                     buildDownloadUrl: buildScopedHomeDownloadUrl,
                     listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
                     scopedHomeDir: scopedHomeDir,
+                    onReady: function () {
+                        finishVideoEditorLoading(true);
+                    },
+                    onError: function (error) {
+                        if (!isCurrentSession()) return;
+                        if (error) console.error(error);
+                        finishVideoEditorLoading(false, new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
+                    },
                     onDirtyChange: function (dirty) {
-                        if (editorSaveButton) {
+                        if (isCurrentSession() && editorSaveButton) {
                             editorSaveButton.classList.toggle("is-dirty", dirty);
                         }
                     },
                 });
+            } else {
+                finishVideoEditorLoading(false, new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
             }
             scheduleListEditorHorizontalScrollReset();
 
-            setupEditorEvents(entry);
-            if (editorSaveButton) editorSaveButton.disabled = false;
+            if (isCurrentSession()) setupEditorEvents(entry);
         }
 
         async function switchToAudioEditor(entry) {
             activeListEditorEntry = entry || null;
+            const sessionToken = listMediaEditorSessionToken;
             stopPreviewMediaElements(previewContent);
             destroyModelPreviews(previewContent);
+            hideListSvgEditor();
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -13154,17 +13457,41 @@
             restoreStoredFloatingListDetailPanelIfPreferred(editorPanel, { allowAnyPanel: true });
 
             const audioServeUrl = buildDownloadUrl(entry.path);
+            const isCurrentSession = function () {
+                return Boolean(
+                    sessionToken === listMediaEditorSessionToken &&
+                    activeListEditorEntry === entry &&
+                    audioEditorSurface &&
+                    !audioEditorSurface.hidden
+                );
+            };
             if (editorSaveButton) editorSaveButton.disabled = true;
             setListEditorSaving(true);
             try {
                 await ensureListMediaEditorScript("audio");
             } catch (error) {
+                if (!isCurrentSession()) return;
                 setListEditorSaving(false);
-                if (editorSaveButton) editorSaveButton.disabled = false;
+                if (editorSaveButton) editorSaveButton.disabled = true;
                 alertError(error);
                 return;
             }
-            setListEditorSaving(false);
+            if (!isCurrentSession()) return;
+            let audioEditorLoadFinished = false;
+            let audioEditorErrorShown = false;
+            const finishAudioEditorLoading = function (loaded, error) {
+                if (audioEditorLoadFinished || !isCurrentSession()) return;
+                setListEditorSaving(false);
+                if (editorSaveButton) editorSaveButton.disabled = !loaded;
+                if (loaded) {
+                    audioEditorLoadFinished = true;
+                    return;
+                }
+                if (error && !audioEditorErrorShown) {
+                    audioEditorErrorShown = true;
+                    alertError(error);
+                }
+            };
             if (window.HandriveAudioEditor) {
                 window.HandriveAudioEditor.init({
                     entry: entry,
@@ -13172,23 +13499,33 @@
                     listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
                     buildDownloadUrl: buildScopedHomeDownloadUrl,
                     scopedHomeDir: scopedHomeDir,
+                    onReady: function () {
+                        finishAudioEditorLoading(true);
+                    },
+                    onError: function (error) {
+                        if (!isCurrentSession()) return;
+                        if (error) console.error(error);
+                        finishAudioEditorLoading(false, new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
+                    },
                     onDirtyChange: function (dirty) {
-                        if (editorSaveButton) {
+                        if (isCurrentSession() && editorSaveButton) {
                             editorSaveButton.classList.toggle("is-dirty", dirty);
                         }
                     },
                 });
+            } else {
+                finishAudioEditorLoading(false, new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
             }
             scheduleListEditorHorizontalScrollReset();
 
-            setupEditorEvents(entry);
-            if (editorSaveButton) editorSaveButton.disabled = false;
+            if (isCurrentSession()) setupEditorEvents(entry);
         }
 
         async function switchToSpreadsheetEditor(entry) {
             activeListEditorEntry = entry || null;
             stopPreviewMediaElements(previewContent);
             destroyModelPreviews(previewContent);
+            hideListSvgEditor();
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.destroy();
             }
@@ -13249,7 +13586,10 @@
 
         function switchToPreview() {
             guestDemoEditTransitionUntil = 0;
+            listMediaEditorSessionToken += 1;
+            setListEditorSaving(false);
             setListEditorBodyLoading(false);
+            hideListSvgEditor();
             // 이미지 에디터 정리
             if (imageEditorSurface && !imageEditorSurface.hidden) {
                 if (window.HandriveImageEditor) window.HandriveImageEditor.destroy();
@@ -13647,6 +13987,16 @@
                     openDemoSaveModal();
                     return;
                 }
+                if (svgEditorSurface && !svgEditorSurface.hidden && window.HandriveSvgEditor) {
+                    try {
+                        editorContentInput.value = window.HandriveSvgEditor.getContent();
+                    } catch (error) {
+                        alertError(error);
+                        return;
+                    }
+                    saveEditorContent(entry).catch(alertError);
+                    return;
+                }
                 if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
                     const csrfToken = getCsrfToken();
                     const savingText = t("spreadsheet_editor_saving", "저장 중...");
@@ -13892,40 +14242,8 @@
             };
             editorCancelButton.onclick = function (event) {
                 event.preventDefault();
-                if (imageEditorSurface && !imageEditorSurface.hidden && window.HandriveImageEditor) {
-                    if (window.HandriveImageEditor.getIsDirty()) {
-                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
-                            return;
-                        }
-                    }
-                }
-                if (videoEditorSurface && !videoEditorSurface.hidden && window.HandriveVideoEditor) {
-                    if (window.HandriveVideoEditor.getIsDirty()) {
-                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
-                            return;
-                        }
-                    }
-                }
-                if (audioEditorSurface && !audioEditorSurface.hidden && window.HandriveAudioEditor) {
-                    if (window.HandriveAudioEditor.getIsDirty()) {
-                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
-                            return;
-                        }
-                    }
-                }
-                if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
-                    if (window.HandrivePdfEditor.getIsDirty()) {
-                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
-                            return;
-                        }
-                    }
-                }
-                if (spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden && window.HandriveSpreadsheetEditor) {
-                    if (window.HandriveSpreadsheetEditor.getIsDirty()) {
-                        if (!window.confirm(t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"))) {
-                            return;
-                        }
-                    }
+                if (!confirmDiscardUnsavedListEditorChanges()) {
+                    return;
                 }
                 cleanupListMarkdownUploadedImages(entry)
                     .catch(alertError)
@@ -13975,6 +14293,18 @@
             if (pdfEditorSurface && !pdfEditorSurface.hidden && window.HandrivePdfEditor) {
                 window.HandrivePdfEditor.setDisabled(isSaving);
             }
+            if (svgEditorSurface && !svgEditorSurface.hidden && window.HandriveSvgEditor) {
+                window.HandriveSvgEditor.setDisabled(isSaving);
+            }
+            [
+                [imageEditorSurface, window.HandriveImageEditor],
+                [videoEditorSurface, window.HandriveVideoEditor],
+                [audioEditorSurface, window.HandriveAudioEditor],
+            ].forEach(function (candidate) {
+                if (candidate[0] && !candidate[0].hidden && candidate[1] && typeof candidate[1].setDisabled === "function") {
+                    candidate[1].setDisabled(isSaving);
+                }
+            });
         }
 
         async function saveEditorContent(entry) {
@@ -14010,6 +14340,13 @@
                 const overwriteConfirmed = await confirmListEditorOverwriteIfNeeded(sourcePath, targetPath);
                 if (!overwriteConfirmed) {
                     return;
+                }
+                if (entry && entry.requires_commit_message) {
+                    const commitMessage = await promptCommitMessage(targetPath);
+                    if (commitMessage === null) {
+                        return;
+                    }
+                    payload.commit_message = commitMessage;
                 }
                 setListEditorSaving(true);
                 editorSavingShown = true;
@@ -14683,6 +15020,16 @@
 
         function syncPreviewFromSelection() {
             if (!previewPanel) {
+                return;
+            }
+            if (!confirmDiscardUnsavedListEditorChanges()) {
+                if (activeListEditorEntry) {
+                    applySelection([activeListEditorEntry.path], {
+                        primaryPath: activeListEditorEntry.path,
+                        anchorPath: activeListEditorEntry.path,
+                        skipPreview: true,
+                    });
+                }
                 return;
             }
             const selectedEntries = getSelectedEntries();
@@ -15767,7 +16114,7 @@
                 return null;
             }
             const currentEntry = state.entryByPath.get(currentDirPath);
-            if (!currentEntry || !currentEntry.can_write_children) {
+            if (!currentEntry || (!currentEntry.can_write_children && !currentEntry.is_trash_root)) {
                 return null;
             }
             return state.entryRowByPath.get(currentDirPath) || null;
@@ -15872,6 +16219,9 @@
         }
 
         function resolveDriveDropEffect(targetDirPath) {
+            if (isTrashRootPath(targetDirPath)) {
+                return "move";
+            }
             return (isGoogleDriveUploadDrop(targetDirPath) || isRepoHandriveCopyDrop(targetDirPath)) ? "copy" : "move";
         }
 
@@ -17011,12 +17361,42 @@
             }, 500);
         }
 
+        function canDropToTrashRoot(targetDirPath) {
+            if (!isTrashRootPath(targetDirPath) || !deleteApiUrl || !Array.isArray(state.draggingEntries) || state.draggingEntries.length === 0) {
+                return false;
+            }
+
+            return state.draggingEntries.every(function (entry) {
+                if (!entry || (entry.type !== "file" && entry.type !== "dir")) {
+                    return false;
+                }
+                if (
+                    entry.is_trash_item ||
+                    entry.is_trash_root ||
+                    entry.is_archive_member ||
+                    entry.is_archive_virtual ||
+                    isGoogleDriveEntry(entry) ||
+                    entry.git_repo ||
+                    entry.github_repo ||
+                    entry.git_branch_root ||
+                    entry.git_repo_branch ||
+                    entry.is_git_virtual
+                ) {
+                    return false;
+                }
+                return isEntryDeletable(entry);
+            });
+        }
+
         function canDropToDirectory(targetDirPath, options) {
+            const targetPath = normalizePath(targetDirPath, true);
+            if (isTrashRootPath(targetPath)) {
+                return canDropToTrashRoot(targetPath);
+            }
             if ((!moveApiUrl && !archiveExtractApiUrl) || !Array.isArray(state.draggingEntries) || state.draggingEntries.length === 0) {
                 return false;
             }
 
-            const targetPath = normalizePath(targetDirPath, true);
             const allowSameParent = Boolean(options && options.allowSameParent);
             const hasArchiveSources = state.draggingEntries.some(function (entry) {
                 return Boolean(entry && entry.is_archive_member);
@@ -17263,6 +17643,12 @@
                     return;
                 }
                 if (isFileTransfer(event)) {
+                    if (isTrashRootPath(targetDirPath)) {
+                        if (event.dataTransfer) {
+                            event.dataTransfer.dropEffect = "none";
+                        }
+                        return;
+                    }
                     activateFileDropTarget(event, targetDirPath, highlightElement);
                     return;
                 }
@@ -17286,6 +17672,12 @@
                     return;
                 }
                 if (isFileTransfer(event)) {
+                    if (isTrashRootPath(targetDirPath)) {
+                        if (event.dataTransfer) {
+                            event.dataTransfer.dropEffect = "none";
+                        }
+                        return;
+                    }
                     activateFileDropTarget(event, targetDirPath, highlightElement);
                     return;
                 }
@@ -17331,6 +17723,9 @@
                     event.preventDefault();
                     event.stopPropagation();
                     clearFileDragUiState();
+                    if (isTrashRootPath(targetDirPath)) {
+                        return;
+                    }
                     enqueueUploadFiles(
                         event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files : [],
                         targetDirPath
@@ -17338,6 +17733,17 @@
                     return;
                 }
                 if (fileTransfersOnly) {
+                    return;
+                }
+                if (isTrashRootPath(targetDirPath)) {
+                    if (!canDropToTrashRoot(targetDirPath)) {
+                        return;
+                    }
+                    event.preventDefault();
+                    event.stopPropagation();
+                    const droppedEntries = state.draggingEntries.slice();
+                    clearDriveDragPreviewState();
+                    deleteEntries(droppedEntries).catch(alertError);
                     return;
                 }
                 if (!canDropToDirectory(targetDirPath, driveMoveOptions)) {
@@ -18431,7 +18837,7 @@
                 selectEntriesByRowClick(currentFolderEntry, event);
             });
 
-            if (currentFolderEntry.can_write_children) {
+            if (currentFolderEntry.can_write_children || currentFolderEntry.is_trash_root) {
                 bindDropTarget(row, currentFolderEntry.path, { allowSameParent: true });
             }
 
@@ -18557,8 +18963,28 @@
             );
         }
 
+        function invalidatePreviewCacheForDeletedPath(pathValue) {
+            if (!state.previewCache || typeof state.previewCache.keys !== "function") {
+                return;
+            }
+            const deletedPath = normalizePath(pathValue, true);
+            if (!deletedPath) {
+                return;
+            }
+            Array.from(state.previewCache.keys()).forEach(function (cacheKey) {
+                const normalizedCacheKey = normalizePath(cacheKey, true);
+                if (
+                    normalizedCacheKey === deletedPath ||
+                    normalizedCacheKey.indexOf(deletedPath + "/") === 0
+                ) {
+                    state.previewCache.delete(cacheKey);
+                }
+            });
+        }
+
         function handleEntryDeleted(pathValue) {
             removeSyncExcludedStateForDelete(pathValue);
+            invalidatePreviewCacheForDeletedPath(pathValue);
             closePreviewPaneIfDeleted(pathValue);
         }
 
@@ -19591,6 +20017,27 @@
             if (!entry) {
                 return;
             }
+            const activeVisualEditorSurface = getActiveListVisualEditorSurface();
+            const activeVisualEditor = getActiveListVisualEditor();
+            if (activeVisualEditorSurface && activeListEditorEntry) {
+                const activePath = normalizePath(activeListEditorEntry.path || "", true);
+                const targetPath = normalizePath(entry.path || "", true);
+                const activeEditorReady = !activeVisualEditor ||
+                    typeof activeVisualEditor.getIsReady !== "function" ||
+                    activeVisualEditor.getIsReady();
+                if (activePath === targetPath && activeEditorReady) {
+                    const focusTarget = activeVisualEditorSurface.querySelector(
+                        "[data-svg-viewport], canvas, video, audio, [tabindex]:not([tabindex='-1'])"
+                    );
+                    if (focusTarget && typeof focusTarget.focus === "function") {
+                        focusTarget.focus({ preventScroll: true });
+                    }
+                    return;
+                }
+                if (!confirmDiscardUnsavedListEditorChanges()) {
+                    return;
+                }
+            }
             if (entry.type === "dir") {
                 window.location.href = appendSharedQuery(appendTutorialSourceQuery(
                     buildWriteUrl(writeUrl, { dir: entry.path }),
@@ -20148,9 +20595,9 @@
                 });
             }
 
-            if (entry.type === "dir") {
+            if (entry.type === "dir" || entry.is_trash_root) {
                 const canWriteChildren = Boolean(entry.can_write_children);
-                if (canWriteChildren) {
+                if (canWriteChildren || entry.is_trash_root) {
                     bindDropTarget(row, entry.path);
                 }
             } else {
@@ -20590,6 +21037,12 @@
                 syncFolderIconFileName();
                 if (folderIconPreviewImg) { folderIconPreviewImg.src = URL.createObjectURL(folderIconFileInput.files[0]); }
                 if (folderIconPreviewWrap) { folderIconPreviewWrap.hidden = false; }
+            });
+        }
+
+        if (folderIconFileButton && folderIconFileInput) {
+            folderIconFileButton.addEventListener("click", function () {
+                folderIconFileInput.click();
             });
         }
 
@@ -21157,11 +21610,18 @@
             if (!(event.metaKey || event.ctrlKey) || event.altKey || loweredKey !== "s") {
                 return;
             }
+            const spreadsheetEditorActive = Boolean(spreadsheetEditorSurface && !spreadsheetEditorSurface.hidden);
+            const svgEditorActive = Boolean(svgEditorSurface && !svgEditorSurface.hidden);
+            const mediaEditorActive = Boolean(
+                (imageEditorSurface && !imageEditorSurface.hidden) ||
+                (videoEditorSurface && !videoEditorSurface.hidden) ||
+                (audioEditorSurface && !audioEditorSurface.hidden) ||
+                (pdfEditorSurface && !pdfEditorSurface.hidden)
+            );
             if (
                 !editorPanel ||
                 editorPanel.hidden ||
-                !spreadsheetEditorSurface ||
-                spreadsheetEditorSurface.hidden ||
+                (!spreadsheetEditorActive && !svgEditorActive && !mediaEditorActive) ||
                 !editorSaveButton
             ) {
                 return;
@@ -21929,6 +22389,21 @@
             listItemsContainer.addEventListener("scroll", scheduleVirtualListWindowRender, { passive: true });
         }
         window.addEventListener("pagehide", flushStoredHandriveListItemScaleWrite);
+        window.addEventListener("beforeunload", function (event) {
+            if (bypassListEditorUnsavedGuard || !hasUnsavedListEditorChanges()) {
+                return;
+            }
+            event.preventDefault();
+            event.returnValue = "";
+        });
+        window.addEventListener("pagehide", function (event) {
+            if (event.persisted) {
+                return;
+            }
+            if (window.HandriveSvgEditor && typeof window.HandriveSvgEditor.destroy === "function") {
+                window.HandriveSvgEditor.destroy();
+            }
+        });
 
         setupFloatingListDetailPanels();
         setupListSplitter();
@@ -23389,6 +23864,7 @@
             return findFirstVisibleGuestDemoElement([
                 editorPanel,
                 spreadsheetEditorSurface,
+                svgEditorSurface,
                 imageEditorSurface,
                 videoEditorSurface,
                 audioEditorSurface,
@@ -26904,6 +27380,7 @@
         const videoEditorScriptUrl = root.dataset.videoEditorScriptUrl || "";
         const audioEditorScriptUrl = root.dataset.audioEditorScriptUrl || "";
         const pdfEditorScriptUrl = root.dataset.pdfEditorScriptUrl || "";
+        const svgEditorScriptUrl = root.dataset.svgEditorScriptUrl || "";
         const markdownImageUploadApiUrl = root.dataset.markdownImageUploadApiUrl || "";
         const markdownImageCleanupApiUrl = root.dataset.markdownImageCleanupApiUrl || "";
         const mkdirApiUrl = root.dataset.mkdirApiUrl;
@@ -26912,6 +27389,8 @@
         const tutorialReturnUrl = String(root.dataset.tutorialReturnUrl || "").trim();
         const writeEditorKind = String(root.dataset.writeEditorKind || "text").trim().toLowerCase();
         const isMediaWriteEditor = writeEditorKind === "image" || writeEditorKind === "audio" || writeEditorKind === "video" || writeEditorKind === "pdf";
+        const isVectorWriteEditor = writeEditorKind === "svg";
+        const isVisualWriteEditor = isMediaWriteEditor || isVectorWriteEditor;
         const isPublicWriteDirectSave = root.dataset.publicWriteDirectSave === "1";
         const writeRequiresCommitMessage = root.dataset.writeRequiresCommitMessage === "1";
 
@@ -26925,10 +27404,11 @@
         const videoEditorSurface = document.getElementById("handrive-video-editor-surface");
         const audioEditorSurface = document.getElementById("handrive-audio-editor-surface");
         const pdfEditorSurface = document.getElementById("handrive-pdf-editor-surface");
+        const svgEditorSurface = document.getElementById("handrive-svg-editor-surface");
         const editorHighlight = document.getElementById("handrive-editor-highlight");
         const editorHighlightCode = document.getElementById("handrive-editor-highlight-code");
         const editorSuggest = document.getElementById("handrive-editor-suggest");
-        const writeCodeEditor = isMediaWriteEditor
+        const writeCodeEditor = isVisualWriteEditor
             ? null
             : createHandriveCodeEditor(editorSurface, contentInput, getPathFileExtension(originalPath));
         const markdownHelpButton = document.getElementById("ui-markdown-help-btn");
@@ -27294,6 +27774,19 @@
         function markCurrentAsSaved() {
             savedFilenameValue = getWriteFilenameSnapshotValue();
             savedContentValue = contentInput ? contentInput.value : "";
+            if (
+                isVectorWriteEditor &&
+                window.HandriveSvgEditor &&
+                typeof window.HandriveSvgEditor.markClean === "function"
+            ) {
+                window.HandriveSvgEditor.markClean();
+            }
+        }
+
+        function getActiveWriteSvgEditor() {
+            return isVectorWriteEditor && window.HandriveSvgEditor
+                ? window.HandriveSvgEditor
+                : null;
         }
 
         function getActiveWriteMediaEditor() {
@@ -27322,15 +27815,17 @@
 
         function ensureWriteMediaEditorScript(kind) {
             const normalizedKind = String(kind || "").trim().toLowerCase();
-            const scriptUrl = normalizedKind === "image"
-                ? imageEditorScriptUrl
-                : normalizedKind === "video"
-                    ? videoEditorScriptUrl
-                    : normalizedKind === "audio"
-                        ? audioEditorScriptUrl
-                        : normalizedKind === "pdf"
-                            ? pdfEditorScriptUrl
-                            : "";
+            const scriptUrl = normalizedKind === "svg"
+                ? svgEditorScriptUrl
+                : normalizedKind === "image"
+                    ? imageEditorScriptUrl
+                    : normalizedKind === "video"
+                        ? videoEditorScriptUrl
+                        : normalizedKind === "audio"
+                            ? audioEditorScriptUrl
+                            : normalizedKind === "pdf"
+                                ? pdfEditorScriptUrl
+                                : "";
             if (normalizedKind === "video") {
                 return loadVideoPlayerStack().then(function () {
                     return loadLazyScriptOnce(scriptUrl, getMediaEditorGlobalName(normalizedKind));
@@ -27345,6 +27840,12 @@
         }
 
         function hasUnsavedWriteChanges() {
+            if (isVectorWriteEditor) {
+                const editor = getActiveWriteSvgEditor();
+                const editorDirty = Boolean(editor && typeof editor.getIsDirty === "function" && editor.getIsDirty());
+                const filenameChanged = getWriteFilenameSnapshotValue() !== savedFilenameValue;
+                return editorDirty || filenameChanged;
+            }
             if (isMediaWriteEditor) {
                 const filenameChanged = getWriteFilenameSnapshotValue() !== savedFilenameValue;
                 return hasUnsavedMediaWriteChanges() || filenameChanged;
@@ -27425,11 +27926,12 @@
         }
 
         async function showWriteMediaSurface() {
-            if (!isMediaWriteEditor) {
+            if (!isVisualWriteEditor) {
                 if (imageEditorSurface) imageEditorSurface.hidden = true;
                 if (videoEditorSurface) videoEditorSurface.hidden = true;
                 if (audioEditorSurface) audioEditorSurface.hidden = true;
                 if (pdfEditorSurface) pdfEditorSurface.hidden = true;
+                if (svgEditorSurface) svgEditorSurface.hidden = true;
                 return;
             }
             if (editorSurface) editorSurface.hidden = true;
@@ -27442,6 +27944,7 @@
             if (videoEditorSurface) videoEditorSurface.hidden = writeEditorKind !== "video";
             if (audioEditorSurface) audioEditorSurface.hidden = writeEditorKind !== "audio";
             if (pdfEditorSurface) pdfEditorSurface.hidden = writeEditorKind !== "pdf";
+            if (svgEditorSurface) svgEditorSurface.hidden = !isVectorWriteEditor;
 
             const entry = getWriteMediaEntry();
             const mediaUrl = buildWriteDownloadUrl(originalPath);
@@ -27454,33 +27957,96 @@
             try {
                 await ensureWriteMediaEditorScript(writeEditorKind);
             } catch (error) {
-                if (saveButton) saveButton.disabled = false;
+                if (saveButton) saveButton.disabled = true;
                 throw error;
             }
-            if (writeEditorKind === "image" && window.HandriveImageEditor && entry) {
-                window.HandriveImageEditor.init({
-                    entry: entry,
-                    imageServeUrl: mediaUrl,
-                    backgroundRemoveUrl: imageEditorRemoveBackgroundUrl,
-                    onDirtyChange: dirtyHandler,
+            let mediaReadyPromise = null;
+            if (isVectorWriteEditor) {
+                if (!window.HandriveSvgEditor || typeof window.HandriveSvgEditor.init !== "function") {
+                    throw new Error(getSvgEditorLoadErrorMessage(svgEditorSurface));
+                }
+                let svgLoadFailed = false;
+                const reportSvgLoadError = function (error) {
+                    if (svgLoadFailed) {
+                        return;
+                    }
+                    svgLoadFailed = true;
+                    const fallback = getSvgEditorLoadErrorMessage(svgEditorSurface);
+                    alertError(error instanceof Error ? error : new Error(String(error || fallback)));
+                };
+                try {
+                    const svgInitOptions = {
+                        sourceUrl: mediaUrl,
+                        onDirtyChange: dirtyHandler,
+                        onReady: function () {
+                            if (window.HandriveSvgEditor && typeof window.HandriveSvgEditor.resize === "function") {
+                                window.requestAnimationFrame(function () {
+                                    if (svgEditorSurface && !svgEditorSurface.hidden) {
+                                        window.HandriveSvgEditor.resize();
+                                    }
+                                });
+                            }
+                        },
+                        onError: reportSvgLoadError,
+                    };
+                    if (contentInput && contentInput.value) {
+                        svgInitOptions.content = contentInput.value;
+                    }
+                    await window.HandriveSvgEditor.init(svgInitOptions);
+                } catch (error) {
+                    reportSvgLoadError(error);
+                }
+                if (svgLoadFailed) {
+                    if (saveButton) saveButton.disabled = true;
+                    return;
+                }
+            } else if (writeEditorKind === "image" && window.HandriveImageEditor && entry) {
+                mediaReadyPromise = new Promise(function (resolve) {
+                    window.HandriveImageEditor.init({
+                        entry: entry,
+                        imageServeUrl: mediaUrl,
+                        backgroundRemoveUrl: imageEditorRemoveBackgroundUrl,
+                        onImageLoad: function () { resolve(true); },
+                        onImageLoadError: function (error) {
+                            alertError(error || new Error(t("image_editor_load_error", "이미지 로드 실패")));
+                            resolve(false);
+                        },
+                        onDirtyChange: dirtyHandler,
+                    });
                 });
             } else if (writeEditorKind === "video" && window.HandriveVideoEditor && entry) {
-                window.HandriveVideoEditor.init({
-                    entry: entry,
-                    videoServeUrl: mediaUrl,
-                    buildDownloadUrl: buildWriteScopedHomeDownloadUrl,
-                    listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
-                    scopedHomeDir: scopedHomeDir,
-                    onDirtyChange: dirtyHandler,
+                mediaReadyPromise = new Promise(function (resolve) {
+                    window.HandriveVideoEditor.init({
+                        entry: entry,
+                        videoServeUrl: mediaUrl,
+                        buildDownloadUrl: buildWriteScopedHomeDownloadUrl,
+                        listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
+                        scopedHomeDir: scopedHomeDir,
+                        onReady: function () { resolve(true); },
+                        onError: function (error) {
+                            if (error) console.error(error);
+                            alertError(new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
+                            resolve(false);
+                        },
+                        onDirtyChange: dirtyHandler,
+                    });
                 });
             } else if (writeEditorKind === "audio" && window.HandriveAudioEditor && entry) {
-                window.HandriveAudioEditor.init({
-                    entry: entry,
-                    audioServeUrl: mediaUrl,
-                    listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
-                    buildDownloadUrl: buildWriteScopedHomeDownloadUrl,
-                    scopedHomeDir: scopedHomeDir,
-                    onDirtyChange: dirtyHandler,
+                mediaReadyPromise = new Promise(function (resolve) {
+                    window.HandriveAudioEditor.init({
+                        entry: entry,
+                        audioServeUrl: mediaUrl,
+                        listApiUrl: appendQueryParam(appendSharedQuery(listApiUrl), "scope_home", "1"),
+                        buildDownloadUrl: buildWriteScopedHomeDownloadUrl,
+                        scopedHomeDir: scopedHomeDir,
+                        onReady: function () { resolve(true); },
+                        onError: function (error) {
+                            if (error) console.error(error);
+                            alertError(new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다.")));
+                            resolve(false);
+                        },
+                        onDirtyChange: dirtyHandler,
+                    });
                 });
             } else if (writeEditorKind === "pdf" && window.HandrivePdfEditor && entry) {
                 await window.HandrivePdfEditor.init({
@@ -27496,6 +28062,12 @@
                 });
             } else if (writeEditorKind === "pdf") {
                 throw new Error(t("pdf_editor_load_error", "PDF 편집기를 불러오지 못했습니다."));
+            } else if (writeEditorKind === "image" || writeEditorKind === "video" || writeEditorKind === "audio") {
+                throw new Error(t("js_preview_unavailable", "미리보기를 표시할 수 없습니다."));
+            }
+            if (mediaReadyPromise && !(await mediaReadyPromise)) {
+                if (saveButton) saveButton.disabled = true;
+                return;
             }
             if (saveButton) saveButton.disabled = false;
             scheduleWriteEditorHorizontalScrollReset();
@@ -28413,6 +28985,9 @@
                 saveLoadingOverlay.hidden = !state.isSaving;
             }
             [
+                saveButton,
+                cancelButton,
+                filenameInput,
                 saveCloseButton,
                 saveCancelButton,
                 saveConfirmButton,
@@ -28424,6 +28999,13 @@
                     control.disabled = state.isSaving;
                 }
             });
+            if (isVectorWriteEditor && window.HandriveSvgEditor) {
+                window.HandriveSvgEditor.setDisabled(state.isSaving);
+            }
+            const mediaEditor = getActiveWriteMediaEditor();
+            if (mediaEditor && typeof mediaEditor.setDisabled === "function") {
+                mediaEditor.setDisabled(state.isSaving);
+            }
         }
 
         function resolveWriteFilenameExtension() {
@@ -28519,6 +29101,7 @@
                 editorSurface,
                 contentInput,
                 editorHighlight,
+                svgEditorSurface,
                 imageEditorSurface,
                 videoEditorSurface,
                 audioEditorSurface,
@@ -28550,6 +29133,22 @@
             });
             window.setTimeout(resetWriteEditorHorizontalScroll, 80);
             window.setTimeout(resetWriteEditorHorizontalScroll, 240);
+        }
+
+        function scheduleWriteSvgEditorResize() {
+            if (!isVectorWriteEditor) {
+                return;
+            }
+            window.requestAnimationFrame(function () {
+                if (
+                    svgEditorSurface &&
+                    !svgEditorSurface.hidden &&
+                    window.HandriveSvgEditor &&
+                    typeof window.HandriveSvgEditor.resize === "function"
+                ) {
+                    window.HandriveSvgEditor.resize();
+                }
+            });
         }
 
         function clearEditorSuggestion() {
@@ -29921,6 +30520,9 @@
 
         function submitMediaEditorSave(options) {
             const settings = options || {};
+            if (state.isSaving) {
+                return;
+            }
             if (isDemoSaveMode) {
                 openDemoSaveModal();
                 return;
@@ -29947,8 +30549,18 @@
                         ? t("pdf_editor_saving", "저장 중...")
                         : t("audio_editor_saving", "저장 중...");
             const originalButtonLabel = getButtonActionLabel(saveButton);
+            const finishMediaSaveBusyState = function () {
+                setSaveModalSaving(false);
+                if (saveButton) {
+                    setButtonActionLabel(saveButton, originalButtonLabel);
+                    saveButton.classList.toggle("is-dirty", hasUnsavedMediaWriteChanges());
+                    if (typeof editor.getIsReady === "function") {
+                        saveButton.disabled = !editor.getIsReady();
+                    }
+                }
+            };
+            setSaveModalSaving(true);
             if (saveButton) {
-                saveButton.disabled = true;
                 setButtonActionLabel(saveButton, savingText);
             }
 
@@ -29957,17 +30569,11 @@
             const editorIsDirty = typeof editor.getIsDirty === "function" ? editor.getIsDirty() : true;
             if (!mediaFilename) {
                 alertError(new Error(t("js_filename_required", "파일명을 입력해주세요.")));
-                if (saveButton) {
-                    saveButton.disabled = false;
-                    setButtonActionLabel(saveButton, originalButtonLabel);
-                }
+                finishMediaSaveBusyState();
                 return;
             }
             if (!editorIsDirty && mediaFilename === originalMediaFilename) {
-                if (saveButton) {
-                    saveButton.disabled = false;
-                    setButtonActionLabel(saveButton, originalButtonLabel);
-                }
+                finishMediaSaveBusyState();
                 markCurrentAsSaved();
                 return;
             }
@@ -29977,29 +30583,19 @@
                 mediaSaveTarget = resolveWriteMediaSaveTarget(mediaFilename, editor);
             } catch (error) {
                 alertError(error);
-                if (saveButton) {
-                    saveButton.disabled = false;
-                    setButtonActionLabel(saveButton, originalButtonLabel);
-                }
+                finishMediaSaveBusyState();
                 return;
             }
 
             (async function () {
                 const overwriteConfirmed = await confirmWriteOverwriteIfNeeded(mediaSaveTarget.targetPath);
                 if (!overwriteConfirmed) {
-                    if (saveButton) {
-                        saveButton.disabled = false;
-                        setButtonActionLabel(saveButton, originalButtonLabel);
-                    }
+                    finishMediaSaveBusyState();
                     return;
                 }
 
                 editor.saveToServer(appendSharedQuery(saveUrl), csrfToken, originalPath, function (result) {
-                    if (saveButton) {
-                        saveButton.disabled = false;
-                        setButtonActionLabel(saveButton, originalButtonLabel);
-                        saveButton.classList.toggle("is-dirty", hasUnsavedMediaWriteChanges());
-                    }
+                    finishMediaSaveBusyState();
                     if (!result || !result.ok) {
                         const fallbackMessage = writeEditorKind === "image"
                             ? t("image_editor_save_error", "저장 실패")
@@ -30025,20 +30621,34 @@
                     });
                 }, { filename: mediaFilename });
             })().catch(function (error) {
-                if (saveButton) {
-                    saveButton.disabled = false;
-                    setButtonActionLabel(saveButton, originalButtonLabel);
-                    saveButton.classList.toggle("is-dirty", hasUnsavedMediaWriteChanges());
-                }
+                finishMediaSaveBusyState();
                 alertError(error);
             });
         }
 
         async function submitSave(options) {
             const settings = options || {};
+            if (state.isSaving) {
+                return null;
+            }
             if (isDemoSaveMode) {
                 openDemoSaveModal();
                 return null;
+            }
+            if (isVectorWriteEditor) {
+                const svgEditor = getActiveWriteSvgEditor();
+                if (!svgEditor || typeof svgEditor.getContent !== "function") {
+                    alertError(new Error(getSvgEditorLoadErrorMessage(svgEditorSurface)));
+                    return null;
+                }
+                try {
+                    if (contentInput) {
+                        contentInput.value = svgEditor.getContent();
+                    }
+                } catch (error) {
+                    alertError(error);
+                    return null;
+                }
             }
             const redirectOnSuccess = settings.redirectOnSuccess !== false;
             const onSuccess = typeof settings.onSuccess === "function" ? settings.onSuccess : null;
@@ -30077,7 +30687,7 @@
 
             upsertDirectory(targetDir);
             if (filenameInput) {
-                if (isMediaWriteEditor || !filenameExtensionSelect) {
+                if (isMediaWriteEditor) {
                     filenameInput.value = finalFilename;
                 } else {
                     filenameInput.value = buildFilenameWithExtension(finalFilename, targetExtension);
@@ -30102,6 +30712,13 @@
                 const overwriteConfirmed = await confirmWriteOverwriteIfNeeded(saveTargetPath);
                 if (!overwriteConfirmed) {
                     return;
+                }
+                if (writeRequiresCommitMessage) {
+                    const commitMessage = await promptWriteCommitMessage(saveTargetPath);
+                    if (commitMessage === null) {
+                        return;
+                    }
+                    payload.commit_message = commitMessage;
                 }
                 setSaveModalSaving(true);
                 const data = await requestJson(appendSharedQuery(saveApiUrl), buildPostOptions(payload));
@@ -30172,7 +30789,7 @@
         }
         markCurrentAsSaved();
         syncMarkdownHelpButtonVisibility();
-        if (!isMediaWriteEditor) {
+        if (!isVisualWriteEditor) {
             restoreWriteEditorFontSizeForExtension();
         }
         showWriteMediaSurface().catch(alertError);
@@ -30285,7 +30902,7 @@
                 state.selectedOverwritePath = "";
                 saveFilenameInput.focus();
                 syncMarkdownHelpButtonVisibility();
-                if (!isMediaWriteEditor) {
+                if (!isVisualWriteEditor) {
                     restoreWriteEditorFontSizeForExtension();
                 }
                 if (saveModal && !saveModal.hidden) {
@@ -30302,7 +30919,7 @@
                         saveExtensionSelect.value = parsed.extension;
                         syncWriteFilenameExtensionSelectFromValue(parsed.extension);
                         syncWriteFilenameInputExtension(parsed.extension);
-                        if (!isMediaWriteEditor) {
+                        if (!isVisualWriteEditor) {
                             restoreWriteEditorFontSizeForExtension();
                         }
                         if (saveModal && !saveModal.hidden) {
@@ -30318,7 +30935,7 @@
                         }
                         syncWriteFilenameExtensionSelectFromValue(parsed.extension);
                         syncWriteFilenameInputExtension(parsed.extension);
-                        if (!isMediaWriteEditor) {
+                        if (!isVisualWriteEditor) {
                             restoreWriteEditorFontSizeForExtension();
                         }
                     }
@@ -30336,7 +30953,7 @@
             const refreshMarkdownButtonVisibility = function () {
                 syncWriteFilenameExtensionFromInput();
                 syncMarkdownHelpButtonVisibility();
-                if (!isMediaWriteEditor) {
+                if (!isVisualWriteEditor) {
                     restoreWriteEditorFontSizeForExtension();
                 }
                 updateEditorSuggestion();
@@ -30366,7 +30983,7 @@
                     syncExtensionSelectElementToCustomDefault(saveExtensionSelect);
                 }
                 syncMarkdownHelpButtonVisibility();
-                if (!isMediaWriteEditor) {
+                if (!isVisualWriteEditor) {
                     restoreWriteEditorFontSizeForExtension();
                 }
                 updateEditorSuggestion();
@@ -30704,12 +31321,38 @@
             }
         });
 
+        document.addEventListener("keydown", function (event) {
+            const loweredKey = String(event.key || "").toLowerCase();
+            if (
+                !isVisualWriteEditor ||
+                !(event.metaKey || event.ctrlKey) ||
+                event.altKey ||
+                loweredKey !== "s" ||
+                !saveButton
+            ) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            if (!saveButton.disabled) {
+                saveButton.click();
+            }
+        }, true);
+
         window.addEventListener("beforeunload", function (event) {
             if (bypassUnsavedBeforeUnload || !hasUnsavedWriteChanges()) {
                 return;
             }
             event.preventDefault();
             event.returnValue = "";
+        });
+        window.addEventListener("pagehide", function (event) {
+            if (event.persisted) {
+                return;
+            }
+            if (isVectorWriteEditor && window.HandriveSvgEditor && typeof window.HandriveSvgEditor.destroy === "function") {
+                window.HandriveSvgEditor.destroy();
+            }
         });
 
         document.addEventListener("click", function (event) {
@@ -30796,6 +31439,8 @@
 
         window.addEventListener("resize", scheduleContentInputAutoHeight, { passive: true });
         window.addEventListener("orientationchange", scheduleContentInputAutoHeight, { passive: true });
+        window.addEventListener("resize", scheduleWriteSvgEditorResize, { passive: true });
+        window.addEventListener("orientationchange", scheduleWriteSvgEditorResize, { passive: true });
         window.addEventListener("scroll", closeMarkdownSnippetMenu, { passive: true });
         window.addEventListener("resize", closeMarkdownSnippetMenu, { passive: true });
 

@@ -2271,7 +2271,7 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     --handrive-inline-copy-arrow-size: 8px;
     --handrive-inline-copy-arrow-x: 50%;
     --handrive-inline-copy-arrow-y: 50%;
-    --handrive-inline-copy-feedback-bg: color-mix(in srgb, var(--shared-card-bg, var(--site-surface)) 82%, var(--handrive-text-stronger, var(--site-text-strong)) 18%);
+    --handrive-inline-copy-feedback-bg: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
     position: fixed;
     z-index: calc(var(--site-modal-base-z-index, 4000) + 50);
     display: inline-flex;
@@ -2284,11 +2284,13 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
     border: 0;
     border-radius: var(--handrive-radius-sm, 6px);
     background: var(--handrive-inline-copy-feedback-bg);
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     color: var(--handrive-text-stronger, var(--site-text-strong));
     box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 10px 24px rgba(0, 0, 0, 0.22)));
     font-size: 12px;
     font-weight: var(--site-weight-body);
-    line-height: 1;
+    line-height: 1.25;
     text-align: center;
     pointer-events: none;
     opacity: 0;
@@ -2361,6 +2363,16 @@ body.theme-dark .ui-auth-google-modal .root-auth-modal-btn-primary:focus-visible
 .handrive-inline-copy-feedback.is-visible.is-placement-left,
 .handrive-inline-copy-feedback.is-visible.is-placement-right {
     transform: translateX(0);
+}
+
+.site-upload-icon {
+    display: block;
+    flex: 0 0 auto;
+    width: 1em;
+    height: 1em;
+    background-color: currentColor;
+    -webkit-mask: url("../../media/icons/upload.svg") center / contain no-repeat;
+    mask: url("../../media/icons/upload.svg") center / contain no-repeat;
 }
 
 /* Shared tooltip — uses the same translucent surface treatment as common modals. */

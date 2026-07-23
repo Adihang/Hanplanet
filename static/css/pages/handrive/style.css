@@ -4845,7 +4845,7 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
 }
 
 .handrive-item-type-icon.is-dir.is-youtube-download-folder::before {
-    background-image: url("/static/media/icons/handrive/type-folder-youtube.png?v=icon-source-20260721-4");
+    background-image: url("/static/media/icons/handrive/type-folder-youtube.png?v=youtube-folder-20260723-1");
 }
 
 .handrive-item-type-icon.is-dir.is-root-avatar {
@@ -5038,7 +5038,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before {
-    background-image: url("/static/media/icons/handrive/type-video.png?v=icon-source-20260721-4");
+    background-image: url("/static/media/icons/handrive/type-video.png?v=video-film-20260722-1");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before {
@@ -5305,6 +5305,8 @@ body.theme-dark .handrive-item-type-icon.is-file.is-generic[data-file-icon="font
 
 .handrive-list-items .handrive-item-type-icon::before,
 .handrive-list-items .handrive-item-type-icon.is-dir::before,
+.handrive-list-items .handrive-item-type-icon.is-file::before,
+.handrive-list-items .handrive-item-type-icon.is-file.is-generic::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-google-drive::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-github-repo::before,
 .handrive-list-items .handrive-item-type-icon.is-dir.is-repo::before,
@@ -5537,6 +5539,32 @@ body.handrive-popup-dragging {
     --handrive-url-share-switch-shift: 10px;
 }
 
+/* Shared switch treatment for modal and editor controls. */
+.handrive-shared-toggle {
+    --handrive-url-share-switch-width: 25px;
+    --handrive-url-share-switch-height: 15px;
+    --handrive-url-share-switch-dot-size: 11px;
+    --handrive-url-share-switch-dot-offset: 2px;
+    --handrive-url-share-switch-shift: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.handrive-shared-toggle > input[type="checkbox"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .handrive-url-share-enabled-switch {
     display: inline-flex;
     align-items: center;
@@ -5581,22 +5609,26 @@ body.handrive-popup-dragging {
 }
 
 .handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob,
-.handrive-url-share-edit-switch:has(input:checked) .handrive-url-share-switch-knob {
+.handrive-url-share-edit-switch:has(input:checked) .handrive-url-share-switch-knob,
+.handrive-shared-toggle:has(input:checked) .handrive-url-share-switch-knob {
     background: var(--theme-accent, var(--handrive-text-stronger));
 }
 
 .handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob::after,
-.handrive-url-share-edit-switch:has(input:checked) .handrive-url-share-switch-knob::after {
+.handrive-url-share-edit-switch:has(input:checked) .handrive-url-share-switch-knob::after,
+.handrive-shared-toggle:has(input:checked) .handrive-url-share-switch-knob::after {
     transform: translateX(var(--handrive-url-share-switch-shift));
 }
 
 .handrive-url-share-enabled-switch:has(input:focus-visible) .handrive-url-share-switch-knob,
-.handrive-url-share-edit-switch:has(input:focus-visible) .handrive-url-share-switch-knob {
+.handrive-url-share-edit-switch:has(input:focus-visible) .handrive-url-share-switch-knob,
+.handrive-shared-toggle:has(input:focus-visible) .handrive-url-share-switch-knob {
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 36%, transparent);
 }
 
 .handrive-url-share-enabled-switch:has(input:disabled),
-.handrive-url-share-edit-switch:has(input:disabled) {
+.handrive-url-share-edit-switch:has(input:disabled),
+.handrive-shared-toggle:has(input:disabled) {
     cursor: default;
     opacity: 0.58;
 }
@@ -6054,7 +6086,7 @@ body.handrive-popup-dragging {
     --handrive-inline-copy-arrow-size: 8px;
     --handrive-inline-copy-arrow-x: 50%;
     --handrive-inline-copy-arrow-y: 50%;
-    --handrive-inline-copy-feedback-bg: color-mix(in srgb, var(--shared-card-bg) 82%, var(--handrive-text-stronger) 18%);
+    --handrive-inline-copy-feedback-bg: var(--site-modal-surface-bg, rgb(var(--site-modal-surface-rgb, 248 248 248) / var(--site-modal-surface-opacity, 0.72)));
     position: fixed;
     z-index: calc(var(--site-modal-base-z-index, 4000) + 50);
     display: inline-flex;
@@ -6067,11 +6099,13 @@ body.handrive-popup-dragging {
     border: 0;
     border-radius: var(--handrive-radius-sm);
     background: var(--handrive-inline-copy-feedback-bg);
+    -webkit-backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
+    backdrop-filter: var(--site-modal-surface-filter, saturate(120%) blur(4px));
     color: var(--handrive-text-stronger);
     box-shadow: var(--site-dropdown-menu-shadow, var(--site-popup-shadow-common, 0 10px 24px rgba(0, 0, 0, 0.22)));
     font-size: 12px;
     font-weight: var(--site-weight-body);
-    line-height: 1;
+    line-height: 1.25;
     text-align: center;
     pointer-events: none;
     opacity: 0;
@@ -6189,6 +6223,18 @@ body.handrive-popup-dragging {
     flex: 0 0 auto;
     width: var(--handrive-icon-btn-icon-size, var(--handrive-icon-action-icon-size));
     height: var(--handrive-icon-btn-icon-size, var(--handrive-icon-action-icon-size));
+}
+
+.handrive-icon-btn .handrive-delete-icon {
+    display: block;
+    /* The source artwork is intentionally taller than the surrounding line icons.
+       Keep the delete glyph visually aligned without changing the button hit area. */
+    flex: 0 0 20px;
+    width: 20px;
+    height: 20px;
+    background: currentColor;
+    -webkit-mask: url("/static/media/icons/delete.png?v=delete-icon-source-20260723-2") center / 100% 100% no-repeat;
+    mask: url("/static/media/icons/delete.png?v=delete-icon-source-20260723-2") center / 100% 100% no-repeat;
 }
 
 .handrive-icon-btn .portfolio-print-btn-icon {
@@ -9330,7 +9376,6 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 
 .handrive-folder-icon-file-field {
     position: relative;
-    cursor: pointer;
 }
 
 .handrive-field .handrive-folder-icon-file-input {
@@ -9369,6 +9414,8 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 }
 
 .handrive-folder-icon-file-button {
+    appearance: none;
+    -webkit-appearance: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -9379,10 +9426,12 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     border-radius: calc(var(--handrive-radius-sm) - 2px);
     background: var(--ui-btn-base-bg);
     color: var(--ui-btn-base-color);
+    font: inherit;
     font-size: 15px;
     font-weight: var(--site-weight-button);
     line-height: 1;
     white-space: nowrap;
+    cursor: pointer;
     translate: 0 0;
     transition: var(--ui-btn-transition);
 }
@@ -9413,25 +9462,15 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     font-weight: 500;
 }
 
-.handrive-folder-icon-file-field:hover .handrive-folder-icon-file-control,
-.handrive-folder-icon-file-input:focus-visible + .handrive-folder-icon-file-control {
-    border-color: var(--handrive-search-border-focus);
-    background: color-mix(in srgb, var(--handrive-surface-muted-strong) 88%, var(--handrive-text-stronger));
-}
-
-.handrive-folder-icon-file-input:focus-visible + .handrive-folder-icon-file-control {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--handrive-search-border-focus) 22%, transparent);
-}
-
-.handrive-folder-icon-file-field:hover .handrive-folder-icon-file-button,
-.handrive-folder-icon-file-input:focus-visible + .handrive-folder-icon-file-control .handrive-folder-icon-file-button {
+.handrive-folder-icon-file-button:hover,
+.handrive-folder-icon-file-button:focus-visible {
     border-color: var(--ui-btn-hover-border);
     background: var(--ui-btn-hover-bg);
     color: var(--ui-btn-hover-color);
     translate: 0 var(--ui-btn-hover-lift, var(--btn-template-hover-lift, -1px));
 }
 
-.handrive-folder-icon-file-field:active .handrive-folder-icon-file-button {
+.handrive-folder-icon-file-button:active {
     border-color: var(--ui-btn-active-border, var(--ui-btn-hover-border));
     background: var(--ui-btn-active-bg, var(--ui-btn-hover-bg));
     color: var(--ui-btn-active-color, var(--ui-btn-hover-color));
@@ -9678,14 +9717,26 @@ body .handrive-code-editor .ace_gutter-cell {
 }
 
 body .handrive-code-editor .ace_text-input.ace_composition {
-    box-sizing: border-box;
+    /* Keep the composition text on the same metrics as the rendered code. */
+    box-sizing: content-box;
+    font: inherit !important;
+    font-variant-ligatures: none;
+    letter-spacing: inherit;
+    line-height: inherit !important;
     min-height: 0;
-    max-height: var(--handrive-code-editor-composition-line-height);
-    height: var(--handrive-code-editor-composition-line-height);
+    max-height: none;
     margin: 0 -1px;
     padding: 0 1px;
-    line-height: var(--handrive-code-editor-composition-line-height);
+    text-align: left;
     overflow: hidden;
+}
+
+/* Keep the Korean glyph's natural proportions and remove only Ace's
+   explicit two-cell whitespace reservation. */
+body .handrive-code-editor .ace_cjk {
+    display: inline-block;
+    width: max-content !important;
+    text-align: left;
 }
 
 body .handrive-code-editor .ace_gutter-active-line,
@@ -11424,6 +11475,7 @@ body.handrive-help-modal-resizing {
 .handrive-spreadsheet-toolbar {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
     flex: 0 0 auto;
     min-height: 44px;
@@ -11445,6 +11497,64 @@ body.handrive-help-modal-resizing {
     font-family: Inter, "Noto Sans KR", sans-serif;
     font-size: 13px;
     font-weight: 550;
+}
+
+.handrive-spreadsheet-cell-address {
+    flex: 0 0 72px;
+    width: 72px;
+    min-width: 0;
+    height: 32px;
+    padding: 0 7px;
+    border: 1px solid var(--handrive-border);
+    border-radius: var(--handrive-radius-sm);
+    box-sizing: border-box;
+    background: var(--handrive-bg);
+    color: var(--handrive-text);
+    font-family: Inter, "Noto Sans KR", sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.handrive-spreadsheet-formula-wrap {
+    display: flex;
+    align-items: center;
+    flex: 1 1 180px;
+    min-width: 120px;
+    height: 32px;
+    border: 1px solid var(--handrive-border);
+    border-radius: var(--handrive-radius-sm);
+    box-sizing: border-box;
+    background: var(--handrive-bg);
+    overflow: hidden;
+}
+
+.handrive-spreadsheet-formula-prefix {
+    flex: 0 0 auto;
+    padding: 0 8px;
+    color: var(--handrive-text-muted);
+    font-size: 12px;
+    font-style: italic;
+    font-weight: 700;
+}
+
+.handrive-spreadsheet-formula {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 30px;
+    padding: 0 7px 0 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--handrive-text);
+    font-family: Inter, "Noto Sans KR", sans-serif;
+    font-size: 12px;
+}
+
+.handrive-spreadsheet-cell-address:focus,
+.handrive-spreadsheet-formula-wrap:focus-within {
+    border-color: var(--theme-accent-strong, #3b82f6);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--theme-accent-strong, #3b82f6) 18%, transparent);
 }
 
 .handrive-spreadsheet-icon-btn {
@@ -11820,6 +11930,22 @@ body.theme-dark .handrive-spreadsheet-preview-hot .ht-root-wrapper {
 
 .ve-subtitle-icon-field {
     min-height: 30px;
+}
+
+.ve-subtitle-toggle-field {
+    gap: 6px;
+}
+
+.ve-style-toggle-label {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: var(--handrive-text-secondary, var(--handrive-text-muted));
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .ve-style-icon {

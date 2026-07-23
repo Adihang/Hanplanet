@@ -1,7 +1,7 @@
 """Main Django views for Hanplanet pages, portfolio APIs, and game configuration endpoints."""
 
 from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib.auth import get_user_model, logout as auth_logout
+from django.contrib.auth import authenticate, get_user_model, logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from .forms import (
     PortfolioActionButtonForm,
@@ -2336,6 +2336,22 @@ def _wargame_options_response(request):
     return _wargame_cors_response(request, HttpResponse(status=204))
 
 
+def _wargame_authenticated_user(request):
+    """Resolve Wargame identity from the central Django session or an OIDC token."""
+    session_user = getattr(request, "user", None)
+    if session_user is not None and session_user.is_authenticated:
+        return session_user
+
+    authorization = str(request.headers.get("Authorization") or "").strip()
+    if not authorization.lower().startswith("bearer "):
+        return None
+    try:
+        return authenticate(request=request)
+    except Exception:
+        logger.info("Rejected Wargame OAuth bearer authentication", exc_info=True)
+        return None
+
+
 def _decode_wargame_auth_token(token):
     secret = str(getattr(settings, "GAME_JWT_SECRET", "") or "").encode("utf-8")
     if not secret:
@@ -2468,19 +2484,20 @@ def wargame_session(request, ui_lang=None):
     resolved_lang = ui_lang if ui_lang in SUPPORTED_UI_LANGS else "ko"
     if request.method == "OPTIONS":
         return _wargame_options_response(request)
-    if not request.user.is_authenticated:
+    user = _wargame_authenticated_user(request)
+    if user is None:
         return _wargame_cors_response(
             request,
             JsonResponse({"authenticated": False, "login_url": _wargame_login_url(resolved_lang)}),
         )
 
-    token = build_game_auth_token(request.user, game_slug="wargame")
+    token = build_game_auth_token(user, game_slug="wargame")
     return _wargame_cors_response(
         request,
         JsonResponse(
             {
                 "authenticated": True,
-                **_wargame_identity_payload(request.user),
+                **_wargame_identity_payload(user),
                 "token": token,
                 "expires_in": int(getattr(settings, "GAME_JWT_EXP_SECONDS", 300) or 300),
             }
@@ -7582,6 +7599,7 @@ def minecraft_home(request, ui_lang=None):
         "minecraft_trade_create_button_label": "Register" if is_english else "등록",
         "minecraft_trade_buy_button_label": "Buy" if is_english else "구입",
         "minecraft_trade_cancel_button_label": "Complete trade" if is_english else "거래 완료",
+        "minecraft_trade_settle_partial_button_label": "Stop trade" if is_english else "거래 중단",
         "minecraft_trade_claim_button_label": "Claim payment" if is_english else "아이템 수령",
         "minecraft_trade_empty_label": "No trade listings." if is_english else "등록된 거래가 없습니다.",
         "minecraft_trade_loading_label": "Loading trades." if is_english else "거래글을 불러오는 중입니다.",

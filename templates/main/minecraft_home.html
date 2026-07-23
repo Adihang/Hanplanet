@@ -2851,7 +2851,6 @@
                                 type="button"
                                 id="minecraftAddressCopy"
                                 aria-label="{{ server_address_copy_label }}"
-                                title="{{ server_address_copy_label }}"
                                 data-copy-label="{{ server_address_copy_label }}"
                                 data-copied-label="{{ server_address_copied_label }}"
                                 data-copy-feedback-label="{{ server_address_copy_feedback_label }}"
@@ -2873,7 +2872,6 @@
                                 type="button"
                                 id="minecraftBedrockAddressCopy"
                                 aria-label="{{ bedrock_server_address_copy_label }}"
-                                title="{{ bedrock_server_address_copy_label }}"
                                 data-copy-label="{{ bedrock_server_address_copy_label }}"
                                 data-copied-label="{{ server_address_copied_label }}"
                                 data-copy-feedback-label="{{ server_address_copy_feedback_label }}"
@@ -3235,6 +3233,7 @@
             tradeCancelled: '{{ minecraft_trade_cancelled_label|escapejs }}',
             tradeBuy: '{{ minecraft_trade_buy_button_label|escapejs }}',
             tradeCancel: '{{ minecraft_trade_cancel_button_label|escapejs }}',
+            tradeSettlePartial: '{{ minecraft_trade_settle_partial_button_label|escapejs }}',
             tradeClaim: '{{ minecraft_trade_claim_button_label|escapejs }}',
             tradeRemaining: '{{ minecraft_trade_remaining_label|escapejs }}',
             tradePurchaseAmount: '{{ minecraft_trade_purchase_amount_label|escapejs }}',
@@ -3385,7 +3384,6 @@
             if (!button) return;
             const copyLabel = button.dataset.copyLabel || '';
             button.setAttribute('aria-label', copyLabel);
-            button.title = copyLabel;
         }
 
         function markAddressCopied(button) {
@@ -3393,7 +3391,6 @@
             const copiedLabel = button.dataset.copiedLabel || '';
             const feedbackLabel = button.dataset.copyFeedbackLabel || copiedLabel;
             button.setAttribute('aria-label', copiedLabel);
-            button.title = copiedLabel;
             if (typeof window.showHandriveInlineCopyFeedback === 'function') {
                 window.showHandriveInlineCopyFeedback(button, feedbackLabel);
             }
@@ -5625,7 +5622,8 @@
                 actions.push('<button class="minecraft-player-edit-button minecraft-trade-action" type="button" data-trade-action="claim" data-trade-id="' + escapeAttribute(listingId) + '">' + escapeHtml(labels.tradeClaim) + '</button>');
             }
             if (listing && listing.canSettle) {
-                actions.push('<button class="minecraft-player-edit-button minecraft-trade-action" type="button" data-trade-action="settle" data-trade-id="' + escapeAttribute(listingId) + '">' + escapeHtml(labels.tradeCancel) + '</button>');
+                const settleLabel = Number(listing.remainingSellAmount) > 0 ? labels.tradeSettlePartial : labels.tradeCancel;
+                actions.push('<button class="minecraft-player-edit-button minecraft-trade-action" type="button" data-trade-action="settle" data-trade-id="' + escapeAttribute(listingId) + '">' + escapeHtml(settleLabel) + '</button>');
             }
             return actions.join('');
         }

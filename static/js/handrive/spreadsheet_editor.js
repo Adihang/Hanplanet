@@ -9,6 +9,7 @@
     var PREVIEW_HOT_MAX_HEIGHT = 620;
     var PREVIEW_MAX_ROWS = 500;
     var PREVIEW_MAX_COLS = 100;
+    var CSV_DEFAULT_DELIMITER = ",";
     var activeState = null;
     var previewStates = [];
     var previewSaveShortcutInstalled = false;
@@ -43,16 +44,6 @@
         if (!window.ExcelJS || !window.ExcelJS.Workbook) {
             throw new Error("ExcelJS를 불러오지 못했습니다.");
         }
-    }
-
-    function arrayBufferToBase64(buffer) {
-        var bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-        var binary = "";
-        var chunkSize = 0x8000;
-        for (var index = 0; index < bytes.length; index += chunkSize) {
-            binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(index, index + chunkSize)));
-        }
-        return window.btoa(binary);
     }
 
     function cloneData(data) {
@@ -90,6 +81,109 @@
             }
         });
         return rows;
+    }
+
+    function countCsvDelimiter(text, delimiter) {
+        var lineCount = 0;
+        var delimiterCount = 0;
+        var quoted = false;
+        var source = String(text || "").slice(0, 16000);
+        for (var index = 0; index < source.length; index += 1) {
+            var character = source.charAt(index);
+            if (character === '"') {
+                if (quoted && source.charAt(index + 1) === '"') {
+                    index += 1;
+                } else {
+                    quoted = !quoted;
+                }
+            } else if (!quoted && character === delimiter) {
+                delimiterCount += 1;
+            } else if (!quoted && (character === "\n" || character === "\r")) {
+                lineCount += 1;
+            }
+        }
+        return { lineCount: Math.max(1, lineCount), delimiterCount: delimiterCount };
+    }
+
+    function detectCsvDelimiter(text) {
+        var candidates = [",", ";", "\t", "|"];
+        var bestDelimiter = CSV_DEFAULT_DELIMITER;
+        var bestScore = 0;
+        candidates.forEach(function (delimiter) {
+            var counts = countCsvDelimiter(text, delimiter);
+            var average = counts.delimiterCount / counts.lineCount;
+            var score = average > 0 ? average + Math.min(1, counts.delimiterCount / 1000) : 0;
+            if (score > bestScore) {
+                bestScore = score;
+                bestDelimiter = delimiter;
+            }
+        });
+        return bestDelimiter;
+    }
+
+    function decodeCsvBuffer(arrayBuffer) {
+        var bytes = new Uint8Array(arrayBuffer || new ArrayBuffer(0));
+        var encoding = "utf-8";
+        var hasBom = false;
+        if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+            encoding = "utf-8";
+            hasBom = true;
+        } else if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+            encoding = "utf-16le";
+            hasBom = true;
+        } else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+            encoding = "utf-16be";
+            hasBom = true;
+        } else if (window.TextDecoder) {
+            var candidates = ["utf-8", "euc-kr", "shift_jis", "windows-1252"];
+            var bestText = "";
+            var bestReplacementCount = Number.POSITIVE_INFINITY;
+            candidates.forEach(function (candidate) {
+                try {
+                    var decoded = new TextDecoder(candidate).decode(bytes);
+                    var replacementCount = (decoded.match(/\ufffd/g) || []).length;
+                    if (replacementCount < bestReplacementCount) {
+                        bestReplacementCount = replacementCount;
+                        bestText = decoded;
+                        encoding = candidate;
+                    }
+                } catch (error) {}
+            });
+            if (bestText) {
+                return {
+                    text: bestText.replace(/^\ufeff/, ""),
+                    encoding: encoding,
+                    hasBom: hasBom,
+                    delimiter: detectCsvDelimiter(bestText),
+                };
+            }
+        }
+        var decoder = window.TextDecoder ? new TextDecoder(encoding) : null;
+        var text = decoder
+            ? decoder.decode(bytes).replace(/^\ufeff/, "")
+            : String.fromCharCode.apply(null, Array.from(bytes));
+        return {
+            text: text,
+            encoding: encoding,
+            hasBom: hasBom,
+            delimiter: detectCsvDelimiter(text),
+        };
+    }
+
+    function getCsvDelimiterLabel(delimiter) {
+        if (delimiter === "\t") return "탭";
+        if (delimiter === ";") return "세미콜론";
+        if (delimiter === "|") return "파이프";
+        return "쉼표";
+    }
+
+    function getCsvStatus(csvMeta) {
+        if (!csvMeta) {
+            return "";
+        }
+        var encoding = String(csvMeta.encoding || "utf-8").toUpperCase();
+        var saveNote = encoding === "UTF-8" || encoding === "UTF-8-BOM" ? "" : " · 저장 시 UTF-8 변환";
+        return "CSV · " + encoding + " · " + getCsvDelimiterLabel(csvMeta.delimiter || CSV_DEFAULT_DELIMITER) + " 구분" + saveNote;
     }
 
     function trimSheetData(data) {
@@ -268,6 +362,25 @@
             return value.error;
         }
         return String(value);
+    }
+
+    function getExcelCellFormula(cell) {
+        if (!cell) {
+            return "";
+        }
+        var value = cell.value;
+        if (value && typeof value === "object") {
+            if (value.formula) {
+                return "=" + String(value.formula);
+            }
+            if (value.sharedFormula) {
+                return "=" + String(value.sharedFormula);
+            }
+        }
+        if (cell.formula) {
+            return "=" + String(cell.formula);
+        }
+        return "";
     }
 
     function hasExcelCellValue(cell) {
@@ -499,6 +612,7 @@
         var bounds = getWorksheetBounds(worksheet, mergeCells);
         var data = [];
         var cellStyles = {};
+        var formulas = {};
         for (var rowIndex = 1; rowIndex <= bounds.rows; rowIndex += 1) {
             var row = worksheet.getRow(rowIndex);
             var rowData = [];
@@ -509,6 +623,10 @@
                 var key = getCellKey(zeroRow, zeroCol);
                 var displayValue = mergeChildLookup[key] ? "" : getExcelCellDisplayValue(cell);
                 rowData.push(normalizeCellValue(displayValue));
+                var formula = getExcelCellFormula(cell);
+                if (formula) {
+                    formulas[key] = formula;
+                }
                 var cellStyle = getExcelCellStyle(cell && cell.master ? cell.master : cell);
                 if (cellStyle) {
                     cellStyles[key] = cellStyle;
@@ -523,6 +641,7 @@
             originalRowCount: normalizedData.length,
             originalColCount: getSheetMaxColumnCount(normalizedData),
             cellStyles: cellStyles,
+            formulas: formulas,
             mergeCells: mergeCells,
             colWidths: getWorksheetColumnWidths(worksheet, bounds.cols),
             rowHeights: getWorksheetRowHeights(worksheet, bounds.rows),
@@ -564,6 +683,9 @@
             preview: Boolean(settings.preview),
             maxRows: resolvePositiveInteger(settings.maxRows, PREVIEW_MAX_ROWS),
             maxCols: resolvePositiveInteger(settings.maxCols, PREVIEW_MAX_COLS),
+            workerScriptUrl: String(settings.workerScriptUrl || "").trim(),
+            sheetJsScriptUrl: String(settings.sheetJsScriptUrl || "").trim(),
+            excelJsScriptUrl: String(settings.excelJsScriptUrl || "").trim(),
         };
     }
 
@@ -625,12 +747,16 @@
     function parseWorkbookWithSheetJs(arrayBuffer, extension, options) {
         var parseOptions = resolveSpreadsheetParseOptions(options);
         var workbook;
+        var csvMeta = null;
         if (extension === ".csv") {
-            var decoder = window.TextDecoder ? new TextDecoder("utf-8") : null;
-            var csvText = decoder
-                ? decoder.decode(new Uint8Array(arrayBuffer))
-                : String.fromCharCode.apply(null, Array.from(new Uint8Array(arrayBuffer)));
-            var csvReadOptions = { type: "string", raw: false };
+            var decodedCsv = decodeCsvBuffer(arrayBuffer);
+            csvMeta = {
+                encoding: decodedCsv.encoding,
+                delimiter: decodedCsv.delimiter,
+                hasBom: decodedCsv.hasBom,
+            };
+            var csvReadOptions = { type: "string", raw: false, FS: decodedCsv.delimiter };
+            var csvText = decodedCsv.text;
             if (parseOptions.preview) {
                 csvReadOptions.sheetRows = parseOptions.maxRows;
             }
@@ -666,11 +792,31 @@
                 : [];
             data = limitPreviewColumns(data, parseOptions);
             var normalizedData = normalizeSheetData(data);
+            var formulas = {};
+            if (worksheet && window.XLSX.utils.decode_cell) {
+                Object.keys(worksheet).forEach(function (cellAddress) {
+                    if (cellAddress.charAt(0) === "!") {
+                        return;
+                    }
+                    var cell = worksheet[cellAddress];
+                    if (!cell || !cell.f) {
+                        return;
+                    }
+                    var decodedCell = window.XLSX.utils.decode_cell(cellAddress);
+                    if (
+                        decodedCell &&
+                        (!parseOptions.preview || (decodedCell.r < parseOptions.maxRows && decodedCell.c < parseOptions.maxCols))
+                    ) {
+                        formulas[getCellKey(decodedCell.r, decodedCell.c)] = "=" + String(cell.f);
+                    }
+                });
+            }
             return {
                 name: sanitizeSheetName(sheetName, "Sheet" + String(index + 1)),
                 data: normalizedData,
                 originalRowCount: normalizedData.length,
                 originalColCount: getSheetMaxColumnCount(normalizedData),
+                formulas: formulas,
                 previewLimited: parseOptions.preview && isWorksheetRangeLimited(worksheet, limitedRange),
                 previewRowLimit: parseOptions.maxRows,
                 previewColumnLimit: parseOptions.maxCols,
@@ -685,12 +831,132 @@
                 originalColCount: getSheetMaxColumnCount(emptyData),
             });
         }
-        return { sheets: sheets, sourceWorkbook: null, sourceArrayBuffer: null };
+        return { sheets: sheets, sourceWorkbook: null, sourceArrayBuffer: null, csvMeta: csvMeta };
+    }
+
+    function parseWorkbookWithSheetJsWorker(arrayBuffer, extension, options) {
+        var parseOptions = resolveSpreadsheetParseOptions(options);
+        return new Promise(function (resolve, reject) {
+            var worker;
+            try {
+                worker = new window.Worker(parseOptions.workerScriptUrl);
+            } catch (error) {
+                reject(error);
+                return;
+            }
+
+            var settled = false;
+            var finish = function (callback, value) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                worker.onmessage = null;
+                worker.onerror = null;
+                worker.terminate();
+                callback(value);
+            };
+            worker.onmessage = function (event) {
+                var result = event && event.data ? event.data : {};
+                if (!result.ok) {
+                    finish(reject, new Error(result.error || "스프레드시트 미리보기를 처리하지 못했습니다."));
+                    return;
+                }
+                finish(resolve, {
+                    sheets: result.sheets || [],
+                    sourceWorkbook: null,
+                    sourceArrayBuffer: null,
+                    csvMeta: result.csvMeta || null,
+                });
+            };
+            worker.onerror = function (event) {
+                finish(reject, new Error(event && event.message ? event.message : "스프레드시트 미리보기 Worker 오류"));
+            };
+            var workerBuffer = arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer;
+            worker.postMessage({
+                type: "parse-preview",
+                arrayBuffer: workerBuffer,
+                extension: extension,
+                maxRows: parseOptions.maxRows,
+                maxCols: parseOptions.maxCols,
+                sheetJsScriptUrl: parseOptions.sheetJsScriptUrl,
+            }, [workerBuffer]);
+        });
+    }
+
+    function parseWorkbookWithExcelJsWorker(arrayBuffer, extension, options) {
+        var parseOptions = resolveSpreadsheetParseOptions(options);
+        return new Promise(function (resolve, reject) {
+            var worker;
+            try {
+                worker = new window.Worker(parseOptions.workerScriptUrl);
+            } catch (error) {
+                reject(error);
+                return;
+            }
+
+            var settled = false;
+            var finish = function (callback, value) {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                worker.onmessage = null;
+                worker.onerror = null;
+                worker.terminate();
+                callback(value);
+            };
+            worker.onmessage = function (event) {
+                var result = event && event.data ? event.data : {};
+                if (!result.ok) {
+                    finish(reject, new Error(result.error || "스프레드시트를 처리하지 못했습니다."));
+                    return;
+                }
+                finish(resolve, {
+                    sheets: result.sheets || [],
+                    sourceWorkbook: null,
+                    sourceArrayBuffer: arrayBuffer,
+                    csvMeta: result.csvMeta || null,
+                });
+            };
+            worker.onerror = function (event) {
+                finish(reject, new Error(event && event.message ? event.message : "스프레드시트 Worker 오류"));
+            };
+            var workerBuffer = arrayBuffer.slice ? arrayBuffer.slice(0) : arrayBuffer;
+            worker.postMessage({
+                type: "parse-full",
+                arrayBuffer: workerBuffer,
+                extension: extension,
+                excelJsScriptUrl: parseOptions.excelJsScriptUrl,
+            }, [workerBuffer]);
+        });
     }
 
     function parseWorkbook(arrayBuffer, extension, options) {
         var parseOptions = resolveSpreadsheetParseOptions(options);
+        if (
+            parseOptions.preview &&
+            parseOptions.workerScriptUrl &&
+            parseOptions.sheetJsScriptUrl &&
+            typeof window.Worker === "function"
+        ) {
+            return parseWorkbookWithSheetJsWorker(arrayBuffer, extension, parseOptions).catch(function () {
+                return parseWorkbookWithSheetJs(arrayBuffer, extension, parseOptions);
+            });
+        }
         if (!parseOptions.preview && extension === ".xlsx" && window.ExcelJS && window.ExcelJS.Workbook) {
+            if (
+                parseOptions.workerScriptUrl &&
+                parseOptions.excelJsScriptUrl &&
+                typeof window.Worker === "function"
+            ) {
+                return parseWorkbookWithExcelJsWorker(arrayBuffer, extension, parseOptions)
+                    .catch(function () {
+                        return parseWorkbookWithExcelJs(arrayBuffer).catch(function () {
+                            return parseWorkbookWithSheetJs(arrayBuffer, extension, parseOptions);
+                        });
+                    });
+            }
             return parseWorkbookWithExcelJs(arrayBuffer).catch(function () {
                 return parseWorkbookWithSheetJs(arrayBuffer, extension, parseOptions);
             });
@@ -721,12 +987,20 @@
         return new Blob([bytes], { type: mimeType || "application/octet-stream" });
     }
 
-    function buildWorkbookBase64(sheets, extension) {
+    function buildWorkbookBase64(sheets, extension, csvMeta) {
         var normalizedExtension = SUPPORTED_EXTENSIONS.has(extension) ? extension : ".xlsx";
         if (normalizedExtension === ".csv") {
             var csvSheet = (sheets && sheets[0]) || { data: [[""]] };
             var csvWorksheet = window.XLSX.utils.aoa_to_sheet(trimSheetData(csvSheet.data));
-            return encodeUtf8Base64(window.XLSX.utils.sheet_to_csv(csvWorksheet));
+            var meta = csvMeta || {};
+            var csvText = window.XLSX.utils.sheet_to_csv(csvWorksheet, {
+                FS: meta.delimiter || CSV_DEFAULT_DELIMITER,
+                RS: meta.rowSeparator || "\n",
+            });
+            if (meta.hasBom) {
+                csvText = "\ufeff" + csvText;
+            }
+            return encodeUtf8Base64(csvText);
         }
 
         var workbook = window.XLSX.utils.book_new();
@@ -930,6 +1204,9 @@
 
     function applyCellStyle(td, style) {
         var cellStyle = style || {};
+        if (!Object.keys(cellStyle).length) {
+            return;
+        }
         Object.keys(cellStyle).forEach(function (propertyName) {
             td.style[propertyName] = cellStyle[propertyName];
         });
@@ -1008,6 +1285,16 @@
             var rowCount = Math.max(currentData.length, Number(sheet.originalRowCount) || 0);
             var columnCount = Math.max(getSheetMaxColumnCount(currentData), Number(sheet.originalColCount) || 0);
             var mergeChildLookup = buildMergeChildLookup(sheet.mergeCells);
+            var formulaMap = sheet.formulas || null;
+            if (formulaMap) {
+                worksheet.eachRow({ includeEmpty: false }, function (worksheetRow, rowNumber) {
+                    worksheetRow.eachCell({ includeEmpty: false }, function (cell, columnNumber) {
+                        if (getExcelCellFormula(cell) && !formulaMap[getCellKey(rowNumber - 1, columnNumber - 1)]) {
+                            cell.value = null;
+                        }
+                    });
+                });
+            }
             for (var rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
                 var worksheetRow = worksheet.getRow(rowIndex + 1);
                 for (var columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
@@ -1017,7 +1304,15 @@
                     }
                     var currentRow = currentData[rowIndex] || [];
                     var currentValue = currentRow[columnIndex] === null || typeof currentRow[columnIndex] === "undefined" ? "" : currentRow[columnIndex];
+                    var desiredFormula = formulaMap ? String(formulaMap[key] || "") : "";
                     var originalValue = getExcelCellDisplayValue(worksheetRow.getCell(columnIndex + 1));
+                    if (desiredFormula) {
+                        var originalFormula = getExcelCellFormula(worksheetRow.getCell(columnIndex + 1));
+                        if (originalFormula !== desiredFormula) {
+                            worksheetRow.getCell(columnIndex + 1).value = { formula: desiredFormula.slice(0, 1) === "=" ? desiredFormula.slice(1) : desiredFormula };
+                        }
+                        continue;
+                    }
                     if (valuesMatchForSave(currentValue, originalValue)) {
                         continue;
                     }
@@ -1028,12 +1323,12 @@
         return workbook;
     }
 
-    function buildWorkbookPayloadAsync(sheets, extension, sourceWorkbook, sourceArrayBuffer) {
+    function buildWorkbookPayloadAsync(sheets, extension, sourceWorkbook, sourceArrayBuffer, csvMeta) {
         if (extension === ".xlsx" && sourceWorkbook && sourceWorkbook.xlsx && typeof sourceWorkbook.xlsx.writeBuffer === "function") {
             updateExcelJsWorkbookFromSheets(sourceWorkbook, sheets);
             return sourceWorkbook.xlsx.writeBuffer().then(function (arrayBuffer) {
                 return {
-                    dataBase64: arrayBufferToBase64(arrayBuffer),
+                    dataArrayBuffer: arrayBuffer,
                     sourceWorkbook: sourceWorkbook,
                     sourceArrayBuffer: arrayBuffer,
                 };
@@ -1049,17 +1344,37 @@
                 })
                 .then(function (arrayBuffer) {
                     return {
-                        dataBase64: arrayBufferToBase64(arrayBuffer),
+                        dataArrayBuffer: arrayBuffer,
                         sourceWorkbook: null,
                         sourceArrayBuffer: arrayBuffer,
                     };
                 });
         }
         return Promise.resolve({
-            dataBase64: buildWorkbookBase64(sheets, extension),
+            dataArrayBuffer: base64ToArrayBuffer(buildWorkbookBase64(sheets, extension, csvMeta)),
             sourceWorkbook: null,
             sourceArrayBuffer: null,
         });
+    }
+
+    function buildSpreadsheetFormData(workbookPayload, metadata, extension) {
+        var formData = new FormData();
+        var payload = metadata || {};
+        Object.keys(payload).forEach(function (key) {
+            var value = payload[key];
+            if (value === null || typeof value === "undefined" || value === "") {
+                return;
+            }
+            formData.append(key, String(value));
+        });
+        var normalizedExtension = SUPPORTED_EXTENSIONS.has(extension) ? extension : ".xlsx";
+        var uploadName = "spreadsheet" + normalizedExtension;
+        formData.append(
+            "file",
+            new Blob([workbookPayload.dataArrayBuffer], { type: "application/octet-stream" }),
+            uploadName
+        );
+        return formData;
     }
 
     function refreshOriginalSheetBounds(sheets) {
@@ -1075,6 +1390,198 @@
             return [];
         }
         return normalizeSheetData(activeState.hot.getData());
+    }
+
+    function resolveHotColumnIndex(prop) {
+        if (typeof prop === "number" && Number.isFinite(prop)) {
+            return Math.max(0, Math.floor(prop));
+        }
+        var numeric = Number(prop);
+        if (Number.isFinite(numeric)) {
+            return Math.max(0, Math.floor(numeric));
+        }
+        var label = String(prop || "").trim().toUpperCase();
+        if (!/^[A-Z]+$/.test(label)) {
+            return -1;
+        }
+        var columnIndex = 0;
+        for (var index = 0; index < label.length; index += 1) {
+            columnIndex = columnIndex * 26 + label.charCodeAt(index) - 64;
+        }
+        return Math.max(0, columnIndex - 1);
+    }
+
+    function spreadsheetColumnLabel(columnIndex) {
+        var label = "";
+        var value = Math.max(0, Math.floor(Number(columnIndex) || 0)) + 1;
+        while (value > 0) {
+            var remainder = (value - 1) % 26;
+            label = String.fromCharCode(65 + remainder) + label;
+            value = Math.floor((value - 1) / 26);
+        }
+        return label;
+    }
+
+    function spreadsheetCellAddress(rowIndex, columnIndex) {
+        return spreadsheetColumnLabel(columnIndex) + String(Math.max(0, Math.floor(Number(rowIndex) || 0)) + 1);
+    }
+
+    function parseSpreadsheetCellAddress(value) {
+        var match = String(value || "").trim().toUpperCase().match(/^\$?([A-Z]+)\$?(\d+)$/);
+        if (!match) {
+            return null;
+        }
+        var columnIndex = resolveHotColumnIndex(match[1]);
+        var rowIndex = Number(match[2]) - 1;
+        if (columnIndex < 0 || !Number.isFinite(rowIndex) || rowIndex < 0) {
+            return null;
+        }
+        return { row: Math.floor(rowIndex), col: columnIndex };
+    }
+
+    function getSheetFormula(sheet, rowIndex, columnIndex) {
+        if (!sheet || !sheet.formulas) {
+            return "";
+        }
+        return String(sheet.formulas[getCellKey(rowIndex, columnIndex)] || "");
+    }
+
+    function remapSheetFormulaKeys(sheet, axis, index, amount, removing) {
+        if (!sheet || !sheet.formulas) {
+            return;
+        }
+        var start = Math.max(0, Math.floor(Number(index) || 0));
+        var delta = Math.max(1, Math.floor(Number(amount) || 1));
+        var nextFormulas = {};
+        Object.keys(sheet.formulas).forEach(function (key) {
+            var parts = key.split(":");
+            var rowIndex = Number(parts[0]);
+            var columnIndex = Number(parts[1]);
+            if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex)) {
+                return;
+            }
+            var coordinate = axis === "row" ? rowIndex : columnIndex;
+            if (removing && coordinate >= start && coordinate < start + delta) {
+                return;
+            }
+            if (removing && coordinate >= start + delta) {
+                coordinate -= delta;
+            } else if (!removing && coordinate >= start) {
+                coordinate += delta;
+            }
+            var nextRow = axis === "row" ? coordinate : rowIndex;
+            var nextColumn = axis === "row" ? columnIndex : coordinate;
+            nextFormulas[getCellKey(nextRow, nextColumn)] = sheet.formulas[key];
+        });
+        sheet.formulas = nextFormulas;
+    }
+
+    function updateFormulaBar() {
+        if (!activeState || !activeState.hot) {
+            return;
+        }
+        var selected = activeState.hot.getSelectedLast && activeState.hot.getSelectedLast();
+        if (!selected || selected.length < 2) {
+            return;
+        }
+        var rowIndex = Number(selected[0]);
+        var columnIndex = Number(selected[1]);
+        if (!Number.isFinite(rowIndex) || !Number.isFinite(columnIndex) || rowIndex < 0 || columnIndex < 0) {
+            return;
+        }
+        var sheet = activeState.sheets[activeState.currentIndex] || {};
+        var data = sheet.data || [];
+        var value = data[rowIndex] && typeof data[rowIndex][columnIndex] !== "undefined"
+            ? data[rowIndex][columnIndex]
+            : "";
+        var formula = getSheetFormula(sheet, rowIndex, columnIndex);
+        activeState.selectedCell = { row: rowIndex, col: columnIndex };
+        activeState.updatingFormulaBar = true;
+        if (activeState.cellAddressEl) {
+            activeState.cellAddressEl.value = spreadsheetCellAddress(rowIndex, columnIndex);
+        }
+        if (activeState.formulaInputEl) {
+            activeState.formulaInputEl.value = formula || String(value === null || typeof value === "undefined" ? "" : value);
+        }
+        activeState.updatingFormulaBar = false;
+    }
+
+    function selectFormulaBarAddress() {
+        if (!activeState || !activeState.hot || !activeState.cellAddressEl) {
+            return;
+        }
+        var address = parseSpreadsheetCellAddress(activeState.cellAddressEl.value);
+        if (!address) {
+            setStatus("셀 주소가 올바르지 않습니다.", true);
+            return;
+        }
+        var rowCount = activeState.hot.countRows();
+        var columnCount = activeState.hot.countCols();
+        if (address.row >= rowCount || address.col >= columnCount) {
+            setStatus("해당 셀을 찾을 수 없습니다.", true);
+            return;
+        }
+        activeState.hot.selectCell(address.row, address.col);
+        if (typeof activeState.hot.scrollViewportTo === "function") {
+            activeState.hot.scrollViewportTo(address.row, address.col);
+        }
+        updateFormulaBar();
+    }
+
+    function applyFormulaBarValue() {
+        if (!activeState || !activeState.hot || !activeState.formulaInputEl || activeState.disabled) {
+            return;
+        }
+        var selected = activeState.selectedCell;
+        if (!selected) {
+            return;
+        }
+        activeState.hot.setDataAtCell(
+            selected.row,
+            selected.col,
+            activeState.formulaInputEl.value,
+            "formula-bar"
+        );
+        activeState.hot.selectCell(selected.row, selected.col);
+        updateFormulaBar();
+    }
+
+    function applyHotChangesToSheet(sheet, changes) {
+        if (!sheet || !Array.isArray(changes)) {
+            return;
+        }
+        if (!Array.isArray(sheet.data)) {
+            sheet.data = normalizeSheetData([['']]);
+        }
+        if (!sheet.formulas) {
+            sheet.formulas = {};
+        }
+        changes.forEach(function (change) {
+            if (!Array.isArray(change) || change.length < 4) {
+                return;
+            }
+            var rowIndex = Number(change[0]);
+            var columnIndex = resolveHotColumnIndex(change[1]);
+            if (!Number.isFinite(rowIndex) || rowIndex < 0 || columnIndex < 0) {
+                return;
+            }
+            rowIndex = Math.floor(rowIndex);
+            while (sheet.data.length <= rowIndex) {
+                sheet.data.push([]);
+            }
+            var row = sheet.data[rowIndex];
+            while (row.length <= columnIndex) {
+                row.push('');
+            }
+            var nextValue = normalizeCellValue(change[3]);
+            row[columnIndex] = nextValue;
+            var cellKey = getCellKey(rowIndex, columnIndex);
+            if (typeof nextValue === "string" && nextValue.charAt(0) === "=" && nextValue.length > 1) {
+                sheet.formulas[cellKey] = nextValue;
+            } else {
+                delete sheet.formulas[cellKey];
+            }
+        });
     }
 
     function commitActiveSheet() {
@@ -1148,30 +1655,44 @@
                 if (!activeState || source === "loadData") {
                     return;
                 }
-                commitActiveSheet();
+                applyHotChangesToSheet(activeState.sheets[activeState.currentIndex], _changes);
                 markDirty(true);
+                updateFormulaBar();
             },
-            afterCreateRow: function () {
-                commitActiveSheet();
-                markDirty(true);
+            afterSelectionEnd: function () {
+                updateFormulaBar();
             },
-            afterCreateCol: function () {
+            afterCreateRow: function (index, amount) {
+                remapSheetFormulaKeys(activeState.sheets[activeState.currentIndex], "row", index, amount, false);
                 commitActiveSheet();
                 markDirty(true);
+                updateFormulaBar();
             },
-            afterRemoveRow: function () {
+            afterCreateCol: function (index, amount) {
+                remapSheetFormulaKeys(activeState.sheets[activeState.currentIndex], "col", index, amount, false);
                 commitActiveSheet();
                 markDirty(true);
+                updateFormulaBar();
             },
-            afterRemoveCol: function () {
+            afterRemoveRow: function (index, amount) {
+                remapSheetFormulaKeys(activeState.sheets[activeState.currentIndex], "row", index, amount, true);
                 commitActiveSheet();
                 markDirty(true);
+                updateFormulaBar();
+            },
+            afterRemoveCol: function (index, amount) {
+                remapSheetFormulaKeys(activeState.sheets[activeState.currentIndex], "col", index, amount, true);
+                commitActiveSheet();
+                markDirty(true);
+                updateFormulaBar();
             },
         }, getSheetHotSettings(sheet));
         activeState.hot = new window.Handsontable(activeState.hotContainer, hotSettings);
         window.requestAnimationFrame(function () {
             if (activeState && activeState.hot) {
                 activeState.hot.render();
+                activeState.hot.selectCell(0, 0);
+                updateFormulaBar();
             }
         });
     }
@@ -1190,7 +1711,7 @@
         if (!activeState || !activeState.hot || activeState.readOnly || activeState.disabled) {
             return;
         }
-        var data = getActiveHotData();
+        var data = normalizeSheetData(activeState.sheets[activeState.currentIndex].data);
         var colCount = Math.max(activeState.hot.countCols(), MIN_COLS);
         data.push(Array(colCount).fill(""));
         activeState.sheets[activeState.currentIndex].data = data;
@@ -1202,7 +1723,7 @@
         if (!activeState || !activeState.hot || activeState.readOnly || activeState.disabled) {
             return;
         }
-        var data = getActiveHotData();
+        var data = normalizeSheetData(activeState.sheets[activeState.currentIndex].data);
         if (!data.length) {
             data = normalizeSheetData([[""]]);
         }
@@ -1243,7 +1764,7 @@
         var filename = getExportFilename(exportExtension).replace(/\.[A-Za-z0-9]+$/, "");
         try {
             var exportPlugin = activeState.hot.getPlugin && activeState.hot.getPlugin("exportFile");
-            if (exportPlugin && typeof exportPlugin.downloadFile === "function") {
+            if (exportExtension !== ".csv" && exportPlugin && typeof exportPlugin.downloadFile === "function") {
                 exportPlugin.downloadFile(exportType, {
                     filename: filename,
                     sheetName: activeState.sheets[activeState.currentIndex].name,
@@ -1254,7 +1775,7 @@
             }
         } catch (error) {}
 
-        var base64Value = buildWorkbookBase64(activeState.sheets, exportExtension);
+        var base64Value = buildWorkbookBase64(activeState.sheets, exportExtension, activeState.csvMeta);
         var mimeType = exportExtension === ".csv"
             ? "text/csv;charset=utf-8"
             : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -1279,6 +1800,26 @@
         if (activeState.exportButton) {
             activeState.exportButton.onclick = exportWorkbook;
         }
+        if (activeState.cellAddressEl) {
+            activeState.cellAddressEl.onkeydown = function (event) {
+                if (event.key !== "Enter") {
+                    return;
+                }
+                event.preventDefault();
+                selectFormulaBarAddress();
+            };
+        }
+        if (activeState.formulaInputEl) {
+            activeState.formulaInputEl.onkeydown = function (event) {
+                if (event.key === "Enter") {
+                    event.preventDefault();
+                    applyFormulaBarValue();
+                } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    updateFormulaBar();
+                }
+            };
+        }
     }
 
     function clearControlHandlers(state) {
@@ -1289,6 +1830,8 @@
         if (state.addRowButton) state.addRowButton.onclick = null;
         if (state.addColumnButton) state.addColumnButton.onclick = null;
         if (state.exportButton) state.exportButton.onclick = null;
+        if (state.cellAddressEl) state.cellAddressEl.onkeydown = null;
+        if (state.formulaInputEl) state.formulaInputEl.onkeydown = null;
     }
 
     function init(options) {
@@ -1318,42 +1861,58 @@
             sheets: [],
             sourceWorkbook: null,
             sourceArrayBuffer: null,
+            sourceVersion: "",
+            csvMeta: null,
             hot: null,
             hotContainer: surface.querySelector("[data-handrive-spreadsheet-hot]"),
             sheetSelect: surface.querySelector("[data-handrive-spreadsheet-sheet]"),
             addRowButton: surface.querySelector("[data-handrive-spreadsheet-add-row]"),
             addColumnButton: surface.querySelector("[data-handrive-spreadsheet-add-col]"),
             exportButton: surface.querySelector("[data-handrive-spreadsheet-export]"),
+            cellAddressEl: surface.querySelector("[data-handrive-spreadsheet-cell-address]"),
+            formulaInputEl: surface.querySelector("[data-handrive-spreadsheet-formula]"),
             statusEl: surface.querySelector("[data-handrive-spreadsheet-status]"),
+            selectedCell: null,
+            updatingFormulaBar: false,
             dirty: false,
         };
         surface.hidden = false;
         setStatus("", false);
         bindControls();
 
+        var sourceVersion = "";
         return fetch(settings.downloadUrl, { credentials: "same-origin" })
             .then(function (response) {
                 if (!response.ok) {
                     throw new Error("스프레드시트 파일을 불러오지 못했습니다.");
                 }
+                sourceVersion = String(response.headers.get("X-Handrive-Version") || "").trim();
                 return response.arrayBuffer();
             })
             .then(function (arrayBuffer) {
                 if (!activeState || activeState.surface !== surface) {
                     return null;
                 }
-                return parseWorkbook(arrayBuffer, extension).then(function (parsedWorkbook) {
+                activeState.sourceVersion = sourceVersion;
+                var pageRoot = getPageRoot();
+                var parseOptions = {
+                    workerScriptUrl: pageRoot ? pageRoot.dataset.spreadsheetWorkerScriptUrl || "" : "",
+                    sheetJsScriptUrl: pageRoot ? pageRoot.dataset.sheetjsScriptUrl || "" : "",
+                    excelJsScriptUrl: pageRoot ? pageRoot.dataset.exceljsScriptUrl || "" : "",
+                };
+                return parseWorkbook(arrayBuffer, extension, parseOptions).then(function (parsedWorkbook) {
                     if (!activeState || activeState.surface !== surface) {
                         return null;
                     }
                     activeState.sheets = parsedWorkbook.sheets;
                     activeState.sourceWorkbook = activeState.readOnly ? null : parsedWorkbook.sourceWorkbook;
                     activeState.sourceArrayBuffer = activeState.readOnly ? null : parsedWorkbook.sourceArrayBuffer || null;
+                    activeState.csvMeta = parsedWorkbook.csvMeta || null;
                     activeState.currentIndex = 0;
                     populateSheetSelect();
                     createHot();
                     markDirty(false);
-                    setStatus("", false);
+                    setStatus(getCsvStatus(activeState.csvMeta), false);
                     return activeState;
                 });
             })
@@ -1381,26 +1940,25 @@
             : activeState.extension;
 
         setStatus("저장 중...", false);
-        return buildWorkbookPayloadAsync(activeState.sheets, extension, activeState.sourceWorkbook, activeState.sourceArrayBuffer)
+        return buildWorkbookPayloadAsync(activeState.sheets, extension, activeState.sourceWorkbook, activeState.sourceArrayBuffer, activeState.csvMeta)
             .then(function (workbookPayload) {
-                var payload = {
+                var metadata = {
                     original_path: settings.originalPath || (activeState.entry && activeState.entry.path) || "",
                     target_dir: settings.targetDir || "",
                     filename: settings.filename || (activeState.entry && activeState.entry.name) || "spreadsheet",
                     extension: extension,
-                    data_base64: workbookPayload.dataBase64,
+                    source_version: activeState.sourceVersion,
                 };
                 if (settings.commitMessage) {
-                    payload.commit_message = settings.commitMessage;
+                    metadata.commit_message = settings.commitMessage;
                 }
                 return fetch(settings.saveUrl, {
                     method: "POST",
                     credentials: "same-origin",
                     headers: {
-                        "Content-Type": "application/json",
                         "X-CSRFToken": settings.csrfToken || "",
                     },
-                    body: JSON.stringify(payload),
+                    body: buildSpreadsheetFormData(workbookPayload, metadata, extension),
                 }).then(function (response) {
                     return { response: response, workbookPayload: workbookPayload };
                 });
@@ -1418,9 +1976,10 @@
             .then(function (result) {
                 activeState.sourceWorkbook = result.workbookPayload.sourceWorkbook || null;
                 activeState.sourceArrayBuffer = result.workbookPayload.sourceArrayBuffer || null;
+                activeState.sourceVersion = String(result.data.source_version || activeState.sourceVersion || "").trim();
                 refreshOriginalSheetBounds(activeState.sheets);
                 markDirty(false);
-                setStatus("", false);
+                setStatus(getCsvStatus(activeState.csvMeta), false);
                 return result.data;
             })
             .catch(function (error) {
@@ -1435,6 +1994,11 @@
         }
         activeState.disabled = Boolean(isDisabled);
         [activeState.sheetSelect, activeState.addRowButton, activeState.addColumnButton, activeState.exportButton].forEach(function (control) {
+            if (control) {
+                control.disabled = activeState.disabled;
+            }
+        });
+        [activeState.cellAddressEl, activeState.formulaInputEl].forEach(function (control) {
             if (control) {
                 control.disabled = activeState.disabled;
             }
@@ -1771,22 +2335,22 @@
         commitPreviewSheet(state);
         setPreviewDisabled(state, true);
         setPreviewStatus(state.shell, "저장 중...", false, false);
-        return buildWorkbookPayloadAsync(state.sheets, state.extension, state.sourceWorkbook, state.sourceArrayBuffer)
+        return buildWorkbookPayloadAsync(state.sheets, state.extension, state.sourceWorkbook, state.sourceArrayBuffer, state.csvMeta)
             .then(function (workbookPayload) {
+                var metadata = {
+                    original_path: state.pathValue,
+                    target_dir: getParentPath(state.pathValue),
+                    filename: state.fileName || getPathFileName(state.pathValue) || "spreadsheet",
+                    extension: state.extension,
+                    source_version: state.sourceVersion,
+                };
                 return fetch(state.saveUrl, {
                     method: "POST",
                     credentials: "same-origin",
                     headers: {
-                        "Content-Type": "application/json",
                         "X-CSRFToken": getCsrfToken(),
                     },
-                    body: JSON.stringify({
-                        original_path: state.pathValue,
-                        target_dir: getParentPath(state.pathValue),
-                        filename: state.fileName || getPathFileName(state.pathValue) || "spreadsheet",
-                        extension: state.extension,
-                        data_base64: workbookPayload.dataBase64,
-                    }),
+                    body: buildSpreadsheetFormData(workbookPayload, metadata, state.extension),
                 }).then(function (response) {
                     return { response: response, workbookPayload: workbookPayload };
                 });
@@ -1804,6 +2368,7 @@
             .then(function (result) {
                 state.sourceWorkbook = result.workbookPayload.sourceWorkbook || null;
                 state.sourceArrayBuffer = result.workbookPayload.sourceArrayBuffer || null;
+                state.sourceVersion = String(result.data.source_version || state.sourceVersion || "").trim();
                 refreshOriginalSheetBounds(state.sheets);
                 markPreviewDirty(state, false);
                 setPreviewStatus(state.shell, "", false, false);
@@ -2064,7 +2629,7 @@
         }, true);
     }
 
-    function createPreviewHot(shell, parsedWorkbook, licenseKey) {
+    function createPreviewHot(shell, parsedWorkbook, licenseKey, sourceVersion) {
         var hotContainer = shell.querySelector("[data-handrive-spreadsheet-preview-hot]");
         var sheetSelect = shell.querySelector("[data-handrive-spreadsheet-preview-sheet]");
         var saveButton = getPreviewSaveButton(shell);
@@ -2093,6 +2658,8 @@
             sheets: sheets.length ? sheets : [{ name: "Sheet1", data: normalizeSheetData([[""]]) }],
             sourceWorkbook: parsedWorkbook && editable ? parsedWorkbook.sourceWorkbook : null,
             sourceArrayBuffer: parsedWorkbook && editable ? parsedWorkbook.sourceArrayBuffer || null : null,
+            csvMeta: parsedWorkbook && parsedWorkbook.csvMeta ? parsedWorkbook.csvMeta : null,
+            sourceVersion: String(sourceVersion || "").trim(),
             hot: null,
             layoutRafId: null,
             lastHotHeight: 0,
@@ -2116,7 +2683,9 @@
             if (sheetSelect) {
                 sheetSelect.value = String(state.currentIndex);
             }
-            state.previewStatusMessage = getPreviewLimitStatus(sheet);
+            state.previewStatusMessage = [getCsvStatus(state.csvMeta), getPreviewLimitStatus(sheet)]
+                .filter(Boolean)
+                .join(" · ");
             setPreviewStatus(state.shell, state.previewStatusMessage, false, false);
             if (state.hot) {
                 state.hot.destroy();
@@ -2217,16 +2786,24 @@
                 return;
             }
             setPreviewStatus(shell, "", false, true);
+            var sourceVersion = "";
             fetch(downloadUrl, { credentials: "same-origin" })
                 .then(function (response) {
                     if (!response.ok) {
                         throw new Error("스프레드시트를 불러오지 못했습니다.");
                     }
+                    sourceVersion = String(response.headers.get("X-Handrive-Version") || "").trim();
                     return response.arrayBuffer();
                 })
                 .then(function (arrayBuffer) {
-                    return parseWorkbook(arrayBuffer, extension, { preview: true }).then(function (parsedWorkbook) {
-                        createPreviewHot(shell, parsedWorkbook, getLicenseKey(""));
+                    var pageRoot = getPageRoot();
+                    var workerOptions = {
+                        preview: true,
+                        workerScriptUrl: pageRoot ? pageRoot.dataset.spreadsheetWorkerScriptUrl || "" : "",
+                        sheetJsScriptUrl: pageRoot ? pageRoot.dataset.sheetjsScriptUrl || "" : "",
+                    };
+                    return parseWorkbook(arrayBuffer, extension, workerOptions).then(function (parsedWorkbook) {
+                        createPreviewHot(shell, parsedWorkbook, getLicenseKey(""), sourceVersion);
                     });
                 })
                 .catch(function (error) {

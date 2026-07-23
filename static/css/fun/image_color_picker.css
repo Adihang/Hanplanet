@@ -143,8 +143,8 @@ body.media-tool-page {
 
 .media-upload-mark {
     appearance: none;
-    width: 44px;
-    height: 44px;
+    width: 80px;
+    height: 80px;
     border: 1px solid var(--handrive-border-soft);
     border-radius: 8px;
     background: var(--handrive-surface-muted-strong);
@@ -180,10 +180,9 @@ body.media-tool-page {
     transform: none;
 }
 
-.media-upload-mark svg {
-    width: 23px;
-    height: 23px;
-    display: block;
+.media-upload-mark .site-upload-icon {
+    width: 42px;
+    height: 42px;
 }
 
 .image-color-picker-image {

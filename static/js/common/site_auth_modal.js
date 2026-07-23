@@ -405,7 +405,7 @@
 
         function setTemporaryValidity(input) {
             if (!input || typeof input.setCustomValidity !== "function") return;
-            input.setCustomValidity(input.getAttribute("title") || "");
+            input.setCustomValidity(input.getAttribute("data-handrive-auth-safe-message") || "");
             if (typeof input.reportValidity === "function") input.reportValidity();
             window.setTimeout(function () {
                 input.setCustomValidity("");

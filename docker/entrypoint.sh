@@ -27,6 +27,7 @@ fi
 
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     python manage.py migrate --noinput
+    python manage.py ensure_sso_oauth_clients
 fi
 
 if [ "${COLLECTSTATIC_ON_START:-true}" = "true" ]; then

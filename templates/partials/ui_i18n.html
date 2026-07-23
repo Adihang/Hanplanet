@@ -104,6 +104,54 @@
 {% elif key == "saved" %}{% if ui_lang|default:'ko' == 'en' %}Saved{% else %}저장됨{% endif %}
 {% elif key == "cancel" %}{% if ui_lang|default:'ko' == 'en' %}Cancel{% else %}취소{% endif %}
 {% elif key == "clear" %}{% if ui_lang|default:'ko' == 'en' %}Clear{% else %}지우기{% endif %}
+{% elif key == "svg_editor_label" %}{% if ui_lang|default:'ko' == 'en' %}SVG vector editor{% else %}SVG 벡터 편집기{% endif %}
+{% elif key == "svg_editor_select" %}{% if ui_lang|default:'ko' == 'en' %}Select (V){% else %}선택 (V){% endif %}
+{% elif key == "svg_editor_nodes" %}{% if ui_lang|default:'ko' == 'en' %}Edit nodes (A){% else %}노드 편집 (A){% endif %}
+{% elif key == "svg_editor_pen" %}{% if ui_lang|default:'ko' == 'en' %}Pen (P){% else %}펜 (P){% endif %}
+{% elif key == "svg_editor_rectangle" %}{% if ui_lang|default:'ko' == 'en' %}Rectangle (R){% else %}사각형 (R){% endif %}
+{% elif key == "svg_editor_ellipse" %}{% if ui_lang|default:'ko' == 'en' %}Ellipse (O){% else %}타원 (O){% endif %}
+{% elif key == "svg_editor_line" %}{% if ui_lang|default:'ko' == 'en' %}Line (L){% else %}선 (L){% endif %}
+{% elif key == "svg_editor_text" %}{% if ui_lang|default:'ko' == 'en' %}Text (T){% else %}텍스트 (T){% endif %}
+{% elif key == "svg_editor_undo" %}{% if ui_lang|default:'ko' == 'en' %}Undo{% else %}실행 취소{% endif %}
+{% elif key == "svg_editor_redo" %}{% if ui_lang|default:'ko' == 'en' %}Redo{% else %}다시 실행{% endif %}
+{% elif key == "svg_editor_group" %}{% if ui_lang|default:'ko' == 'en' %}Group{% else %}그룹{% endif %}
+{% elif key == "svg_editor_ungroup" %}{% if ui_lang|default:'ko' == 'en' %}Ungroup{% else %}그룹 해제{% endif %}
+{% elif key == "svg_editor_duplicate" %}{% if ui_lang|default:'ko' == 'en' %}Duplicate{% else %}복제{% endif %}
+{% elif key == "svg_editor_delete" %}{% if ui_lang|default:'ko' == 'en' %}Delete{% else %}삭제{% endif %}
+{% elif key == "svg_editor_resize" %}{% if ui_lang|default:'ko' == 'en' %}Resize selection{% else %}선택 영역 크기 조절{% endif %}
+{% elif key == "svg_editor_raise" %}{% if ui_lang|default:'ko' == 'en' %}Move forward{% else %}앞으로 이동{% endif %}
+{% elif key == "svg_editor_lower" %}{% if ui_lang|default:'ko' == 'en' %}Move backward{% else %}뒤로 이동{% endif %}
+{% elif key == "svg_editor_zoom_in" %}{% if ui_lang|default:'ko' == 'en' %}Zoom in{% else %}확대{% endif %}
+{% elif key == "svg_editor_zoom_out" %}{% if ui_lang|default:'ko' == 'en' %}Zoom out{% else %}축소{% endif %}
+{% elif key == "svg_editor_zoom_fit" %}{% if ui_lang|default:'ko' == 'en' %}Fit to screen{% else %}화면에 맞춤{% endif %}
+{% elif key == "svg_editor_toggle_grid" %}{% if ui_lang|default:'ko' == 'en' %}Toggle grid{% else %}격자 표시 전환{% endif %}
+{% elif key == "svg_editor_layers" %}{% if ui_lang|default:'ko' == 'en' %}Objects{% else %}오브젝트{% endif %}
+{% elif key == "svg_editor_properties" %}{% if ui_lang|default:'ko' == 'en' %}Properties{% else %}속성{% endif %}
+{% elif key == "svg_editor_no_selection" %}{% if ui_lang|default:'ko' == 'en' %}Select an object to edit its vector properties.{% else %}오브젝트를 선택하면 벡터 속성을 편집할 수 있습니다.{% endif %}
+{% elif key == "svg_editor_no_objects" %}{% if ui_lang|default:'ko' == 'en' %}No editable objects{% else %}편집할 오브젝트가 없습니다{% endif %}
+{% elif key == "svg_editor_visibility" %}{% if ui_lang|default:'ko' == 'en' %}Toggle visibility{% else %}표시 전환{% endif %}
+{% elif key == "svg_editor_lock" %}{% if ui_lang|default:'ko' == 'en' %}Toggle lock{% else %}잠금 전환{% endif %}
+{% elif key == "svg_editor_fill" %}{% if ui_lang|default:'ko' == 'en' %}Fill{% else %}채우기{% endif %}
+{% elif key == "svg_editor_stroke" %}{% if ui_lang|default:'ko' == 'en' %}Stroke{% else %}선{% endif %}
+{% elif key == "svg_editor_stroke_width" %}{% if ui_lang|default:'ko' == 'en' %}Stroke width{% else %}선 두께{% endif %}
+{% elif key == "svg_editor_opacity" %}{% if ui_lang|default:'ko' == 'en' %}Opacity{% else %}불투명도{% endif %}
+{% elif key == "svg_editor_element_id" %}{% if ui_lang|default:'ko' == 'en' %}Object ID{% else %}오브젝트 ID{% endif %}
+{% elif key == "svg_editor_text_content" %}{% if ui_lang|default:'ko' == 'en' %}Text content{% else %}텍스트 내용{% endif %}
+{% elif key == "svg_editor_document" %}{% if ui_lang|default:'ko' == 'en' %}Document & viewBox{% else %}문서 및 viewBox{% endif %}
+{% elif key == "svg_editor_x" %}X
+{% elif key == "svg_editor_y" %}Y
+{% elif key == "svg_editor_width" %}{% if ui_lang|default:'ko' == 'en' %}Width{% else %}너비{% endif %}
+{% elif key == "svg_editor_height" %}{% if ui_lang|default:'ko' == 'en' %}Height{% else %}높이{% endif %}
+{% elif key == "svg_editor_grid_size" %}{% if ui_lang|default:'ko' == 'en' %}Grid size{% else %}격자 크기{% endif %}
+{% elif key == "svg_editor_snap" %}{% if ui_lang|default:'ko' == 'en' %}Snap to grid{% else %}격자에 맞추기{% endif %}
+{% elif key == "svg_editor_source" %}{% if ui_lang|default:'ko' == 'en' %}SVG source{% else %}SVG 소스{% endif %}
+{% elif key == "svg_editor_apply_source" %}{% if ui_lang|default:'ko' == 'en' %}Apply source{% else %}소스 적용{% endif %}
+{% elif key == "svg_editor_source_hint" %}{% if ui_lang|default:'ko' == 'en' %}Unsafe scripts, event handlers, external URLs, and embedded style rules are removed when applied.{% else %}적용할 때 위험한 스크립트, 이벤트 속성, 외부 URL, 내장 스타일 규칙은 제거됩니다.{% endif %}
+{% elif key == "svg_editor_loading" %}{% if ui_lang|default:'ko' == 'en' %}Loading SVG editor...{% else %}SVG 편집기를 불러오는 중...{% endif %}
+{% elif key == "svg_editor_load_error" %}{% if ui_lang|default:'ko' == 'en' %}Could not open this SVG file.{% else %}이 SVG 파일을 열 수 없습니다.{% endif %}
+{% elif key == "svg_editor_invalid_source" %}{% if ui_lang|default:'ko' == 'en' %}Enter a valid SVG document.{% else %}올바른 SVG 문서를 입력해주세요.{% endif %}
+{% elif key == "svg_editor_status_ready" %}{% if ui_lang|default:'ko' == 'en' %}Vector document ready{% else %}벡터 문서 준비됨{% endif %}
+{% elif key == "svg_editor_status_selected" %}{% if ui_lang|default:'ko' == 'en' %}Selected{% else %}선택됨{% endif %}
 {% elif key == "account_unlink" %}{% if ui_lang|default:'ko' == 'en' %}Disconnect{% else %}연동해제{% endif %}
 {% elif key == "account_unlinked" %}{% if ui_lang|default:'ko' == 'en' %}Disconnected{% else %}연동해제됨{% endif %}
 {% elif key == "logout" %}{% if ui_lang|default:'ko' == 'en' %}Logout{% else %}로그아웃{% endif %}

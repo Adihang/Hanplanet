@@ -227,7 +227,6 @@
         function setCopyButtonLabel(button, key, fallbackLabel) {
             var label = translate(key, fallbackLabel);
             button.setAttribute("aria-label", label);
-            button.setAttribute("title", label);
         }
 
         function resetCopyButton(button, key, fallbackLabel) {

@@ -4,7 +4,15 @@
     var state = {
         entry: null,
         onDirtyChange: null,
+        onReady: null,
+        onError: null,
         isDirty: false,
+        isReady: false,
+        loadFailed: false,
+        isSaving: false,
+        isDisabled: false,
+        changeRevision: 0,
+        sessionVersion: 0,
         duration: 0,
         appendFile: null,
         audioServeUrl: "",
@@ -16,10 +24,13 @@
         previewTimer: null,
         previewShouldPlay: false,
         previewVersion: 0,
+        appendRequestVersion: 0,
+        decodeAbortController: null,
         decodedBufferPromise: null,
         decodedBuffer: null,
         appendDecodedBufferPromise: null,
         appendDecodedBuffer: null,
+        waveformBuffer: null,
         usingTrimmedPreview: false,
         hasLoadedOriginalMetadata: false,
     };
@@ -28,13 +39,23 @@
     var volumeButton, volumePopover, volumeDisplay, appendButton, appendPopover, appendPcButton, appendDriveButton;
     var appendInput, appendName, drivePicker, driveCloseButton, driveUpButton, drivePathEl, driveList;
     var startRange, endRange, rangeSelection;
-    var currentTimeEl, durationEl;
+    var currentTimeEl, durationEl, trackCard, waveformVisual, waveformCanvas, waveformPlayhead;
+    var waveformResizeObserver = null;
 
     function init(options) {
         var opts = options || {};
+        cancelPendingAudioWork();
         state.entry = opts.entry || null;
         state.onDirtyChange = opts.onDirtyChange || null;
+        state.onReady = typeof opts.onReady === "function" ? opts.onReady : null;
+        state.onError = typeof opts.onError === "function" ? opts.onError : null;
         state.isDirty = false;
+        state.isReady = false;
+        state.loadFailed = false;
+        state.isSaving = false;
+        state.isDisabled = false;
+        state.changeRevision = 0;
+        state.sessionVersion += 1;
         state.duration = 0;
         state.appendFile = null;
         state.audioServeUrl = opts.audioServeUrl || "";
@@ -45,11 +66,14 @@
         state.previewObjectUrl = "";
         state.previewTimer = null;
         state.previewShouldPlay = false;
-        state.previewVersion = 0;
+        state.previewVersion += 1;
+        state.appendRequestVersion += 1;
+        state.decodeAbortController = null;
         state.decodedBufferPromise = null;
         state.decodedBuffer = null;
         state.appendDecodedBufferPromise = null;
         state.appendDecodedBuffer = null;
+        state.waveformBuffer = null;
         state.usingTrimmedPreview = false;
         state.hasLoadedOriginalMetadata = false;
 
@@ -78,11 +102,19 @@
         rangeSelection = document.getElementById("ae-range-selection");
         currentTimeEl = document.getElementById("ae-current-time");
         durationEl = document.getElementById("ae-duration");
+        trackCard = surface ? surface.querySelector(".ae-track-card") : null;
+        waveformVisual = document.getElementById("ae-waveform-visual");
+        waveformCanvas = document.getElementById("ae-waveform-canvas");
+        waveformPlayhead = document.getElementById("ae-waveform-playhead");
 
         if (!audioEl) return;
         unbindEvents();
+        setDisabled(false);
+        setMediaLoading(true);
         resetControls();
+        clearWaveform();
         bindEvents();
+        bindWaveformResizeObserver();
 
         audioEl.src = state.audioServeUrl;
         audioEl.load();
@@ -90,8 +122,8 @@
 
     function destroy() {
         unbindEvents();
-        clearPreviewTimer();
-        revokePreviewObjectUrl();
+        cancelPendingAudioWork();
+        unbindWaveformResizeObserver();
         if (audioEl) {
             audioEl.pause();
             audioEl.removeAttribute("src");
@@ -99,8 +131,15 @@
         }
         state.entry = null;
         state.onDirtyChange = null;
+        state.onReady = null;
+        state.onError = null;
         state.appendFile = null;
         state.isDirty = false;
+        state.isReady = false;
+        state.loadFailed = false;
+        state.isSaving = false;
+        state.sessionVersion += 1;
+        state.appendRequestVersion += 1;
         state.audioServeUrl = "";
         state.listApiUrl = "";
         state.buildDownloadUrl = null;
@@ -110,15 +149,21 @@
         state.decodedBuffer = null;
         state.appendDecodedBufferPromise = null;
         state.appendDecodedBuffer = null;
+        state.waveformBuffer = null;
         state.usingTrimmedPreview = false;
         state.hasLoadedOriginalMetadata = false;
+        clearWaveform();
+        setPreviewBuilding(false);
+        setMediaLoading(false);
+        setDisabled(false);
     }
 
     function resetControls() {
-        if (startInput) startInput.value = "0";
-        if (endInput) endInput.value = "0";
+        if (startInput) startInput.value = formatTime(0);
+        if (endInput) endInput.value = formatTime(0);
         if (volumeInput) volumeInput.value = "1";
         state.appendFile = null;
+        state.appendRequestVersion += 1;
         resetAppendDecodeCache();
         closeVolumePopover();
         closeAppendPopover();
@@ -140,10 +185,13 @@
 
     function bindEvents() {
         audioEl.addEventListener("loadedmetadata", onLoadedMetadata);
+        audioEl.addEventListener("error", onMediaError);
         audioEl.addEventListener("timeupdate", onTimeUpdate);
         if (resetBtn) resetBtn.addEventListener("click", onResetClick);
         if (startInput) startInput.addEventListener("input", onControlInput);
         if (endInput) endInput.addEventListener("input", onControlInput);
+        if (startInput) startInput.addEventListener("change", onControlInputCommit);
+        if (endInput) endInput.addEventListener("change", onControlInputCommit);
         if (volumeButton) volumeButton.addEventListener("click", onVolumeButtonClick);
         if (volumeInput) volumeInput.addEventListener("input", onVolumeInput);
         if (appendButton) appendButton.addEventListener("click", onAppendButtonClick);
@@ -165,11 +213,15 @@
     function unbindEvents() {
         if (audioEl) {
             audioEl.removeEventListener("loadedmetadata", onLoadedMetadata);
+            audioEl.removeEventListener("loadedmetadata", playAudioPreview);
+            audioEl.removeEventListener("error", onMediaError);
             audioEl.removeEventListener("timeupdate", onTimeUpdate);
         }
         if (resetBtn) resetBtn.removeEventListener("click", onResetClick);
         if (startInput) startInput.removeEventListener("input", onControlInput);
         if (endInput) endInput.removeEventListener("input", onControlInput);
+        if (startInput) startInput.removeEventListener("change", onControlInputCommit);
+        if (endInput) endInput.removeEventListener("change", onControlInputCommit);
         if (volumeButton) volumeButton.removeEventListener("click", onVolumeButtonClick);
         if (volumeInput) volumeInput.removeEventListener("input", onVolumeInput);
         if (appendButton) appendButton.removeEventListener("click", onAppendButtonClick);
@@ -193,9 +245,11 @@
             syncTimeDisplays();
             return;
         }
-        state.duration = Number.isFinite(audioEl.duration) ? audioEl.duration : 0;
+        var duration = Number.isFinite(audioEl.duration) ? audioEl.duration : 0;
+        if (duration <= 0 || state.isReady) return;
+        state.duration = duration;
         state.hasLoadedOriginalMetadata = true;
-        if (endInput) endInput.value = state.duration ? state.duration.toFixed(2) : "0";
+        if (endInput) endInput.value = state.duration ? formatTime(state.duration) : formatTime(0);
         if (startRange) startRange.max = state.duration ? state.duration.toFixed(2) : "0";
         if (endRange) {
             endRange.max = state.duration ? state.duration.toFixed(2) : "0";
@@ -204,6 +258,17 @@
         syncRangeSelection();
         syncTimeDisplays();
         setDirty(false);
+        state.isReady = true;
+        setMediaLoading(false);
+        loadWaveform(state.sessionVersion);
+        if (state.onReady) state.onReady();
+    }
+
+    function onMediaError() {
+        if (state.isReady || state.loadFailed) return;
+        state.loadFailed = true;
+        setMediaLoading(false);
+        if (state.onError) state.onError(new Error("audio load failed"));
     }
 
     function onTimeUpdate() {
@@ -221,8 +286,8 @@
 
     function onResetClick() {
         resetControls();
-        if (startInput) startInput.value = "0";
-        if (endInput && state.duration) endInput.value = state.duration.toFixed(2);
+        if (startInput) startInput.value = formatTime(0);
+        if (endInput && state.duration) endInput.value = formatTime(state.duration);
         if (audioEl) audioEl.currentTime = 0;
         syncRangeInputs();
         syncTimeDisplays();
@@ -231,10 +296,15 @@
     }
 
     function onControlInput() {
-        clampTimeInputs();
         syncRangeInputs();
         setDirty(true);
         schedulePreviewRefresh(true);
+    }
+
+    function onControlInputCommit() {
+        clampTimeInputs();
+        syncRangeInputs();
+        schedulePreviewRefresh(false);
     }
 
     function onVolumeInput() {
@@ -313,11 +383,8 @@
     }
 
     function onAppendChange() {
-        state.appendFile = appendInput && appendInput.files && appendInput.files[0] ? appendInput.files[0] : null;
-        resetAppendDecodeCache();
-        syncAppendName();
-        setDirty(Boolean(state.appendFile) || getHasEditChanges());
-        schedulePreviewRefresh(Boolean(state.appendFile));
+        var file = appendInput && appendInput.files && appendInput.files[0] ? appendInput.files[0] : null;
+        setAppendFile(file);
     }
 
     function onEditorDragOver(event) {
@@ -369,6 +436,7 @@
     }
 
     function setAppendFile(file) {
+        state.appendRequestVersion += 1;
         state.appendFile = file || null;
         resetAppendDecodeCache();
         if (appendInput) appendInput.value = "";
@@ -401,6 +469,8 @@
     function loadDriveDirectory(dirPath) {
         if (!state.listApiUrl || !driveList) return;
         state.driveDir = normalizePickerPath(dirPath || "");
+        var requestedDir = state.driveDir;
+        var sessionVersion = state.sessionVersion;
         if (drivePathEl) drivePathEl.textContent = state.driveDir || "/";
         driveList.textContent = "";
         fetch(appendQuery(state.listApiUrl, "path", state.driveDir), {
@@ -409,9 +479,11 @@
         })
             .then(function (response) { return response.json(); })
             .then(function (data) {
+                if (sessionVersion !== state.sessionVersion || requestedDir !== state.driveDir) return;
                 renderDriveEntries(Array.isArray(data && data.entries) ? data.entries : []);
             })
             .catch(function () {
+                if (sessionVersion !== state.sessionVersion || requestedDir !== state.driveDir) return;
                 renderDriveEntries([]);
             });
     }
@@ -454,12 +526,16 @@
         if (!path || !state.buildDownloadUrl || !isAudioPath(path) || !isPathInPickerScope(path)) return;
         var url = state.buildDownloadUrl(path);
         if (!url) return;
+        var sessionVersion = state.sessionVersion;
+        state.appendRequestVersion += 1;
+        var requestVersion = state.appendRequestVersion;
         fetch(url, { credentials: "same-origin" })
             .then(function (response) {
                 if (!response.ok) throw new Error("download failed");
                 return response.blob();
             })
             .then(function (blob) {
+                if (sessionVersion !== state.sessionVersion || requestVersion !== state.appendRequestVersion) return;
                 var fileName = fallbackName || (path ? path.split("/").pop() : "append-audio");
                 setAppendFile(new File([blob], fileName, { type: blob.type || "audio/*" }));
             })
@@ -470,7 +546,7 @@
         var start = Math.max(0, Number(startRange && startRange.value) || 0);
         var end = getEndTime();
         if (end && start > end) start = end;
-        if (startInput) startInput.value = start.toFixed(2);
+        if (startInput) startInput.value = formatTime(start);
         if (audioEl) audioEl.currentTime = 0;
         clampTimeInputs();
         syncRangeInputs();
@@ -483,7 +559,7 @@
         var start = getStartTime();
         var end = Math.max(0, Number(endRange && endRange.value) || 0);
         if (end < start) end = start;
-        if (endInput) endInput.value = end.toFixed(2);
+        if (endInput) endInput.value = formatTime(end);
         clampTimeInputs();
         syncRangeInputs();
         syncTimeDisplays();
@@ -492,15 +568,35 @@
     }
 
     function clampTimeInputs() {
-        var start = Math.max(0, Number(startInput && startInput.value) || 0);
-        var end = Math.max(0, Number(endInput && endInput.value) || 0);
+        var start = Math.max(0, readTimeValue(startInput && startInput.value, 0));
+        var end = Math.max(0, readTimeValue(endInput && endInput.value, 0));
         if (state.duration) {
             start = Math.min(start, state.duration);
             end = Math.min(end || state.duration, state.duration);
         }
         if (end && end < start) end = start;
-        if (startInput) startInput.value = start.toFixed(2);
-        if (endInput) endInput.value = end.toFixed(2);
+        if (startInput) startInput.value = formatTime(start);
+        if (endInput) endInput.value = formatTime(end);
+    }
+
+    function readFiniteNumber(value, fallback) {
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    function readTimeValue(value, fallback) {
+        var raw = String(value == null ? "" : value).trim();
+        if (!raw) return fallback;
+        if (!raw.includes(":")) return readFiniteNumber(raw, fallback);
+        var parts = raw.split(":");
+        if (parts.length > 3) return fallback;
+        var total = 0;
+        for (var index = 0; index < parts.length; index += 1) {
+            var part = Number(parts[index]);
+            if (!Number.isFinite(part) || part < 0) return fallback;
+            total = total * 60 + part;
+        }
+        return total;
     }
 
     function syncRangeInputs() {
@@ -532,11 +628,11 @@
     }
 
     function getStartTime() {
-        return Math.max(0, Number(startInput && startInput.value) || 0);
+        return Math.max(0, readTimeValue(startInput && startInput.value, 0));
     }
 
     function getEndTime() {
-        var end = Math.max(0, Number(endInput && endInput.value) || 0);
+        var end = Math.max(0, readTimeValue(endInput && endInput.value, 0));
         return end || state.duration || 0;
     }
 
@@ -612,8 +708,25 @@
 
     function schedulePreviewRefresh(shouldPlay) {
         clearPreviewTimer();
+        state.previewVersion += 1;
+        var version = state.previewVersion;
+        var sessionVersion = state.sessionVersion;
         state.previewShouldPlay = Boolean(shouldPlay);
-        state.previewTimer = window.setTimeout(refreshTrimmedPreview, 180);
+        setPreviewBuilding(true);
+        state.previewTimer = window.setTimeout(function () {
+            refreshTrimmedPreview(version, sessionVersion);
+        }, 180);
+    }
+
+    function cancelPendingAudioWork() {
+        clearPreviewTimer();
+        state.previewVersion += 1;
+        if (state.decodeAbortController) {
+            state.decodeAbortController.abort();
+            state.decodeAbortController = null;
+        }
+        revokePreviewObjectUrl();
+        setPreviewBuilding(false);
     }
 
     function revokePreviewObjectUrl() {
@@ -629,6 +742,7 @@
             return;
         }
         audioEl.pause();
+        audioEl.removeEventListener("loadedmetadata", playAudioPreview);
         state.usingTrimmedPreview = Boolean(usingTrimmedPreview);
         if (shouldPlay) {
             audioEl.addEventListener("loadedmetadata", playAudioPreview, { once: true });
@@ -637,26 +751,36 @@
         audioEl.load();
     }
 
-    function refreshTrimmedPreview() {
+    function refreshTrimmedPreview(version, sessionVersion) {
         state.previewTimer = null;
         var shouldPlay = state.previewShouldPlay;
         state.previewShouldPlay = false;
-        if (!audioEl || !state.audioServeUrl || !state.duration) return;
+        if (version !== state.previewVersion || sessionVersion !== state.sessionVersion) return;
+        if (!audioEl || !state.audioServeUrl || !state.duration) {
+            setPreviewBuilding(false);
+            return;
+        }
         if (isFullSelection() && !state.appendFile) {
             revokePreviewObjectUrl();
             state.usingTrimmedPreview = false;
             setAudioSource(state.audioServeUrl, false, shouldPlay);
+            setWaveformBuffer(state.decodedBuffer);
+            setPreviewBuilding(false);
             return;
         }
-        var selectedDuration = getSelectedDuration();
-        if (selectedDuration <= 0.01) return;
+        var startTime = getStartTime();
+        var endTime = getEndTime();
+        var selectedDuration = Math.max(0, endTime - startTime);
+        if (selectedDuration <= 0.01) {
+            setPreviewBuilding(false);
+            return;
+        }
         var AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass || typeof fetch !== "function") {
             if (shouldPlay) playAudioPreview();
+            setPreviewBuilding(false);
             return;
         }
-        var version = state.previewVersion + 1;
-        state.previewVersion = version;
         Promise.all([
             getDecodedBuffer(AudioContextClass),
             state.appendFile ? getAppendDecodedBuffer(AudioContextClass) : Promise.resolve(null),
@@ -664,16 +788,28 @@
             .then(function (buffers) {
                 var sourceBuffer = buffers[0];
                 var appendBuffer = buffers[1];
-                if (!sourceBuffer || version !== state.previewVersion) return;
-                var wavBlob = buildPreviewWavBlob(AudioContextClass, sourceBuffer, getStartTime(), getEndTime(), appendBuffer);
-                if (!wavBlob || version !== state.previewVersion) return;
-                var nextUrl = URL.createObjectURL(wavBlob);
+                if (!sourceBuffer || version !== state.previewVersion || sessionVersion !== state.sessionVersion) return;
+                var preview = buildPreviewWav(AudioContextClass, sourceBuffer, startTime, endTime, appendBuffer);
+                if (!preview || !preview.blob || version !== state.previewVersion || sessionVersion !== state.sessionVersion) return;
+                var nextUrl = URL.createObjectURL(preview.blob);
+                if (version !== state.previewVersion || sessionVersion !== state.sessionVersion) {
+                    URL.revokeObjectURL(nextUrl);
+                    return;
+                }
                 var previousUrl = state.previewObjectUrl;
                 state.previewObjectUrl = nextUrl;
                 setAudioSource(nextUrl, true, shouldPlay);
+                setWaveformBuffer(preview.buffer);
                 if (previousUrl) URL.revokeObjectURL(previousUrl);
             })
-            .catch(function () {});
+            .catch(function (error) {
+                if (error && error.name === "AbortError") return;
+            })
+            .finally(function () {
+                if (version === state.previewVersion && sessionVersion === state.sessionVersion) {
+                    setPreviewBuilding(false);
+                }
+            });
     }
 
     function playAudioPreview() {
@@ -693,7 +829,13 @@
         if (state.decodedBufferPromise) {
             return state.decodedBufferPromise;
         }
-        state.decodedBufferPromise = fetch(state.audioServeUrl, { credentials: "same-origin" })
+        var sessionVersion = state.sessionVersion;
+        var sourceUrl = state.audioServeUrl;
+        var abortController = typeof AbortController !== "undefined" ? new AbortController() : null;
+        state.decodeAbortController = abortController;
+        var fetchOptions = { credentials: "same-origin" };
+        if (abortController) fetchOptions.signal = abortController.signal;
+        state.decodedBufferPromise = fetch(sourceUrl, fetchOptions)
             .then(function (response) {
                 if (!response.ok) throw new Error("audio fetch failed");
                 return response.arrayBuffer();
@@ -702,10 +844,24 @@
                 var context = new AudioContextClass();
                 return context.decodeAudioData(arrayBuffer.slice(0))
                     .then(function (decodedBuffer) {
-                        if (context.close) context.close();
+                        if (sessionVersion !== state.sessionVersion || sourceUrl !== state.audioServeUrl) {
+                            throw new DOMException("Stale audio session", "AbortError");
+                        }
                         state.decodedBuffer = decodedBuffer;
                         return decodedBuffer;
+                    })
+                    .finally(function () {
+                        if (context.close) context.close();
                     });
+            })
+            .catch(function (error) {
+                if (sessionVersion === state.sessionVersion && sourceUrl === state.audioServeUrl) {
+                    state.decodedBufferPromise = null;
+                }
+                throw error;
+            })
+            .finally(function () {
+                if (state.decodeAbortController === abortController) state.decodeAbortController = null;
             });
         return state.decodedBufferPromise;
     }
@@ -720,20 +876,33 @@
         if (state.appendDecodedBufferPromise) {
             return state.appendDecodedBufferPromise;
         }
-        state.appendDecodedBufferPromise = state.appendFile.arrayBuffer()
+        var appendFile = state.appendFile;
+        var sessionVersion = state.sessionVersion;
+        state.appendDecodedBufferPromise = appendFile.arrayBuffer()
             .then(function (arrayBuffer) {
                 var context = new AudioContextClass();
                 return context.decodeAudioData(arrayBuffer.slice(0))
                     .then(function (decodedBuffer) {
-                        if (context.close) context.close();
+                        if (sessionVersion !== state.sessionVersion || appendFile !== state.appendFile) {
+                            throw new DOMException("Stale appended audio", "AbortError");
+                        }
                         state.appendDecodedBuffer = decodedBuffer;
                         return decodedBuffer;
+                    })
+                    .finally(function () {
+                        if (context.close) context.close();
                     });
+            })
+            .catch(function (error) {
+                if (sessionVersion === state.sessionVersion && appendFile === state.appendFile) {
+                    state.appendDecodedBufferPromise = null;
+                }
+                throw error;
             });
         return state.appendDecodedBufferPromise;
     }
 
-    function buildPreviewWavBlob(AudioContextClass, sourceBuffer, startSeconds, endSeconds, appendBuffer) {
+    function buildPreviewWav(AudioContextClass, sourceBuffer, startSeconds, endSeconds, appendBuffer) {
         var sampleRate = sourceBuffer.sampleRate;
         var startSample = Math.max(0, Math.floor(startSeconds * sampleRate));
         var endSample = Math.min(sourceBuffer.length, Math.ceil(endSeconds * sampleRate));
@@ -752,7 +921,10 @@
             }
         }
         if (context.close) context.close();
-        return encodeWavBlob(trimmedBuffer);
+        return {
+            blob: encodeWavBlob(trimmedBuffer),
+            buffer: trimmedBuffer,
+        };
     }
 
     function copyResampledChannel(sourceBuffer, channel, targetData, targetOffset, targetSampleRate, targetFrameCount) {
@@ -805,27 +977,153 @@
         }
     }
 
+    function loadWaveform(sessionVersion) {
+        var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass || !waveformCanvas) return;
+        getDecodedBuffer(AudioContextClass)
+            .then(function (buffer) {
+                if (sessionVersion !== state.sessionVersion || !buffer) return;
+                if (!state.usingTrimmedPreview) setWaveformBuffer(buffer);
+            })
+            .catch(function (error) {
+                if ((!error || error.name !== "AbortError") && !state.usingTrimmedPreview) {
+                    setWaveformBuffer(null);
+                }
+            });
+    }
+
+    function setWaveformBuffer(buffer) {
+        state.waveformBuffer = buffer || null;
+        if (state.waveformBuffer) {
+            drawWaveform(state.waveformBuffer);
+        } else {
+            clearWaveform();
+        }
+    }
+
+    function drawWaveform(buffer) {
+        if (!waveformCanvas || !waveformVisual || !buffer || !buffer.length) return;
+        var width = Math.max(1, Math.round(waveformVisual.clientWidth || 1));
+        var height = Math.max(1, Math.round(waveformVisual.clientHeight || 1));
+        var dpr = Math.max(1, window.devicePixelRatio || 1);
+        waveformCanvas.width = Math.round(width * dpr);
+        waveformCanvas.height = Math.round(height * dpr);
+        waveformCanvas.style.width = width + "px";
+        waveformCanvas.style.height = height + "px";
+        var context = waveformCanvas.getContext("2d");
+        if (!context) return;
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        context.clearRect(0, 0, width, height);
+        var style = surface ? window.getComputedStyle(surface) : null;
+        var accent = style ? style.getPropertyValue("--hme-accent").trim() : "";
+        context.strokeStyle = accent || "#2563eb";
+        context.lineWidth = 1.35;
+        context.globalAlpha = 0.9;
+        var channelCount = Math.max(1, Math.min(2, buffer.numberOfChannels || 1));
+        var samplesPerPixel = Math.max(1, Math.floor(buffer.length / width));
+        var center = height / 2;
+        context.beginPath();
+        for (var x = 0; x < width; x += 1) {
+            var startSample = x * samplesPerPixel;
+            var endSample = Math.min(buffer.length, startSample + samplesPerPixel);
+            var peak = 0;
+            for (var channel = 0; channel < channelCount; channel += 1) {
+                var channelData = buffer.getChannelData(channel);
+                var stride = Math.max(1, Math.floor((endSample - startSample) / 32));
+                for (var sampleIndex = startSample; sampleIndex < endSample; sampleIndex += stride) {
+                    peak = Math.max(peak, Math.abs(channelData[sampleIndex] || 0));
+                }
+            }
+            var amplitude = Math.max(1, peak * (height * 0.44));
+            context.moveTo(x + 0.5, center - amplitude);
+            context.lineTo(x + 0.5, center + amplitude);
+        }
+        context.stroke();
+        waveformVisual.classList.add("has-waveform");
+        syncWaveformPlayhead();
+    }
+
+    function clearWaveform() {
+        if (waveformCanvas) {
+            var context = waveformCanvas.getContext("2d");
+            if (context) context.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+        }
+        if (waveformVisual) waveformVisual.classList.remove("has-waveform");
+        if (waveformPlayhead) waveformPlayhead.style.left = "0%";
+    }
+
+    function bindWaveformResizeObserver() {
+        unbindWaveformResizeObserver();
+        if (typeof ResizeObserver === "undefined" || !waveformVisual) return;
+        waveformResizeObserver = new ResizeObserver(function () {
+            if (state.waveformBuffer) drawWaveform(state.waveformBuffer);
+        });
+        waveformResizeObserver.observe(waveformVisual);
+    }
+
+    function unbindWaveformResizeObserver() {
+        if (!waveformResizeObserver) return;
+        waveformResizeObserver.disconnect();
+        waveformResizeObserver = null;
+    }
+
+    function syncWaveformPlayhead() {
+        if (!waveformPlayhead || !audioEl) return;
+        var waveformDuration = state.waveformBuffer && Number.isFinite(state.waveformBuffer.duration)
+            ? state.waveformBuffer.duration
+            : 0;
+        var denominator = waveformDuration || (state.usingTrimmedPreview ? Number(audioEl.duration) || 0 : state.duration);
+        var ratio = denominator > 0 ? (Number(audioEl.currentTime) || 0) / denominator : 0;
+        waveformPlayhead.style.left = Math.max(0, Math.min(100, ratio * 100)) + "%";
+    }
+
+    function setPreviewBuilding(building) {
+        if (!trackCard) return;
+        trackCard.classList.toggle("is-preview-building", Boolean(building));
+        trackCard.setAttribute("aria-busy", building ? "true" : "false");
+    }
+
+    function setMediaLoading(loading) {
+        if (!surface) return;
+        surface.classList.toggle("is-loading", Boolean(loading));
+        surface.setAttribute("aria-busy", loading ? "true" : "false");
+    }
+
+    function setDisabled(disabled) {
+        state.isDisabled = Boolean(disabled);
+        if (!surface) return;
+        surface.inert = state.isDisabled;
+        surface.classList.toggle("is-disabled", state.isDisabled);
+        surface.setAttribute("aria-disabled", state.isDisabled ? "true" : "false");
+    }
+
     function syncVolumeDisplay() {
         if (!volumeDisplay || !volumeInput) return;
         volumeDisplay.textContent = Math.round((Number(volumeInput.value) || 0) * 100) + "%";
     }
 
     function syncTimeDisplays() {
-        if (currentTimeEl) currentTimeEl.textContent = formatTime(getStartTime());
+        var currentTime = audioEl ? Number(audioEl.currentTime) || 0 : 0;
+        if (state.usingTrimmedPreview) currentTime += getStartTime();
+        if (currentTimeEl) currentTimeEl.textContent = formatTime(currentTime);
         if (durationEl) durationEl.textContent = formatTime(getEndTime());
+        syncWaveformPlayhead();
     }
 
     function formatTime(seconds) {
         var total = Math.max(0, Number(seconds) || 0);
-        var minutes = Math.floor(total / 60);
-        var rest = total - minutes * 60;
-        return minutes + ":" + (rest < 10 ? "0" : "") + rest.toFixed(2);
+        var centiseconds = Math.round(total * 100);
+        var minutes = Math.floor(centiseconds / 6000);
+        var rest = centiseconds % 6000;
+        var secondsPart = Math.floor(rest / 100);
+        var fractionalPart = rest % 100;
+        return minutes + ":" + (secondsPart < 10 ? "0" : "") + secondsPart + "." + (fractionalPart < 10 ? "0" : "") + fractionalPart;
     }
 
     function getHasEditChanges() {
-        var start = Number(startInput && startInput.value) || 0;
-        var end = Number(endInput && endInput.value) || 0;
-        var volume = Number(volumeInput && volumeInput.value) || 1;
+        var start = readTimeValue(startInput && startInput.value, 0);
+        var end = readTimeValue(endInput && endInput.value, 0);
+        var volume = readFiniteNumber(volumeInput && volumeInput.value, 1);
         return Math.abs(start) > 0.001 ||
             (state.duration && Math.abs(end - state.duration) > 0.01) ||
             Math.abs(volume - 1) > 0.001 ||
@@ -833,7 +1131,9 @@
     }
 
     function setDirty(isDirty) {
-        state.isDirty = Boolean(isDirty);
+        var nextDirty = Boolean(isDirty);
+        if (nextDirty) state.changeRevision += 1;
+        state.isDirty = nextDirty;
         if (state.onDirtyChange) state.onDirtyChange(state.isDirty);
     }
 
@@ -844,12 +1144,23 @@
             onDone && onDone({ ok: false, error: "요청 처리 중 오류가 발생했습니다." });
             return;
         }
+        if (!state.isReady) {
+            onDone && onDone({ ok: false, error: "오디오 로드가 완료되지 않았습니다." });
+            return;
+        }
+        if (state.isSaving) {
+            onDone && onDone({ ok: false, error: "이미 저장 중입니다." });
+            return;
+        }
+        state.isSaving = true;
+        var saveRevision = state.changeRevision;
+        var saveSessionVersion = state.sessionVersion;
         clampTimeInputs();
         var formData = new FormData();
         formData.append("path", path);
-        formData.append("trim_start", String(Number(startInput && startInput.value) || 0));
-        formData.append("trim_end", String(Number(endInput && endInput.value) || 0));
-        formData.append("volume", String(Number(volumeInput && volumeInput.value) || 1));
+        formData.append("trim_start", String(getStartTime()));
+        formData.append("trim_end", String(getEndTime()));
+        formData.append("volume", String(readFiniteNumber(volumeInput && volumeInput.value, 1)));
         if (targetFilename) {
             formData.append("filename", targetFilename);
         }
@@ -863,10 +1174,14 @@
         })
             .then(function (response) { return response.json(); })
             .then(function (data) {
-                if (data && data.ok) setDirty(false);
+                if (saveSessionVersion !== state.sessionVersion) return;
+                state.isSaving = false;
+                if (data && data.ok && state.changeRevision === saveRevision) setDirty(false);
                 onDone && onDone(data || { ok: false });
             })
             .catch(function (error) {
+                if (saveSessionVersion !== state.sessionVersion) return;
+                state.isSaving = false;
                 onDone && onDone({ ok: false, error: String(error) });
             });
     }
@@ -875,6 +1190,8 @@
         init: init,
         destroy: destroy,
         getIsDirty: function () { return state.isDirty; },
+        getIsReady: function () { return state.isReady; },
+        setDisabled: setDisabled,
         saveToServer: saveToServer,
     };
 })();

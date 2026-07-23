@@ -184,50 +184,6 @@
         });
     });
 
-    const syncAccount = async () => {
-        if (body.dataset.needsAuthRefresh !== '1') return { status: 'ready' };
-        const sessionUrl = body.dataset.djangoSessionUrl;
-        const csrf = body.dataset.csrf;
-        if (!sessionUrl || !csrf) return { status: 'error' };
-
-        const bridge = document.querySelector('[data-account-bridge]');
-        if (bridge) bridge.textContent = '계정 확인 중…';
-        try {
-            const response = await fetch(sessionUrl, {
-                method: 'GET',
-                credentials: 'include',
-                headers: { 'Accept': 'application/json' },
-            });
-            if (!response.ok) throw new Error('session_request_failed');
-            const payload = await response.json();
-            if (!payload.authenticated || !payload.token) {
-                if (bridge) bridge.textContent = '로그인 필요';
-                return { status: 'unauthenticated' };
-            }
-
-            const form = new FormData();
-            form.set('action', 'connect_account');
-            form.set('csrf_token', csrf);
-            form.set('django_token', payload.token);
-            const connected = await fetch('/', {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Accept': 'application/json', 'X-Requested-With': 'fetch' },
-                body: form,
-            });
-            if (!connected.ok) throw new Error('portal_session_failed');
-            const result = await connected.json();
-            if (result.authenticated) {
-                window.location.reload();
-                return { status: 'reloading' };
-            }
-            return { status: 'error' };
-        } catch (_) {
-            if (bridge) bridge.textContent = '계정 연결 실패';
-            return { status: 'error' };
-        }
-    };
-
     const openTargetFromEmail = () => {
         if (body.dataset.autoLaunch !== '1') return;
         const form = document.querySelector('form[data-email-target-launch]');
@@ -236,16 +192,14 @@
         window.setTimeout(() => form.requestSubmit(), 80);
     };
 
-    const bootPortal = async () => {
+    const bootPortal = () => {
         renderWargameMermaidDiagrams();
-        const accountState = await syncAccount();
-        if (accountState.status === 'reloading') return;
-        if (body.dataset.autoLaunch === '1' && accountState.status === 'unauthenticated') {
+        if (body.dataset.autoLaunch === '1' && body.dataset.authenticated !== '1') {
             const loginUrl = body.dataset.loginUrl;
             if (loginUrl) window.location.assign(loginUrl);
             return;
         }
-        if (accountState.status === 'ready') openTargetFromEmail();
+        if (body.dataset.authenticated === '1') openTargetFromEmail();
     };
 
     bootPortal();

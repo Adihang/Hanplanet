@@ -223,6 +223,17 @@ GAME_JWT_ISSUER = load_optional_secret("GAME_JWT_ISSUER", PUBLIC_BASE_URL).rstri
 GAME_JWT_AUDIENCE = load_optional_secret("GAME_JWT_AUDIENCE", "hanplanet-game")
 GAME_JWT_EXP_SECONDS = max(30, load_optional_int_secret("GAME_JWT_EXP_SECONDS", 300))
 WARGAME_COMPLETION_SECRET = load_optional_secret("WARGAME_COMPLETION_SECRET", "")
+WARGAME_OIDC_CLIENT_ID = os.environ.get("WARGAME_OIDC_CLIENT_ID", "hanplanet-wargame-sso").strip()
+WARGAME_OIDC_CLIENT_SECRET = load_optional_secret("WARGAME_OIDC_CLIENT_SECRET", "")
+WARGAME_OIDC_REDIRECT_URI = os.environ.get(
+    "WARGAME_OIDC_REDIRECT_URI",
+    f"{WARGAME_PUBLIC_URL}/auth/callback.php",
+).strip()
+FORGEJO_OIDC_SSO_ENABLED = env_bool(
+    "FORGEJO_OIDC_SSO_ENABLED",
+    default=not DEBUG and not RUNNING_TESTS,
+)
+FORGEJO_OIDC_CLIENT_ID = os.environ.get("FORGEJO_OIDC_CLIENT_ID", "gitea-hanplanet-sso").strip()
 MINECRAFT_LINK_SHARED_SECRET = load_optional_secret("MINECRAFT_LINK_SHARED_SECRET", "")
 MINECRAFT_LINK_CODE_TTL_SECONDS = max(60, load_optional_int_secret("MINECRAFT_LINK_CODE_TTL_SECONDS", 600))
 MINECRAFT_LINK_HMAC_SKEW_SECONDS = max(30, load_optional_int_secret("MINECRAFT_LINK_HMAC_SKEW_SECONDS", 300))
@@ -550,7 +561,7 @@ SESSION_SAVE_EVERY_REQUEST = env_bool(
     "DJANGO_SESSION_SAVE_EVERY_REQUEST",
     default=bool(SESSION_COOKIE_DOMAIN),
 )
-SESSION_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
+SESSION_COOKIE_AGE = 60 * 60 * 24  # 1일
 SESSION_ENGINE = "django.contrib.sessions.backends.db"  # LocMemCache 세션 방지
 CSRF_COOKIE_SECURE = env_bool("DJANGO_CSRF_COOKIE_SECURE", default=DEFAULT_SECURE_TRANSPORT) if not DEBUG else False
 CSRF_COOKIE_SAMESITE = "Lax"
@@ -622,6 +633,7 @@ DEFAULT_FROM_EMAIL = load_optional_secret("DEFAULT_FROM_EMAIL", "noreply@hanplan
 TWO_FA_CODE_EXPIRY_MINUTES = 10
 TWO_FA_DEVICE_COOKIE_NAME = "hp_device_id"
 TWO_FA_DEVICE_TRUSTED_DAYS = 3
+TWO_FA_DEVICE_COOKIE_AGE = 60 * 60 * 24 * 3  # 3일
 
 # ── HPmail ────────────────────────────────────────────────────────────────────
 HPMAIL_DOMAIN = load_optional_secret("HPMAIL_DOMAIN", "hanplanet.com")

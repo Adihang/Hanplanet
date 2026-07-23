@@ -1346,6 +1346,14 @@ curl -I https://mc.hanplanet.com/map/
 curl -I https://wargame.hanplanet.com/
 ```
 
+슈퍼유저 계정 메뉴의 `ui-auth-account-restart-btn`도 Django/templates/static
+변경을 운영에 반영합니다. Docker 운영에서는 Django 컨테이너가
+`/data/django/.hanplanet-docker-stack-deploy-request` 마커를 기록하고,
+호스트의 `com.hanplanet.docker-health-watchdog`가 이를 소비해 위 Compose
+rebuild/restart를 실행합니다. 컨테이너에 호스트 Docker 소켓을 노출하지
+않으므로 버튼 요청이 현재 Gunicorn 프로세스를 직접 종료하지도 않습니다.
+watchdog가 60초 주기로 실행되므로 반영은 보통 다음 주기에 시작됩니다.
+
 네이티브 launchd 운영:
 
 ```bash
@@ -1413,7 +1421,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 | --- | --- |
 | [`scripts/start_docker_stack.sh`](./scripts/start_docker_stack.sh) | macOS Docker 운영에서 Colima 시작 후 `docker compose up -d --remove-orphans` 실행 |
 | [`deploy/launchd/com.hanplanet.docker-stack.plist`](./deploy/launchd/com.hanplanet.docker-stack.plist) | Docker stack 자동 기동 launchd 항목 |
-| [`scripts/docker_health_watchdog.sh`](./scripts/docker_health_watchdog.sh) | Docker 접근 실패 시 스택 시작을 다시 요청하고 `unhealthy`인 Compose 서비스를 재시작 |
+| [`scripts/docker_health_watchdog.sh`](./scripts/docker_health_watchdog.sh) | Docker 접근 실패 시 스택 시작을 다시 요청하고, 계정 메뉴의 배포 marker를 처리하며, `unhealthy`인 Compose 서비스를 재시작 |
 | [`deploy/launchd/com.hanplanet.docker-health-watchdog.plist`](./deploy/launchd/com.hanplanet.docker-health-watchdog.plist) | Docker health watchdog 60초 주기 launchd 항목 |
 | [`deploy/scripts/git-credential-hanplanet`](./deploy/scripts/git-credential-hanplanet) | Git credential helper. OAuth2 device flow로 Git clone/push 인증 |
 | [`scripts/launch_service_by_disc.py`](./scripts/launch_service_by_disc.py) | `DISC` 값에 맞춰 gunicorn/gitea/celery/nginx 실행 전 storage profile 적용 |

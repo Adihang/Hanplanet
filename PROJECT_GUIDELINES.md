@@ -91,6 +91,13 @@ docker compose up -d --build map-collab-server nginx
 docker compose up -d --build wargame nginx
 ```
 
+The superuser account-menu `ui-auth-account-restart-btn` queues the Django/static
+deployment marker at `/data/django/.hanplanet-docker-stack-deploy-request`.
+The host `com.hanplanet.docker-health-watchdog` consumes it and runs the same
+Django/Celery/Nginx rebuild, so the web container never needs host Docker-socket
+or `launchctl` access (normally on the watchdog's next 60-second cycle). Native
+launchd runtime keeps the collectstatic + Gunicorn fallback.
+
 Verification:
 
 ```bash
@@ -319,7 +326,7 @@ Do not commit `.env`, API keys, private keys, OAuth client secrets, generated Gi
   - 설정/템플릿: `forgejo/custom/conf/app.ini`, `forgejo/custom/templates/`
   - 컨테이너 runtime data: `gitea` 컨테이너 `/data`, `django`/`celery` 컨테이너 `/data/gitea` via `GITEA_DATA_VOLUME`
   - Django의 Forgejo direct session DB path: `FORGEJO_DB_PATH=/data/gitea/gitea.db`
-  - Compose must set `GITEA__session__PROVIDER=db`, `GITEA__session__DOMAIN=.hanplanet.com`, and `GITEA__session__COOKIE_NAME=hp_gitea_session`; Django writes Forgejo login sessions directly to the shared DB and the browser carries the dedicated session cookie across Hanplanet subdomains.
+  - Compose must set `GITEA__session__PROVIDER=db`, `GITEA__session__DOMAIN=.hanplanet.com`, and `GITEA__session__COOKIE_NAME=hp_gitea_session`. Browser login is now driven by the central Hanplanet OIDC provider (`https://www.hanplanet.com/o/.well-known/openid-configuration`); the old Django-to-Forgejo DB session writer remains only as a migration fallback and is disabled for Git targets in production.
   - bare repositories: `/data/git/repositories` via `FORGEJO_REPOS_VOLUME`
   - Docker internal URL: `FORGEJO_BASE_URL=http://gitea:3000`
   - Public URL: `PUBLIC_GIT_BASE_URL=https://git.hanplanet.com`

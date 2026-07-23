@@ -62,7 +62,6 @@ SOURCE_ICONS: dict[str, tuple[str, tuple[int, int, int, int]]] = {
     "trash-empty": ("trash-empty.png", (6, 3, 26, 29)),
     "trash-full": ("trash-full.png", (6, 2, 26, 29)),
     "ts": ("ts.svg", (5, 3, 28, 29)),
-    "video": ("video.svg", (5, 5, 28, 27)),
     "word": ("word.webp", (4, 3, 29, 29)),
 }
 
@@ -215,6 +214,39 @@ def _draw_archive_folder_icon() -> Image.Image:
     return icon
 
 
+def _draw_video_icon() -> Image.Image:
+    """Turn the image icon into a horizontal film frame with a play mark."""
+    icon = _canvas_from_source(*SOURCE_ICONS["image"])
+    draw = ImageDraw.Draw(icon)
+
+    perforation_width = 2.5
+    perforation_gap = 1.7
+    perforation_left = 5.8
+    for index in range(5):
+        left = perforation_left + index * (perforation_width + perforation_gap)
+        right = left + perforation_width
+        draw.rounded_rectangle(
+            _scale_box((left, 5.15, right, 7.35)),
+            radius=round(0.45 * SCALE),
+            fill=(0, 0, 0, 0),
+        )
+        draw.rounded_rectangle(
+            _scale_box((left, 23.65, right, 25.85)),
+            radius=round(0.45 * SCALE),
+            fill=(0, 0, 0, 0),
+        )
+
+    draw.polygon(
+        [
+            (13.0 * SCALE, 10.8 * SCALE),
+            (20.5 * SCALE, 15.5 * SCALE),
+            (13.0 * SCALE, 20.2 * SCALE),
+        ],
+        fill="#ffffff",
+    )
+    return icon
+
+
 def _draw_folder_variant(kind: str) -> Image.Image:
     icon = _canvas_from_source("folder.png", (4, 6, 28, 26))
     draw = ImageDraw.Draw(icon)
@@ -226,9 +258,9 @@ def _draw_folder_variant(kind: str) -> Image.Image:
             fill="#6c95f7",
         )
     elif kind == "folder-youtube":
-        draw.rounded_rectangle(_scale_box((9.7, 14, 22.3, 20)), radius=1.9 * SCALE, fill="#ff3b30")
+        draw.rounded_rectangle(_scale_box((10, 13, 22, 21)), radius=2.1 * SCALE, fill="#ff3b30")
         draw.polygon(
-            [(14.6 * SCALE, 15.3 * SCALE), (14.6 * SCALE, 18.7 * SCALE), (18.1 * SCALE, 17 * SCALE)],
+            [(14.4 * SCALE, 14.5 * SCALE), (14.4 * SCALE, 19.5 * SCALE), (18.9 * SCALE, 17 * SCALE)],
             fill="#ffffff",
         )
     else:
@@ -268,6 +300,7 @@ def main() -> None:
         _write_icon(f"{name}-dark", icon)
 
     _write_icon("pdf", _draw_pdf_document_icon())
+    _write_icon("video", _draw_video_icon())
     _write_icon("folder-image", _draw_folder_variant("folder-image"))
     _write_icon("folder-youtube", _draw_folder_variant("folder-youtube"))
     _write_icon("archive", _draw_archive_folder_icon())

@@ -1,5 +1,7 @@
-                <div class="handrive-image-editor-surface" id="handrive-image-editor-surface" hidden>
-                    <div class="ie-ribbon" id="ie-ribbon">
+                {% include "handrive/_svg_editor_surface.html" %}
+                <div class="handrive-image-editor-surface handrive-media-editor-surface" id="handrive-image-editor-surface" hidden>
+                    <div class="ie-ribbon" id="ie-ribbon" data-site-tooltip-source>
+                        <div class="ie-tool-rail">
                         <div class="ie-ribbon-section">
                             <button class="ie-tool-btn is-active" data-tool="pencil" title="연필 (P)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l1-4L13 3l3 3L7 16l-4 1z"/><line x1="11" y1="5" x2="14" y2="8"/></svg></button>
                             <button class="ie-tool-btn" data-tool="brush" title="브러시 (B)"><svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 16c1-3 4-5 7-5 2 0 3-1 3-3 0-2-2-4-4-4C7 4 5 6 4 9"/><circle cx="4.5" cy="15.5" r="1.5" fill="currentColor" stroke="none"/></svg></button>
@@ -30,7 +32,8 @@
                                 <button class="ie-mode-btn" data-shape-mode="both" title="윤곽선+채움"><svg viewBox="0 0 14 14" width="14" height="14" aria-hidden="true"><rect x="2" y="2" width="10" height="10" fill="currentColor" opacity="0.4"/><rect x="2" y="2" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
                             </div>
                         </div>
-                        <div class="ie-ribbon-sep ie-ribbon-sep--vertical"></div>
+                        </div>
+                        <aside class="ie-inspector">
                         <div class="ie-ribbon-section ie-ribbon-section--options">
                             <div class="ie-size-row">
                                 <span class="ie-ribbon-label">크기</span>
@@ -72,7 +75,8 @@
                             <div class="ie-palette" id="ie-palette"></div>
                             <input type="color" id="ie-custom-color" class="ie-custom-color-input handrive-editor-text-style-color" title="사용자 정의 색상">
                         </div>
-                        <div class="ie-ribbon-sep ie-ribbon-sep--vertical"></div>
+                        </aside>
+                        <div class="ie-commandbar handrive-media-toolbar" data-site-tooltip-source>
                         <div class="ie-ribbon-section ie-ribbon-section--imageops">
                             <button class="ie-action-btn" type="button" data-action="rotate-cw"  title="90° 시계방향"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="6" width="9" height="9" rx="1"/><path d="M12 3h4v4"/><path d="M16 3c-1.2 1-2.1 2-2.7 3.2"/></svg></button>
                             <button class="ie-action-btn" type="button" data-action="rotate-ccw" title="90° 반시계방향"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="9" height="9" rx="1"/><path d="M8 3H4v4"/><path d="M4 3c1.2 1 2.1 2 2.7 3.2"/></svg></button>
@@ -88,6 +92,7 @@
                             <button class="ie-action-btn" type="button" data-action="zoom-fit"   title="창에 맞춤"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8,4 4,4 4,8"/><polyline points="12,4 16,4 16,8"/><polyline points="4,12 4,16 8,16"/><polyline points="16,12 16,16 12,16"/></svg></button>
                             <button class="ie-action-btn" type="button" data-action="zoom-100"   title="실제 크기 (Ctrl+0)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="13" height="11" rx="1.5"/><path d="M7 8v4"/><path d="M6 9l1-1 1 1"/><path d="M10 8.2v3.6"/><path d="M13 8.2v3.6"/><path d="M11.8 8.2h2.4"/></svg></button>
                             <button class="ie-action-btn" type="button" data-action="save-as"    title="다른 이름으로 저장 (PNG/JPG/WebP)"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10l4 4v9a1 1 0 0 1-1 1h-2"/><polyline points="10,13 10,17"/><line x1="7" y1="17" x2="13" y2="17"/></svg></button>
+                        </div>
                         </div>
                     </div>
                     <div class="ie-canvas-area" id="ie-canvas-area">
@@ -106,7 +111,7 @@
                     </div>
                 </div>
                 <div class="handrive-pdf-editor-surface" id="handrive-pdf-editor-surface" hidden>
-                    <div class="pe-ribbon">
+                    <div class="pe-ribbon" data-site-tooltip-source>
                         <div class="pe-ribbon-section">
                             <button class="pe-tool-btn is-active" type="button" data-pdf-tool="draw" title="서명/선 그리기">
                                 <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
@@ -179,30 +184,32 @@
                         <div class="pe-page-list" id="pe-page-list"></div>
                     </div>
                 </div>
-                <div class="handrive-video-editor-surface" id="handrive-video-editor-surface" hidden>
-                    <div class="ve-ribbon">
-                        <button class="ae-btn" type="button" id="ve-reset-btn">{{ handrive_text.video_editor_reset }}</button>
-                        <label class="ae-field">{{ handrive_text.video_editor_start }}
-                            <input type="number" id="ve-start-input" min="0" step="0.01" value="0">
-                        </label>
-                        <label class="ae-field">{{ handrive_text.video_editor_end }}
-                            <input type="number" id="ve-end-input" min="0" step="0.01" value="0">
-                        </label>
-                        <div class="ve-input-control" id="ve-input-control">
-                            <button class="ae-btn ve-input-icon-btn" type="button" id="ve-input-subtitle-btn" aria-label="{{ handrive_text.video_editor_subtitle }} 추가" title="{{ handrive_text.video_editor_subtitle }} 추가">
-                                <svg class="ve-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M4 7V5h16v2"></path>
-                                    <path d="M12 5v14"></path>
-                                    <path d="M9 19h6"></path>
-                                </svg>
-                            </button>
-                            <button class="ae-btn ve-input-icon-btn" type="button" id="ve-input-image-btn" aria-label="이미지 추가" title="이미지 추가">
-                                <svg class="ve-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-                                    <circle cx="8" cy="10" r="1.4"></circle>
-                                    <path d="M21 16l-5.2-5.2a1.4 1.4 0 0 0-2 0L7 17"></path>
-                                </svg>
-                            </button>
+                <div class="handrive-video-editor-surface handrive-media-editor-surface" id="handrive-video-editor-surface" hidden>
+                    <div class="ve-ribbon handrive-media-toolbar" data-site-tooltip-source>
+                        <div class="ve-ribbon-scroll">
+                            <button class="ae-btn" type="button" id="ve-reset-btn" title="{{ handrive_text.video_editor_reset }}">{{ handrive_text.video_editor_reset }}</button>
+                            <label class="ae-field">{{ handrive_text.video_editor_start }}
+                                <input type="text" id="ve-start-input" inputmode="text" value="0:00.00" placeholder="0:00.00" autocomplete="off">
+                            </label>
+                            <label class="ae-field">{{ handrive_text.video_editor_end }}
+                                <input type="text" id="ve-end-input" inputmode="text" value="0:00.00" placeholder="0:00.00" autocomplete="off">
+                            </label>
+                            <div class="ve-input-control" id="ve-input-control">
+                                <button class="ae-btn ve-input-icon-btn" type="button" id="ve-input-subtitle-btn" aria-label="{{ handrive_text.video_editor_subtitle }} 추가" title="{{ handrive_text.video_editor_subtitle }} 추가" aria-expanded="false" aria-controls="ve-subtitle-field">
+                                    <svg class="ve-input-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M4 7V5h16v2"></path>
+                                        <path d="M12 5v14"></path>
+                                        <path d="M9 19h6"></path>
+                                    </svg>
+                                </button>
+                                <button class="ae-btn ve-input-icon-btn" type="button" id="ve-input-image-btn" aria-label="이미지 추가" title="이미지 추가" aria-expanded="false" aria-controls="ve-image-field">
+                                    <svg class="ve-input-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                                        <circle cx="8" cy="10" r="1.4"></circle>
+                                        <path d="M21 16l-5.2-5.2a1.4 1.4 0 0 0-2 0L7 17"></path>
+                                    </svg>
+                                </button>
+                            </div>
                         </div>
                         <div class="ae-volume-control" id="ve-volume-control">
                             <button class="ae-btn ae-volume-btn" type="button" id="ve-volume-btn" aria-label="{{ handrive_text.video_editor_volume }}" title="{{ handrive_text.video_editor_volume }}" aria-expanded="false" aria-controls="ve-volume-popover">
@@ -219,6 +226,7 @@
                         </div>
                     </div>
                     <div class="ve-body">
+                        <div class="ve-preview-column">
                         <div class="ve-video-stage" id="ve-video-stage">
                             <video id="ve-video" class="video-js vjs-default-skin" controls preload="metadata" playsinline></video>
                             <div class="ve-subtitle-overlay-layer" id="ve-subtitle-overlay-layer"></div>
@@ -234,8 +242,9 @@
                                 <span id="ve-duration">0:00.00</span>
                             </div>
                         </div>
-                        <div class="ve-subtitle-field" id="ve-subtitle-field" hidden>
-                            <div class="ve-subtitle-toolbar">
+                        </div>
+                        <aside class="ve-subtitle-field handrive-media-inspector" id="ve-subtitle-field" hidden>
+                            <div class="ve-subtitle-toolbar" data-site-tooltip-source>
                                 <label class="ve-subtitle-select-label" aria-label="{{ handrive_text.video_editor_subtitle }}" title="{{ handrive_text.video_editor_subtitle }}">
                                     <svg class="ve-toolbar-label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <path d="M4 7V5h16v2"></path>
@@ -244,8 +253,8 @@
                                     </svg>
                                     <select id="ve-subtitle-select" class="ve-subtitle-select" data-site-custom-select="1"></select>
                                 </label>
-                                <button class="ae-btn" type="button" id="ve-subtitle-add-btn">추가</button>
-                                <button class="ae-btn" type="button" id="ve-subtitle-delete-btn">삭제</button>
+                                <button class="ae-btn" type="button" id="ve-subtitle-add-btn" title="{{ handrive_text.video_editor_subtitle }} 추가">추가</button>
+                                <button class="ae-btn" type="button" id="ve-subtitle-delete-btn" title="{{ handrive_text.video_editor_subtitle }} 삭제">삭제</button>
                                 <button class="ae-btn ve-field-hide-btn" type="button" id="ve-subtitle-hide-btn" aria-label="자막 패널 숨기기" title="자막 패널 숨기기">
                                     <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line></svg>
                                 </button>
@@ -276,24 +285,28 @@
                                 <button class="ae-btn ve-subtitle-style-toggle" type="button" id="ve-subtitle-bold-btn" aria-label="굵게" title="굵게" aria-pressed="false"><strong aria-hidden="true">B</strong></button>
                                 <button class="ae-btn ve-subtitle-style-toggle" type="button" id="ve-subtitle-italic-btn" aria-label="기울임" title="기울임" aria-pressed="false"><em aria-hidden="true">I</em></button>
                                 <button class="ae-btn ve-subtitle-style-toggle" type="button" id="ve-subtitle-underline-btn" aria-label="밑줄" title="밑줄" aria-pressed="false"><span class="ve-style-underline-icon" aria-hidden="true">U</span></button>
-                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field" aria-label="폰트색" title="폰트색">
+                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field handrive-shared-toggle ve-subtitle-toggle-field" aria-label="폰트색" title="폰트색">
                                     <input type="checkbox" id="ve-subtitle-font-color-enabled" checked>
-                                    <span class="ve-style-icon handrive-editor-text-style-icon" aria-hidden="true">A</span>
+                                    <span class="ve-style-toggle-label">폰트색</span>
+                                    <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
                                     <input class="handrive-editor-text-style-color" type="color" id="ve-subtitle-font-color" value="#ffffff">
                                 </label>
-                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field" aria-label="폰트 테두리" title="폰트 테두리">
+                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field handrive-shared-toggle ve-subtitle-toggle-field" aria-label="폰트 테두리" title="폰트 테두리">
                                     <input type="checkbox" id="ve-subtitle-font-stroke-enabled" checked>
-                                    <span class="ve-style-icon ve-style-icon--stroke handrive-editor-text-style-icon" aria-hidden="true">A</span>
+                                    <span class="ve-style-toggle-label">폰트 테두리</span>
+                                    <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
                                     <input class="handrive-editor-text-style-color" type="color" id="ve-subtitle-font-stroke-color" value="#000000">
                                 </label>
-                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field" aria-label="배경색" title="배경색">
+                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field handrive-shared-toggle ve-subtitle-toggle-field" aria-label="배경색" title="배경색">
                                     <input type="checkbox" id="ve-subtitle-bg-enabled" checked>
-                                    <span class="ve-style-icon ve-style-icon--bg handrive-editor-text-style-icon" aria-hidden="true"></span>
+                                    <span class="ve-style-toggle-label">배경색</span>
+                                    <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
                                     <input class="handrive-editor-text-style-color" type="color" id="ve-subtitle-bg-color" value="#000000">
                                 </label>
-                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field" aria-label="박스 테두리색" title="박스 테두리색">
+                                <label class="ve-subtitle-icon-field handrive-editor-text-style-field handrive-shared-toggle ve-subtitle-toggle-field" aria-label="박스 테두리색" title="박스 테두리색">
                                     <input type="checkbox" id="ve-subtitle-border-enabled" checked>
-                                    <span class="ve-style-icon ve-style-icon--box handrive-editor-text-style-icon" aria-hidden="true"></span>
+                                    <span class="ve-style-toggle-label">박스 테두리색</span>
+                                    <span class="handrive-url-share-switch-knob" aria-hidden="true"></span>
                                     <input class="handrive-editor-text-style-color" type="color" id="ve-subtitle-border-color" value="#000000">
                                 </label>
                             </div>
@@ -309,9 +322,9 @@
                                     <span id="ve-subtitle-end-time">0:00.00</span>
                                 </div>
                             </div>
-                        </div>
-                        <div class="ve-image-field" id="ve-image-field" hidden>
-                            <div class="ve-image-toolbar">
+                        </aside>
+                        <aside class="ve-image-field handrive-media-inspector" id="ve-image-field" hidden>
+                            <div class="ve-image-toolbar" data-site-tooltip-source>
                                 <label class="ve-subtitle-select-label" aria-label="이미지" title="이미지">
                                     <svg class="ve-toolbar-label-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                         <rect x="3" y="5" width="18" height="14" rx="2"></rect>
@@ -320,8 +333,8 @@
                                     </svg>
                                     <select id="ve-image-select" class="ve-image-select" data-site-custom-select="1"></select>
                                 </label>
-                                <button class="ae-btn" type="button" id="ve-image-add-btn">추가</button>
-                                <button class="ae-btn" type="button" id="ve-image-delete-btn">삭제</button>
+                                <button class="ae-btn" type="button" id="ve-image-add-btn" title="이미지 추가">추가</button>
+                                <button class="ae-btn" type="button" id="ve-image-delete-btn" title="이미지 삭제">삭제</button>
                                 <button class="ae-btn ve-field-hide-btn" type="button" id="ve-image-hide-btn" aria-label="이미지 패널 숨기기" title="이미지 패널 숨기기">
                                     <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="5" x2="15" y2="15"></line><line x1="15" y1="5" x2="5" y2="15"></line></svg>
                                 </button>
@@ -337,7 +350,7 @@
                                     <span id="ve-image-end-time">0:00.00</span>
                                 </div>
                             </div>
-                        </div>
+                        </aside>
                     </div>
                     <div class="ve-image-upload-dialog site-modal-backdrop" id="ve-image-upload-dialog" hidden>
                         <div class="ve-image-upload-panel site-modal-dialog">
@@ -362,15 +375,17 @@
                         </div>
                     </div>
                 </div>
-                <div class="handrive-audio-editor-surface" id="handrive-audio-editor-surface" hidden>
-                    <div class="ae-ribbon">
-                        <button class="ae-btn" type="button" id="ae-reset-btn">{{ handrive_text.audio_editor_reset }}</button>
-                        <label class="ae-field">{{ handrive_text.audio_editor_start }}
-                            <input type="number" id="ae-start-input" min="0" step="0.01" value="0">
-                        </label>
-                        <label class="ae-field">{{ handrive_text.audio_editor_end }}
-                            <input type="number" id="ae-end-input" min="0" step="0.01" value="0">
-                        </label>
+                <div class="handrive-audio-editor-surface handrive-media-editor-surface" id="handrive-audio-editor-surface" hidden>
+                    <div class="ae-ribbon handrive-media-toolbar" data-site-tooltip-source>
+                        <div class="ae-ribbon-scroll ae-ribbon-scroll--leading">
+                            <button class="ae-btn" type="button" id="ae-reset-btn" title="{{ handrive_text.audio_editor_reset }}">{{ handrive_text.audio_editor_reset }}</button>
+                            <label class="ae-field">{{ handrive_text.audio_editor_start }}
+                                <input type="text" id="ae-start-input" inputmode="text" value="0:00.00" placeholder="0:00.00" autocomplete="off">
+                            </label>
+                            <label class="ae-field">{{ handrive_text.audio_editor_end }}
+                                <input type="text" id="ae-end-input" inputmode="text" value="0:00.00" placeholder="0:00.00" autocomplete="off">
+                            </label>
+                        </div>
                         <div class="ae-volume-control" id="ae-volume-control">
                             <button class="ae-btn ae-volume-btn" type="button" id="ae-volume-btn" aria-label="{{ handrive_text.audio_editor_volume }}" title="{{ handrive_text.audio_editor_volume }}" aria-expanded="false" aria-controls="ae-volume-popover">
                                 <svg class="ae-volume-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -384,27 +399,35 @@
                                 <input type="range" id="ae-volume-input" min="0" max="2" step="0.01" value="1" orient="vertical" aria-label="{{ handrive_text.audio_editor_volume }}">
                             </div>
                         </div>
-                        <div class="ae-append-control" id="ae-append-control">
-                            <button class="ae-file-btn" type="button" id="ae-append-btn" aria-expanded="false" aria-controls="ae-append-popover">{{ handrive_text.audio_editor_append }}</button>
-                            <div class="ae-append-popover" id="ae-append-popover" hidden>
-                                <button type="button" class="ae-source-btn" id="ae-append-pc-btn">{{ handrive_text.audio_editor_append_pc }}</button>
-                                <button type="button" class="ae-source-btn" id="ae-append-drive-btn">{{ handrive_text.audio_editor_append_drive }}</button>
+                        <div class="ae-ribbon-scroll ae-ribbon-scroll--trailing">
+                            <div class="ae-append-control" id="ae-append-control">
+                                <button class="ae-file-btn" type="button" id="ae-append-btn" title="{{ handrive_text.audio_editor_append }}" aria-expanded="false" aria-controls="ae-append-popover">{{ handrive_text.audio_editor_append }}</button>
+                                <div class="ae-append-popover" id="ae-append-popover" hidden>
+                                    <button type="button" class="ae-source-btn" id="ae-append-pc-btn">{{ handrive_text.audio_editor_append_pc }}</button>
+                                    <button type="button" class="ae-source-btn" id="ae-append-drive-btn">{{ handrive_text.audio_editor_append_drive }}</button>
+                                </div>
+                                <input type="file" id="ae-append-input" accept="audio/*" hidden>
                             </div>
-                            <input type="file" id="ae-append-input" accept="audio/*" hidden>
+                            <span class="ae-append-name" id="ae-append-name" data-empty-text="{{ handrive_text.audio_editor_append_empty }}">{{ handrive_text.audio_editor_append_empty }}</span>
                         </div>
-                        <span class="ae-append-name" id="ae-append-name" data-empty-text="{{ handrive_text.audio_editor_append_empty }}">{{ handrive_text.audio_editor_append_empty }}</span>
                     </div>
                     <div class="ae-body">
-                        <audio id="ae-audio" controls preload="metadata"></audio>
-                        <div class="ae-timeline">
-                            <div class="ae-range-wrap">
-                                <div class="ae-range-selection" id="ae-range-selection"></div>
-                                <input class="ae-range-input ae-range-input--start" type="range" id="ae-start-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.audio_editor_start }}">
-                                <input class="ae-range-input ae-range-input--end" type="range" id="ae-end-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.audio_editor_end }}">
+                        <div class="ae-track-card">
+                            <div class="ae-track-visual" id="ae-waveform-visual" aria-hidden="true">
+                                <canvas class="ae-waveform-canvas" id="ae-waveform-canvas"></canvas>
+                                <span class="ae-waveform-playhead" id="ae-waveform-playhead"></span>
                             </div>
-                            <div class="ae-time-row">
-                                <span id="ae-current-time">0:00.00</span>
-                                <span id="ae-duration">0:00.00</span>
+                            <audio id="ae-audio" controls preload="metadata"></audio>
+                            <div class="ae-timeline">
+                                <div class="ae-range-wrap">
+                                    <div class="ae-range-selection" id="ae-range-selection"></div>
+                                    <input class="ae-range-input ae-range-input--start" type="range" id="ae-start-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.audio_editor_start }}">
+                                    <input class="ae-range-input ae-range-input--end" type="range" id="ae-end-range" min="0" max="0" step="0.01" value="0" aria-label="{{ handrive_text.audio_editor_end }}">
+                                </div>
+                                <div class="ae-time-row">
+                                    <span id="ae-current-time">0:00.00</span>
+                                    <span id="ae-duration">0:00.00</span>
+                                </div>
                             </div>
                         </div>
                     </div>

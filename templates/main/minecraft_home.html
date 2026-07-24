@@ -2643,10 +2643,9 @@
             margin-bottom: 8px;
         }
 
-        .minecraft-player-panel,
-        .minecraft-trade-panel,
-        .minecraft-plugin-panel {
-            max-height: 200cqw;
+        .minecraft-side-layout > .minecraft-panel {
+            flex: 0 0 auto;
+            max-height: var(--minecraft-panel-max-height, 200cqw);
             overflow: hidden;
         }
 
@@ -6117,6 +6116,7 @@
         const MINECRAFT_PAGE_SPLIT_DEFAULT_RATIO = 0.27;
         const MINECRAFT_SIDE_SPLIT_DEFAULT_RATIO = 2 / 3;
         let activeMinecraftSplitterDrag = null;
+        let minecraftPanelSizeObserver = null;
 
         function readMinecraftSplitterRatio(storageKey) {
             try {
@@ -6139,6 +6139,32 @@
 
         function isMinecraftStackedLayout() {
             return window.matchMedia('(max-width: 840px), (orientation: portrait)').matches;
+        }
+
+        function syncMinecraftPanelHeightLimits() {
+            if (!sideLayoutEl) return;
+            Array.from(sideLayoutEl.children).forEach(function (panel) {
+                if (!panel.classList.contains('minecraft-panel')) return;
+                const width = panel.getBoundingClientRect().width;
+                if (width <= 0) return;
+                panel.style.setProperty('--minecraft-panel-max-height', Math.round(width * 2) + 'px');
+            });
+        }
+
+        function setupMinecraftPanelHeightLimits() {
+            if (!sideLayoutEl) return;
+            const scheduleSync = function () {
+                window.requestAnimationFrame(syncMinecraftPanelHeightLimits);
+            };
+            if (typeof ResizeObserver === 'function') {
+                minecraftPanelSizeObserver = new ResizeObserver(scheduleSync);
+                minecraftPanelSizeObserver.observe(sideLayoutEl);
+                Array.from(sideLayoutEl.children).forEach(function (panel) {
+                    if (panel.classList.contains('minecraft-panel')) minecraftPanelSizeObserver.observe(panel);
+                });
+            }
+            window.addEventListener('resize', scheduleSync);
+            syncMinecraftPanelHeightLimits();
         }
 
         function clampMinecraftRatio(ratio, minimum, maximum) {
@@ -6605,6 +6631,7 @@
         setupBlueMapThemeSync();
         setupMinecraftPanelCollapse();
         setupMinecraftLayoutSplitters();
+        setupMinecraftPanelHeightLimits();
         setupMinecraftTradePanel();
         setupMinecraftItemComboboxDismissal();
         setupPlayerDetailModal();

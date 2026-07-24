@@ -5050,7 +5050,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="pdf"]::before {
-    background-image: url("/static/media/icons/handrive/type-pdf.png?v=icon-source-20260721-4");
+    background-image: url("/static/media/icons/handrive/type-pdf.png?v=pdf-icon-source-20260723-3");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="text"]::before {

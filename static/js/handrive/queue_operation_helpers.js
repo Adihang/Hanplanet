@@ -220,6 +220,9 @@
                 }),
                 { signal: controller.signal }
             ));
+            if (data && Object.prototype.hasOwnProperty.call(data, "copied")) {
+                item.isCopyOperation = data.copied === true;
+            }
             var movedPath = data && data.path ? data.path : entry.path;
             if (!data || data.copied !== true) {
                 onEntryMoved(entry.path, movedPath);

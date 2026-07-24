@@ -924,6 +924,30 @@ class MarkdownSafetyTests(TestCase):
 
 
 class HandriveMarkdownRenderingTests(TestCase):
+    def test_html_live_preview_ignores_body_tags_inside_companion_javascript(self):
+        from .handrive.preview import build_handrive_html_live_document
+
+        source_html = """<!doctype html>
+<html>
+<head><title>Preview</title></head>
+<body><main id="app"></main></body>
+</html>
+"""
+        companion_js = """
+const printDocumentHtml = '<body class="print-page"><div></div></body></html>';
+window.previewReady = true;
+"""
+
+        rendered = build_handrive_html_live_document(source_html, companion_js=companion_js)
+        linked_script_end = rendered.index("</script>", rendered.index("data-handrive-linked-js"))
+        bridge_start = rendered.index("<script data-handrive-preview-fit-bridge>")
+        document_body_end = rendered.rindex("</body>")
+
+        self.assertIn(companion_js.strip(), rendered)
+        self.assertLess(linked_script_end, bridge_start)
+        self.assertLess(bridge_start, document_body_end)
+        self.assertEqual(rendered.count("<script data-handrive-preview-fit-bridge>"), 1)
+
     def test_common_handrive_markdown_renderer_preserves_blank_lines(self):
         rendered = render_handrive_markdown_safely("first\n\nsecond\n\n```text\n\ninside\n```")
 
@@ -22251,6 +22275,10 @@ class HandriveSvgEditorTests(TestCase):
         self.assertIn("snapEnabled: true", svg_js)
         self.assertIn('value="1" data-svg-grid-size', svg_surface)
         self.assertIn('data-svg-snap checked', svg_surface)
+        self.assertIn('function snapValue(value, axis)', svg_js)
+        self.assertIn('origin = axis === "y" ? viewBox.y : viewBox.x', svg_js)
+        self.assertIn('var gridOriginX = viewportRect.width / 2 + state.panX - width / 2;', svg_js)
+        self.assertIn('snapValue(drag.bounds.x + dx, "x")', svg_js)
         self.assertIn('<details class="hse-property-section" data-svg-selection-properties open>', svg_surface)
         self.assertIn('<details class="hse-property-section hse-document-section" open>', svg_surface)
         self.assertIn(".hse-property-section > summary", svg_css)

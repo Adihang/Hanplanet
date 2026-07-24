@@ -16203,26 +16203,33 @@
             return normalizedPath.indexOf("/.google-drive-") !== -1 || normalizedPath.indexOf(".google-drive-") === 0;
         }
 
-        function isGoogleDriveUploadDrop(targetDirPath) {
-            const targetIsGoogleDrive = isGoogleDrivePath(targetDirPath);
-            return !targetIsGoogleDrive && Array.isArray(state.draggingEntries) && state.draggingEntries.length > 0 && state.draggingEntries.every(function (entry) {
-                return isGoogleDriveEntry(entry) && entry.type === "file";
-            });
-        }
-
-        function isRepoHandriveCopyDrop(targetDirPath) {
-            if (!Array.isArray(state.draggingEntries) || state.draggingEntries.length === 0) {
+        function isRepoHandriveCopyDrop(targetDirPath, entries) {
+            const sourceEntries = Array.isArray(entries) ? entries : state.draggingEntries;
+            if (!Array.isArray(sourceEntries) || sourceEntries.length === 0) {
                 return false;
             }
-            const hasRepoSource = state.draggingEntries.some(isRepoBranchEntry);
+            const hasRepoSource = sourceEntries.some(isRepoBranchEntry);
             return hasRepoSource !== isRepoBranchPath(targetDirPath);
         }
 
-        function resolveDriveDropEffect(targetDirPath) {
+        function isGoogleDriveCopyDrop(targetDirPath, entries) {
+            const sourceEntries = Array.isArray(entries) ? entries : state.draggingEntries;
+            if (!Array.isArray(sourceEntries) || sourceEntries.length === 0) {
+                return false;
+            }
+            const sourceIsGoogleDrive = sourceEntries.every(isGoogleDriveEntry);
+            const targetIsGoogleDrive = isGoogleDrivePath(targetDirPath);
+            return sourceIsGoogleDrive !== targetIsGoogleDrive
+                && (!sourceIsGoogleDrive || sourceEntries.every(function (entry) {
+                    return entry && entry.type === "file";
+                }));
+        }
+
+        function resolveDriveDropEffect(targetDirPath, entries) {
             if (isTrashRootPath(targetDirPath)) {
                 return "move";
             }
-            return (isGoogleDriveUploadDrop(targetDirPath) || isRepoHandriveCopyDrop(targetDirPath)) ? "copy" : "move";
+            return (isGoogleDriveCopyDrop(targetDirPath, entries) || isRepoHandriveCopyDrop(targetDirPath, entries)) ? "copy" : "move";
         }
 
         function resolveFileDropHighlightElement(targetNode) {
@@ -16289,6 +16296,7 @@
                 savedSlugPath: "",
                 commitMessage: String(commitMessage || ""),
                 archiveName: String(settings.archiveName || ""),
+                isCopyOperation: Boolean(settings.isCopyOperation),
                 isRepoDelete: Boolean(settings.repoDelete),
                 abortRequested: false,
                 abortController: null,
@@ -16578,6 +16586,7 @@
                     id: String(item.id) + ":child:" + String(index),
                     kind: "operation",
                     operationType: item.operationType,
+                    isCopyOperation: Boolean(item.isCopyOperation),
                     entries: [entry],
                     fileName: childName || displayPath || item.fileName || "",
                     sourcePath: sourcePath,
@@ -17595,7 +17604,9 @@
                 return;
             }
             var commitMessage = "";
-            createOperationQueueItem("move", sourceEntries, targetDirPath, commitMessage);
+            createOperationQueueItem("move", sourceEntries, targetDirPath, commitMessage, {
+                isCopyOperation: resolveDriveDropEffect(targetDirPath, sourceEntries) === "copy",
+            });
             processOperationQueue().catch(alertError);
         }
 

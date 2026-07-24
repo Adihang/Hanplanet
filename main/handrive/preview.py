@@ -431,12 +431,86 @@ def convert_office_bytes_to_html(file_extension: str, source_bytes: bytes) -> st
             return None
 
 
+def _find_first_html_closing_tag_outside_raw_text(source: str, closing_tag: str) -> int | None:
+    """Find a closing HTML tag without matching text inside script/style-like elements.
+
+    HTML live previews inject their own blocks into the source document.  A companion
+    JavaScript file can legitimately contain strings such as ``"</body></html>"``;
+    searching the whole source with a regular expression would mistake those strings
+    for the document's closing tag and insert a preview script into another script.
+    Keep this parser intentionally small, but follow the HTML raw-text/RCDATA elements
+    and comments so only a real document closing tag is selected.
+    """
+    source_text = str(source or "")
+    tag_match = re.fullmatch(r"\s*</\s*([A-Za-z][\w:-]*)\s*>\s*", str(closing_tag or ""))
+    if not tag_match:
+        return None
+    target_name = tag_match.group(1).lower()
+    target_pattern = re.compile(rf"</\s*{re.escape(target_name)}\s*>", re.IGNORECASE)
+    raw_open_pattern = re.compile(r"<\s*(script|style|textarea|title)\b", re.IGNORECASE)
+    raw_close_patterns = {
+        name: re.compile(rf"</\s*{name}\s*>", re.IGNORECASE)
+        for name in ("script", "style", "textarea", "title")
+    }
+
+    def find_tag_end(start_index: int) -> int:
+        quote = ""
+        index = start_index
+        while index < len(source_text):
+            character = source_text[index]
+            if quote:
+                if character == quote:
+                    quote = ""
+            elif character in {"'", '"'}:
+                quote = character
+            elif character == ">":
+                return index
+            index += 1
+        return len(source_text) - 1
+
+    index = 0
+    while index < len(source_text):
+        tag_start = source_text.find("<", index)
+        if tag_start < 0:
+            return None
+
+        if source_text.startswith("<!--", tag_start):
+            comment_end = source_text.find("-->", tag_start + 4)
+            if comment_end < 0:
+                return None
+            index = comment_end + 3
+            continue
+
+        target_match = target_pattern.match(source_text, tag_start)
+        if target_match:
+            return target_match.start()
+
+        raw_open_match = raw_open_pattern.match(source_text, tag_start)
+        if raw_open_match:
+            raw_name = raw_open_match.group(1).lower()
+            opening_tag_end = find_tag_end(raw_open_match.end())
+            raw_close_match = raw_close_patterns[raw_name].search(source_text, opening_tag_end + 1)
+            if not raw_close_match:
+                return None
+            index = raw_close_match.end()
+            continue
+
+        # Skip the rest of an ordinary tag so a literal '<' in an attribute cannot
+        # start a false closing-tag match on the next iteration.
+        if source_text.startswith("<", tag_start):
+            tag_end = find_tag_end(tag_start + 1)
+            index = max(tag_start + 1, tag_end + 1)
+        else:
+            index = tag_start + 1
+    return None
+
+
 def _inject_before_first_closing_tag(source: str, closing_tag: str, injection: str) -> str:
-    """Insert generated CSS/JS before the first matching closing tag, appending when absent."""
-    pattern = re.compile(re.escape(closing_tag), re.IGNORECASE)
-    if pattern.search(source):
-        return pattern.sub(lambda match: f"{injection}{match.group(0)}", source, count=1)
-    return f"{source}{injection}"
+    """Insert generated CSS/JS before the first real closing tag, appending when absent."""
+    tag_index = _find_first_html_closing_tag_outside_raw_text(source, closing_tag)
+    if tag_index is None:
+        return f"{source}{injection}"
+    return f"{source[:tag_index]}{injection}{source[tag_index:]}"
 
 
 def build_handrive_html_live_document(html_source: str, *, companion_css: str = "", companion_js: str = "") -> str:

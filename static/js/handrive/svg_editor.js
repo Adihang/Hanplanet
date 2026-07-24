@@ -803,14 +803,16 @@
         return point;
     }
 
-    function snapValue(value) {
+    function snapValue(value, axis) {
         if (!state.snapEnabled || !Number.isFinite(state.gridSize) || state.gridSize <= 0) return value;
-        return Math.round(value / state.gridSize) * state.gridSize;
+        var viewBox = getViewBox();
+        var origin = axis === "y" ? viewBox.y : viewBox.x;
+        return origin + Math.round((value - origin) / state.gridSize) * state.gridSize;
     }
 
     function snapPoint(point) {
         if (!point) return null;
-        return { x: snapValue(point.x), y: snapValue(point.y) };
+        return { x: snapValue(point.x, "x"), y: snapValue(point.y, "y") };
     }
 
     function getRenderableMaxZoom() {
@@ -894,8 +896,11 @@
             var step = rawStep;
             if (rawStep < 4) step = rawStep * Math.max(1, Math.ceil(4 / rawStep));
             else if (rawStep > 400) step = rawStep / Math.max(1, Math.ceil(rawStep / 400));
-            var gridOriginX = viewportRect.width / 2 + state.panX - width / 2 - viewBox.x * state.zoom;
-            var gridOriginY = viewportRect.height / 2 + state.panY - height / 2 - viewBox.y * state.zoom;
+            // The first grid line represents the document's viewBox origin. Keeping
+            // this in the same coordinate space as snapValue means a non-zero
+            // viewBox (common in exported SVGs) remains aligned from first paint.
+            var gridOriginX = viewportRect.width / 2 + state.panX - width / 2;
+            var gridOriginY = viewportRect.height / 2 + state.panY - height / 2;
             state.refs.grid.style.setProperty("--hse-grid-step", step + "px");
             state.refs.grid.style.backgroundSize = step + "px " + step + "px";
             state.refs.grid.style.backgroundPosition = gridOriginX + "px " + gridOriginY + "px";
@@ -1881,8 +1886,8 @@
         var dx = point.x - drag.start.x;
         var dy = point.y - drag.start.y;
         if (drag.bounds && state.snapEnabled) {
-            dx = snapValue(drag.bounds.x + dx) - drag.bounds.x;
-            dy = snapValue(drag.bounds.y + dy) - drag.bounds.y;
+            dx = snapValue(drag.bounds.x + dx, "x") - drag.bounds.x;
+            dy = snapValue(drag.bounds.y + dy, "y") - drag.bounds.y;
         }
         drag.elements.forEach(function (element, index) {
             var delta = rootDeltaToParent(element, dx, dy);

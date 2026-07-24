@@ -8,15 +8,18 @@
         // Summaries collapse heterogeneous upload/move/delete work into one short status line
         // for the floating queue header without exposing the full item list every time.
         var normalizedItems = Array.isArray(items) ? items : [];
-        var uploadingCount = 0, movingCount = 0, deletingCount = 0, restoringCount = 0, extractingCount = 0, archiveCreatingCount = 0, youtubeSavingCount = 0, mp3ConvertingCount = 0;
-        var uploadDoneCount = 0, moveDoneCount = 0, deleteDoneCount = 0, restoreDoneCount = 0, extractDoneCount = 0, archiveCreateDoneCount = 0, youtubeSaveDoneCount = 0, mp3ConvertDoneCount = 0;
+        var uploadingCount = 0, movingCount = 0, copyingCount = 0, deletingCount = 0, restoringCount = 0, extractingCount = 0, archiveCreatingCount = 0, youtubeSavingCount = 0, mp3ConvertingCount = 0;
+        var uploadDoneCount = 0, moveDoneCount = 0, copyDoneCount = 0, deleteDoneCount = 0, restoreDoneCount = 0, extractDoneCount = 0, archiveCreateDoneCount = 0, youtubeSaveDoneCount = 0, mp3ConvertDoneCount = 0;
         var queuedCount = 0, failedCount = 0;
 
         normalizedItems.forEach(function (item) {
             var isOp = item.kind === "operation";
             var opType = item.operationType;
             if (item.status === "uploading") {
-                if (isOp && opType === "move") { movingCount += 1; }
+                if (isOp && opType === "move") {
+                    if (item.isCopyOperation) { copyingCount += 1; }
+                    else { movingCount += 1; }
+                }
                 else if (isOp && opType === "delete") { deletingCount += 1; }
                 else if (isOp && opType === "restore") { restoringCount += 1; }
                 else if (isOp && opType === "extract") { extractingCount += 1; }
@@ -27,7 +30,10 @@
             } else if (item.status === "queued") {
                 queuedCount += 1;
             } else if (item.status === "done") {
-                if (isOp && opType === "move") { moveDoneCount += 1; }
+                if (isOp && opType === "move") {
+                    if (item.isCopyOperation) { copyDoneCount += 1; }
+                    else { moveDoneCount += 1; }
+                }
                 else if (isOp && opType === "delete") { deleteDoneCount += 1; }
                 else if (isOp && opType === "restore") { restoreDoneCount += 1; }
                 else if (isOp && opType === "extract") { extractDoneCount += 1; }
@@ -42,6 +48,7 @@
 
         var parts = [];
         if (uploadingCount > 0) { parts.push(t("job_status_uploading", "업로드 중") + " " + uploadingCount); }
+        if (copyingCount > 0) { parts.push(t("queue_status_copying", "복사 중") + " " + copyingCount); }
         if (movingCount > 0) { parts.push(t("queue_status_moving", "이동 중") + " " + movingCount); }
         if (deletingCount > 0) { parts.push(t("queue_status_deleting", "삭제 중") + " " + deletingCount); }
         if (restoringCount > 0) { parts.push(t("queue_status_restoring", "복원 중") + " " + restoringCount); }
@@ -51,6 +58,7 @@
         if (mp3ConvertingCount > 0) { parts.push(t("queue_status_convert_mp3_converting", "mp3 변환 중") + " " + mp3ConvertingCount); }
         if (queuedCount > 0) { parts.push(t("queue_status_pending", "대기") + " " + queuedCount); }
         if (uploadDoneCount > 0) { parts.push(t("job_status_done", "업로드 완료") + " " + uploadDoneCount); }
+        if (copyDoneCount > 0) { parts.push(t("queue_status_copy_done", "복사 완료") + " " + copyDoneCount); }
         if (moveDoneCount > 0) { parts.push(t("queue_status_move_done", "이동 완료") + " " + moveDoneCount); }
         if (deleteDoneCount > 0) { parts.push(t("queue_status_delete_done", "삭제 완료") + " " + deleteDoneCount); }
         if (restoreDoneCount > 0) { parts.push(t("queue_status_restore_done", "복원 완료") + " " + restoreDoneCount); }
@@ -82,14 +90,17 @@
                 return t("job_status_failed", "실패");
             }
             if (item.operationType === "move") {
+                var statusLabelPrefix = item.isCopyOperation ? "복사" : "이동";
+                var statusLabelKey = item.isCopyOperation ? "copy" : "move";
+                var statusLabelProgressKey = item.isCopyOperation ? "copying" : "moving";
                 if (item.status === "uploading") {
-                    return t("queue_status_moving", "이동 중") + progressText;
+                    return t("queue_status_" + statusLabelProgressKey, statusLabelPrefix + " 중") + progressText;
                 }
                 if (item.status === "queued") {
-                    return t("queue_status_move_queued", "이동 대기");
+                    return t("queue_status_" + statusLabelKey + "_queued", statusLabelPrefix + " 대기");
                 }
                 if (item.status === "done") {
-                    return t("queue_status_move_done", "이동 완료");
+                    return t("queue_status_" + statusLabelKey + "_done", statusLabelPrefix + " 완료");
                 }
                 return t("job_status_failed", "실패");
             }

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import socket
 import subprocess
 import time
@@ -16,6 +17,40 @@ from urllib.request import Request, urlopen
 DOCKER_STACK_DEPLOY_REQUEST_PATH = Path(
     "/data/django/.hanplanet-docker-stack-deploy-request"
 )
+DOCKER_PROMINENCE_RESTART_REQUEST_PATH = Path(
+    "/data/django/.hanplanet-prominence-restart-request"
+)
+DOCKER_MINECRAFT_RESTART_REQUEST_PATH = Path(
+    "/data/django/.hanplanet-minecraft-restart-request"
+)
+_default_prominence_restart_state_path = (
+    "/data/django/.hanplanet-prominence-restart-state.json"
+    if str(os.environ.get("HANPLANET_RUNTIME", "")).strip().lower() == "docker"
+    or Path("/.dockerenv").exists()
+    else "/tmp/hanplanet-prominence-restart-state.json"
+)
+DOCKER_PROMINENCE_RESTART_STATE_PATH = Path(
+    os.environ.get(
+        "HANPLANET_PROMINENCE_RESTART_STATE_PATH",
+        _default_prominence_restart_state_path,
+    )
+)
+_default_minecraft_restart_state_path = (
+    "/data/django/.hanplanet-minecraft-restart-state.json"
+    if str(os.environ.get("HANPLANET_RUNTIME", "")).strip().lower() == "docker"
+    or Path("/.dockerenv").exists()
+    else "/tmp/hanplanet-minecraft-restart-state.json"
+)
+DOCKER_MINECRAFT_RESTART_STATE_PATH = Path(
+    os.environ.get(
+        "HANPLANET_MINECRAFT_RESTART_STATE_PATH",
+        _default_minecraft_restart_state_path,
+    )
+)
+PROMINENCE_RESTART_ACTIVE_PHASES = frozenset({"queued", "stopping", "starting"})
+MINECRAFT_RESTART_ACTIVE_PHASES = PROMINENCE_RESTART_ACTIVE_PHASES
+PROMINENCE_RESTART_STATE_MAX_AGE_SECONDS = 15 * 60
+MINECRAFT_RESTART_STATE_MAX_AGE_SECONDS = PROMINENCE_RESTART_STATE_MAX_AGE_SECONDS
 
 
 def _is_port_listening(port: int) -> bool:
@@ -31,6 +66,73 @@ def _wait_for_port_down(port: int, timeout_seconds: float = 10.0) -> None:
         if not _is_port_listening(port):
             return
         time.sleep(0.1)
+
+
+def _write_atomic_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        temporary_path.write_text(content, encoding="utf-8")
+        temporary_path.replace(path)
+    finally:
+        try:
+            temporary_path.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+
+
+def write_prominence_restart_state(phase: str, *, error: str = "") -> dict:
+    """Persist the phase shown by the admin restart progress dialog."""
+    phase = str(phase or "idle").strip().lower()
+    payload = {
+        "phase": phase,
+        "updated_at": time.time(),
+    }
+    if error:
+        payload["error"] = str(error)[:160]
+    _write_atomic_text(
+        DOCKER_PROMINENCE_RESTART_STATE_PATH,
+        json.dumps(payload, separators=(",", ":")),
+    )
+    return payload
+
+
+def read_prominence_restart_state() -> dict:
+    """Read the shared restart phase without exposing filesystem details."""
+    try:
+        payload = json.loads(
+            DOCKER_PROMINENCE_RESTART_STATE_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError, TypeError):
+        return {"phase": "idle", "updated_at": 0.0}
+    if not isinstance(payload, dict):
+        return {"phase": "idle", "updated_at": 0.0}
+
+    phase = str(payload.get("phase") or "idle").strip().lower()
+    try:
+        updated_at = float(payload.get("updated_at") or 0.0)
+    except (TypeError, ValueError):
+        updated_at = 0.0
+    state = {"phase": phase, "updated_at": updated_at}
+    if payload.get("error"):
+        state["error"] = str(payload["error"])[:160]
+    return state
+
+
+def prominence_restart_is_active(state: dict | None = None) -> bool:
+    state = state if isinstance(state, dict) else read_prominence_restart_state()
+    phase = str(state.get("phase") or "idle").strip().lower()
+    try:
+        updated_at = float(state.get("updated_at") or 0.0)
+    except (TypeError, ValueError):
+        updated_at = 0.0
+    return (
+        phase in PROMINENCE_RESTART_ACTIVE_PHASES
+        and updated_at > 0
+        and time.time() - updated_at <= PROMINENCE_RESTART_STATE_MAX_AGE_SECONDS
+    )
 
 
 def wait_for_http_ready(url: str, timeout_seconds: int = 120, interval_seconds: float = 1.0) -> bool:
@@ -83,6 +185,122 @@ def request_docker_stack_deploy() -> None:
         except OSError:
             # Preserve the original write/replace failure for the caller.
             pass
+
+
+def request_prominence_server_restart() -> str:
+    """Restart only the Prominence II server through its host process manager."""
+    if prominence_restart_is_active():
+        return "in_progress"
+
+    write_prominence_restart_state("queued")
+    is_docker = (
+        str(os.environ.get("HANPLANET_RUNTIME", "") or "").strip().lower() == "docker"
+        or Path("/.dockerenv").exists()
+    )
+    if is_docker:
+        _write_atomic_text(
+            DOCKER_PROMINENCE_RESTART_REQUEST_PATH,
+            f"requested:{time.time_ns()}:{os.getpid()}",
+        )
+        return "queued"
+
+    try:
+        subprocess.run(
+            [
+                "/bin/zsh",
+                "-lc",
+                "launchctl kickstart -k gui/$(id -u)/com.hanplanet.rlcraft",
+            ],
+            check=True,
+            timeout=20,
+        )
+    except Exception:
+        write_prominence_restart_state("failed", error="launchd_request_failed")
+        raise
+    write_prominence_restart_state("starting")
+    return "started"
+
+
+def write_minecraft_restart_state(phase: str, *, error: str = "") -> dict:
+    """Persist the phase shown by the Minecraft admin restart dialog."""
+    phase = str(phase or "idle").strip().lower()
+    payload = {"phase": phase, "updated_at": time.time()}
+    if error:
+        payload["error"] = str(error)[:160]
+    _write_atomic_text(
+        DOCKER_MINECRAFT_RESTART_STATE_PATH,
+        json.dumps(payload, separators=(",", ":")),
+    )
+    return payload
+
+
+def read_minecraft_restart_state() -> dict:
+    """Read Minecraft restart progress without exposing filesystem details."""
+    try:
+        payload = json.loads(
+            DOCKER_MINECRAFT_RESTART_STATE_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, ValueError, TypeError):
+        return {"phase": "idle", "updated_at": 0.0}
+    if not isinstance(payload, dict):
+        return {"phase": "idle", "updated_at": 0.0}
+    phase = str(payload.get("phase") or "idle").strip().lower()
+    try:
+        updated_at = float(payload.get("updated_at") or 0.0)
+    except (TypeError, ValueError):
+        updated_at = 0.0
+    state = {"phase": phase, "updated_at": updated_at}
+    if payload.get("error"):
+        state["error"] = str(payload["error"])[:160]
+    return state
+
+
+def minecraft_restart_is_active(state: dict | None = None) -> bool:
+    state = state if isinstance(state, dict) else read_minecraft_restart_state()
+    phase = str(state.get("phase") or "idle").strip().lower()
+    try:
+        updated_at = float(state.get("updated_at") or 0.0)
+    except (TypeError, ValueError):
+        updated_at = 0.0
+    return (
+        phase in MINECRAFT_RESTART_ACTIVE_PHASES
+        and updated_at > 0
+        and time.time() - updated_at <= MINECRAFT_RESTART_STATE_MAX_AGE_SECONDS
+    )
+
+
+def request_minecraft_server_restart() -> str:
+    """Restart only the Minecraft server through Docker watchdog or launchd."""
+    if minecraft_restart_is_active():
+        return "in_progress"
+
+    write_minecraft_restart_state("queued")
+    is_docker = (
+        str(os.environ.get("HANPLANET_RUNTIME", "") or "").strip().lower() == "docker"
+        or Path("/.dockerenv").exists()
+    )
+    if is_docker:
+        _write_atomic_text(
+            DOCKER_MINECRAFT_RESTART_REQUEST_PATH,
+            f"requested:{time.time_ns()}:{os.getpid()}",
+        )
+        return "queued"
+
+    try:
+        subprocess.run(
+            [
+                "/bin/zsh",
+                "-lc",
+                "launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft",
+            ],
+            check=True,
+            timeout=20,
+        )
+    except Exception:
+        write_minecraft_restart_state("failed", error="launchd_request_failed")
+        raise
+    write_minecraft_restart_state("starting")
+    return "started"
 
 
 def restart_gunicorn_and_wait(

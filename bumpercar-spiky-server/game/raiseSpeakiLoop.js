@@ -14,6 +14,13 @@ function valueUnchanged(curr, prev) {
 }
 
 function buildPlayerState(world, p, now) {
+    const raiseSpeakiWinnerPhase = String(world.raiseSpeakiWinnerPhase || "")
+    const raiseSpeakiWinnerCountdownSeconds = typeof world.getRaiseSpeakiWinnerCountdownSeconds === "function"
+        ? world.getRaiseSpeakiWinnerCountdownSeconds(now)
+        : 0
+    const raiseSpeakiWinner = world.raiseSpeakiWinner && typeof world.raiseSpeakiWinner === "object"
+        ? world.raiseSpeakiWinner
+        : null
     const deathActive = Boolean(p.deathUntil)
     const deathAnimating = now < Number(p.deathUntil || 0)
     const deathFadeProgress = deathAnimating && p.deathStartedAt && p.deathUntil > p.deathStartedAt
@@ -132,6 +139,9 @@ function buildPlayerState(world, p, now) {
         currentHealth: Math.max(0, Number(p.currentHealth || 0)),
         maxHealth: Math.max(1, Number(p.maxHealth || p.level || 1)),
         sizeMultiplier: Math.max(0.6, Number(p.sizeMultiplier || 1)),
+        raiseSpeakiWinnerPhase: raiseSpeakiWinnerPhase,
+        raiseSpeakiWinnerCountdownSeconds: raiseSpeakiWinnerCountdownSeconds,
+        raiseSpeakiWinner: raiseSpeakiWinner,
     }
 }
 

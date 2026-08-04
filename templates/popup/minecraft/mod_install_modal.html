@@ -1,0 +1,23 @@
+<div id="minecraftModInstallModal" class="handrive-help-modal minecraft-mod-install-modal" hidden>
+    <div class="handrive-help-modal-backdrop site-modal-backdrop" id="minecraft-mod-install-backdrop"></div>
+    <div class="handrive-help-modal-dialog site-modal-dialog minecraft-mod-install-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="minecraft-mod-install-title">
+        <header class="handrive-help-modal-head site-modal-head">
+            <h2 class="handrive-popup-title handrive-help-modal-title" id="minecraft-mod-install-title">{{ minecraft_modpack_panel_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="minecraft-mod-install-close-btn" click_target_id="minecraft-mod-install-backdrop" %}
+        </header>
+        <div class="handrive-help-modal-body minecraft-mod-install-body">
+            <div class="minecraft-mod-install-actions">
+                <a class="ui-btn ui-btn-primary" href="https://fabricmc.net/use/" target="_blank" rel="noopener noreferrer">{{ minecraft_modpack_fabric_link_label }}</a>
+                <a class="ui-btn" href="{{ minecraft_modpack_zip_url }}" download>{{ minecraft_modpack_zip_label }}</a>
+            </div>
+            <ol class="minecraft-mod-install-steps">
+                <li>{{ minecraft_modpack_fabric_step }}</li>
+                <li>{{ minecraft_modpack_download_step }}</li>
+                <li>{{ minecraft_modpack_import_hint }}</li>
+                <li>{{ minecraft_modpack_apply_step }}</li>
+            </ol>
+            <p class="minecraft-mod-install-paths">{{ minecraft_modpack_manual_hint }}</p>
+            <p class="minecraft-mod-install-mods">{{ minecraft_modpack_mods_label }}</p>
+        </div>
+    </div>
+</div>

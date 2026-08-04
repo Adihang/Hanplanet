@@ -6518,12 +6518,7 @@
         modal.hidden = !opened;
         syncHandriveModalBodyState();
         if (opened) {
-            const loginButton = document.getElementById("handrive-demo-save-login-btn");
-            const signupButton = document.getElementById("handrive-demo-save-signup-btn");
-            const focusTarget = loginButton || signupButton || modal;
-            if (focusTarget && typeof focusTarget.focus === "function") {
-                focusTarget.focus();
-            }
+            // Keep the trigger focused when an informational modal opens.
             return;
         }
         if (demoSaveLastFocusedElement && typeof demoSaveLastFocusedElement.focus === "function") {
@@ -6655,7 +6650,6 @@
             confirmModal.hidden = false;
             isOpen = true;
             lastFocusedElement = document.activeElement;
-            confirmConfirmButton.focus();
 
             return new Promise(function (resolve) {
                 resolvePending = resolve;
@@ -7176,9 +7170,6 @@
             }
             logoutModal.hidden = !opened;
             if (opened) {
-                if (logoutCancelButton) {
-                    logoutCancelButton.focus();
-                }
                 return;
             }
             if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
@@ -8054,9 +8045,6 @@
             folderIconTargetEntry: null,
             folderCreateParentEntry: null,
             expandedFolders: new Set(),
-            openingFolderPath: "",
-            openingAnimationOrder: 0,
-            suppressOpeningAnimation: false,
             directoryCache: new Map(),
             directoryLoadPromises: new Map(),
             directoryCacheMaxEntries: 120,
@@ -15477,9 +15465,6 @@
             }
             gitUnsavedLastFocusedElement = document.activeElement;
             gitUnsavedModal.hidden = false;
-            if (gitUnsavedCommitButton) {
-                gitUnsavedCommitButton.focus();
-            }
             return new Promise(function (resolve) {
                 resolveGitUnsavedNavigation = resolve;
             });
@@ -15594,7 +15579,6 @@
             state.contextTarget = null;
             state.contextEntries = [];
             state.expandedFolders = new Set();
-            state.openingFolderPath = "";
             state.activePreviewPath = "";
             state.activeRenderedPreviewPath = "";
             state.searchQuery = "";
@@ -16834,7 +16818,13 @@
         }
 
         const uploadChunkSize = 256 * 1024;
-        const uploadRateLimitBytesPerSecond = 10 * 1024 * 1024;
+        const configuredTransferRate = Number.parseInt(
+            root.dataset.handriveTransferRateBytesPerSecond || "",
+            10,
+        );
+        const uploadRateLimitBytesPerSecond = Number.isFinite(configuredTransferRate) && configuredTransferRate > 0
+            ? configuredTransferRate
+            : 10 * 1000 * 1000;
 
         function delay(ms) {
             return new Promise(function (resolve) {
@@ -19794,7 +19784,6 @@
                 return loadDirectory(folderPath);
             });
             state.expandedFolders.add(folderPath);
-            state.openingFolderPath = folderPath;
             renderList({ preserveListScroll: true });
             scheduleListColumnVisibilityAfterTreeToggle();
             scheduleGuestDemoTourPositionAfterLayoutChange();
@@ -19827,7 +19816,6 @@
                 return loadDirectory(virtualPath);
             });
             state.expandedFolders.add(archivePath);
-            state.openingFolderPath = archivePath;
             renderList({ preserveListScroll: true });
             scheduleListColumnVisibilityAfterTreeToggle();
         }
@@ -20424,18 +20412,6 @@
             const shouldRenderChildren = settings.recurse !== false;
             const item = document.createElement("li");
             item.className = "handrive-item";
-            const openingFolderPath = state.openingFolderPath;
-            if (
-                !state.suppressOpeningAnimation &&
-                openingFolderPath &&
-                entry.path &&
-                entry.path !== openingFolderPath &&
-                entry.path.startsWith(openingFolderPath + "/")
-            ) {
-                item.classList.add("is-entering");
-                item.style.animationDelay = String(Math.min(140, state.openingAnimationOrder * 14)) + "ms";
-                state.openingAnimationOrder += 1;
-            }
 
             const row = document.createElement("button");
             row.type = "button";
@@ -20698,7 +20674,6 @@
                 existingCurrentDirItem.remove();
             }
             clearListRenderContainers();
-            state.openingAnimationOrder = 0;
             state.entryByPath = new Map();
             state.entryRowByPath = new Map();
             state.visibleEntryPaths = [];
@@ -20709,13 +20684,6 @@
                 ? state.searchResults
                 : getCachedEntries(state.currentDir);
             const renderEntries = getSortedEntriesForRender(entries);
-            const openedFolderEntries = state.openingFolderPath
-                ? getCachedEntries(state.openingFolderPath)
-                : [];
-            state.suppressOpeningAnimation = Boolean(
-                renderEntries.length > 200 ||
-                (Array.isArray(openedFolderEntries) && openedFolderEntries.length > 200)
-            );
             const currentFolderEntryForReuse = buildCurrentDirectoryEntry();
             if (existingCurrentDirItem && savedCurrentDirPath === currentFolderEntryForReuse.path) {
                 if (existingCurrentDirRow) {
@@ -20768,8 +20736,6 @@
                 scheduleListBodyHeight();
                 scheduleAdjacentSelectedRowCornerSync();
                 if (renderListOptions.openPreview) { syncPreviewFromSelection(); }
-                state.openingFolderPath = "";
-                state.suppressOpeningAnimation = false;
                 return;
             }
             if (state.searchQuery) {
@@ -20798,8 +20764,6 @@
             scheduleAdjacentSelectedRowCornerSync();
             if (renderListOptions.openPreview) { syncPreviewFromSelection(); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
-            state.openingFolderPath = "";
-            state.suppressOpeningAnimation = false;
         }
 
         function openContextMenuForEntry(entry, x, y) {
@@ -21884,7 +21848,14 @@
 
         document.addEventListener("keydown", function (event) {
             const key = String(event.key || "");
-            if (key === "Delete" || key === "Backspace") {
+            // Some keyboards/browsers report the forward-delete key as
+            // `Del` or only expose it through `code`/`keyCode`. Treat all of
+            // those forms as the HanDrive list delete shortcut.
+            const isDeleteKey = key === "Delete"
+                || key === "Del"
+                || event.code === "Delete"
+                || event.keyCode === 46;
+            if (isDeleteKey || key === "Backspace") {
                 if (
                     isKeyboardEditableTarget(event.target) ||
                     (contextMenu && !contextMenu.hidden) ||
@@ -21897,7 +21868,7 @@
                     return isEntryDeletable(entry);
                 });
                 if (selectedEntries.length === 0) {
-                    if (key === "Backspace") {
+                    if (key === "Backspace" || isDeleteKey) {
                         event.preventDefault();
                     }
                     return;
@@ -22980,6 +22951,13 @@
                 return null;
             }
             var target = ensureGuestDemoCompositeTarget();
+            // Composite targets are transparent fixed elements appended to body,
+            // so their DOM ancestry no longer reveals that the highlighted
+            // controls live inside a modal. Preserve that context for the
+            // tutorial z-index/display rules (especially URL-share steps).
+            target.dataset.handriveGuestDemoModalTarget = visibleElements.some(function (element) {
+                return isGuestDemoModalTarget(element);
+            }) ? "1" : "0";
             target.style.left = Math.round(left) + "px";
             target.style.top = Math.round(top) + "px";
             target.style.width = Math.max(1, Math.round(right - left)) + "px";
@@ -24423,6 +24401,9 @@
         function isGuestDemoModalTarget(target) {
             if (!target || !target.closest) {
                 return false;
+            }
+            if (target.dataset && target.dataset.handriveGuestDemoModalTarget === "1") {
+                return true;
             }
             if (
                 target.matches &&
@@ -28142,7 +28123,6 @@
 
             lastUnsavedFocusedElement = document.activeElement;
             setUnsavedModalOpen(true);
-            unsavedCancelButton.focus();
 
             return new Promise(function (resolve) {
                 resolveUnsavedChoice = resolve;

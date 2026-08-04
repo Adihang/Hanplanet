@@ -1748,7 +1748,7 @@ body:not(.theme-dark) .site-custom-select-menu.handrive-guest-demo-steps-menu {
 .handrive-guest-demo-tour-action {
     margin-top: 8px;
     color: var(--handrive-text-secondary);
-    font-weight: 700;
+    font-weight: var(--site-weight-body);
 }
 
 .handrive-guest-demo-tour-nav {
@@ -3687,7 +3687,8 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     flex: 1 1 auto;
     min-height: 0;
     overflow: visible;
-    scrollbar-width: auto;
+    /* Firefox's auto scrollbar can retain native arrow buttons. */
+    scrollbar-width: thin;
 }
 
 .handrive-list-items::-webkit-scrollbar {
@@ -3735,21 +3736,6 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     min-height: 0;
     pointer-events: none;
     transition: none;
-}
-
-.handrive-item.is-entering {
-    animation: handrive-item-expand-in 220ms ease-out both;
-}
-
-@keyframes handrive-item-expand-in {
-    from {
-        opacity: 0;
-        transform: translateY(-4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 .handrive-current-dir-item {
@@ -5633,6 +5619,19 @@ body.handrive-popup-dragging {
     opacity: 0.58;
 }
 
+.handrive-url-share-enabled-switch.is-read-only {
+    cursor: default;
+    pointer-events: none;
+}
+
+.handrive-url-share-enabled-switch.is-read-only:has(input:disabled) {
+    opacity: 1;
+}
+
+.handrive-url-share-enabled-switch.is-read-only .handrive-url-share-switch-knob {
+    display: none;
+}
+
 #handrive-url-share-modal.is-share-updating .handrive-url-share-enabled-switch:has(input:disabled),
 #handrive-url-share-modal.is-share-updating .handrive-url-share-edit-switch:has(input:disabled),
 .handrive-url-share-link-group.is-collapsing .handrive-url-share-edit-switch:has(input:disabled) {
@@ -6409,6 +6408,7 @@ body.handrive-popup-dragging {
     width: fit-content;
     max-width: 100%;
     box-sizing: border-box;
+    border-radius: 3px;
 }
 
 .ui-markdown pre.handrive-markdown-code-copy-wrap.is-single-line-code,
@@ -8192,14 +8192,14 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 }
 
 .handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap {
-    height: auto;
-    aspect-ratio: 16 / 9;
+    height: 100%;
+    aspect-ratio: auto;
 }
 
 .handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .video-js {
     height: auto !important;
-    min-height: 180px;
-    aspect-ratio: 16 / 9;
+    min-height: 0;
+    aspect-ratio: auto;
 }
 
 .handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-3d {
@@ -8401,6 +8401,17 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     border-radius: calc(var(--handrive-radius-md) + 3px);
     overflow: hidden;
     font-size: 14px; /* site reset 충돌 방지 */
+}
+
+/* Metadata supplies the real ratio. The inline size set by video_player.js
+   keeps the frame inside the available preview area while preserving it. */
+.handrive-media-video-wrap[data-video-aspect-ready="1"] {
+    aspect-ratio: var(--handrive-video-aspect-ratio);
+    height: auto;
+}
+
+.handrive-media-video-wrap[data-video-aspect-ready="1"] .video-js {
+    aspect-ratio: var(--handrive-video-aspect-ratio);
 }
 
 /* 내부 <video> 비율 유지 */
@@ -9684,11 +9695,11 @@ body .handrive-code-editor.is-horizontally-scrolled .ace_gutter.ace_gutter-left:
     right: auto;
     bottom: 0;
     left: 100%;
-    width: 6px;
+    width: 4px;
     background: linear-gradient(
         to right,
-        color-mix(in srgb, var(--handrive-text) 12%, transparent),
-        color-mix(in srgb, var(--handrive-text) 4%, transparent) 45%,
+        color-mix(in srgb, var(--handrive-text) 7%, transparent),
+        color-mix(in srgb, var(--handrive-text) 3%, transparent) 45%,
         transparent
     );
 }
@@ -9718,24 +9729,33 @@ body .handrive-code-editor .ace_gutter-cell {
 
 body .handrive-code-editor .ace_text-input.ace_composition {
     /* Keep the composition text on the same metrics as the rendered code. */
-    box-sizing: content-box;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: 0;
+    outline: 0;
+    box-shadow: none;
+    background: transparent;
+    color: inherit;
     font: inherit !important;
     font-variant-ligatures: none;
     letter-spacing: inherit;
-    line-height: inherit !important;
+    line-height: var(--handrive-code-editor-composition-line-height);
     min-height: 0;
-    max-height: none;
-    margin: 0 -1px;
-    padding: 0 1px;
+    height: var(--handrive-code-editor-composition-line-height);
+    max-height: var(--handrive-code-editor-composition-line-height);
+    /* Ace's default -1px margin assumes its 1px input padding.  This
+       surface removes that padding, so retaining the negative margin makes
+       a Korean composition start one pixel inside the committed glyph. */
+    margin: 0;
+    padding: 0;
     text-align: left;
     overflow: hidden;
 }
 
-/* Keep the Korean glyph's natural proportions and remove only Ace's
-   explicit two-cell whitespace reservation. */
+/* Keep Ace's two-column CJK cell width so the visual caret stays aligned with
+   the editor's model when composition ends and Latin text follows. */
 body .handrive-code-editor .ace_cjk {
     display: inline-block;
-    width: max-content !important;
     text-align: left;
 }
 
@@ -9954,7 +9974,11 @@ body .handrive-code-editor[data-handrive-syntax-mode="json"] .ace_variable {
 body .handrive-code-editor .ace_placeholder {
     color: var(--site-placeholder);
     font-family: var(--site-font-default);
+    line-height: inherit;
+    margin: 0;
     opacity: 1;
+    transform: none;
+    transform-origin: left top;
 }
 
 .handrive-editor-highlight {

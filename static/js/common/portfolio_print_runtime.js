@@ -24,6 +24,16 @@
             .join('');
     };
 
+    const buildPortfolioPrintDocumentTitle = function (username) {
+        // The browser appends .pdf to the print document title. Keep the title
+        // extension-free so the saved file becomes <username>_Portfolio.pdf.
+        const safeUsername = String(username || '')
+            .trim()
+            .replace(/[\\/:*?"<>|]+/g, '_')
+            .replace(/[. ]+$/g, '');
+        return (safeUsername || 'Portfolio') + '_Portfolio';
+    };
+
     const openPrintPopupWindow = function () {
         // Prefer a centered popup window; fall back to a normal tab if popup features are blocked.
         const width = Math.max(900, Math.min(1240, window.screen.availWidth - 80));
@@ -70,7 +80,7 @@
             '<meta charset="utf-8">' +
             '<meta name="viewport" content="width=device-width, initial-scale=1">' +
             '<meta name="color-scheme" content="light">' +
-            '<title>Portfolio Print</title>' +
+            '<title>' + options.escapeHtml(options.printDocumentTitle || 'Portfolio') + '</title>' +
             stylesheetTags +
             '<style>' +
             '@page{margin:0;}' +
@@ -147,7 +157,8 @@
             projectSectionsHtml: projectSectionHtmlList,
             escapeHtml: options.escapeHtml,
             isEnglishPage: options.isEnglishPage,
-            PRINT_IMAGE_LAYOUT: options.PRINT_IMAGE_LAYOUT
+            PRINT_IMAGE_LAYOUT: options.PRINT_IMAGE_LAYOUT,
+            printDocumentTitle: buildPortfolioPrintDocumentTitle(options.portfolioOwnerUsername)
         });
 
         printWindow.document.open();

@@ -44,6 +44,10 @@
             data-death-respawn-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_respawn' %}"
             data-death-no-lives-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_no_lives' %}"
             data-death-spectate-empty-label="{% include_trimmed 'partials/ui_i18n.html' key='multiplayer_death_modal_spectate_empty' %}"
+            data-raise-speaki-winner-title="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_winner_title' %}"
+            data-raise-speaki-winner-restart="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_winner_restart' %}"
+            data-raise-speaki-birth-title="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_birth_title' %}"
+            data-raise-speaki-birth-countdown="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_birth_countdown' %}"
         >
             <section class="multiplayer-grid" aria-label="{{ multiplayer_title }}">
                 <div class="multiplayer-canvas-wrap">
@@ -167,6 +171,9 @@
                             <div class="multiplayer-encounter-message" data-game-encounter-message></div>
                             <div class="multiplayer-encounter-countdown" data-game-encounter-countdown></div>
                         </div>
+                        {% if game_slug == 'raise-speaki' %}
+                        {% include "popup/fun/multiplayer_raise_speaki_winner_modal.html" %}
+                        {% endif %}
                         <div class="multiplayer-confetti-layer" data-game-confetti-layer aria-hidden="true"></div>
                         <div class="multiplayer-sprite-overlay" data-game-sprite-overlay aria-hidden="true"></div>
                         <canvas class="multiplayer-canvas" data-game-canvas></canvas>

@@ -8,14 +8,14 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/imhanbyeol/Development/Hanplanet/scripts/run_minecraft_server.sh</string>
+    <string>/Users/imhanbyeol/Development/Hanplanet/scripts/run_minecraft_fabric_server.sh</string>
   </array>
 
   <key>WorkingDirectory</key>
-  <string>/Users/imhanbyeol/Development/minecraft</string>
+  <string>/Users/imhanbyeol/Development/minecraft-fabric</string>
 
   <key>WaitForPath</key>
-  <string>/Volumes/HANPLANET_HDD/Hanplanet/minecraft/bluemap</string>
+  <string>/Volumes/HANPLANET_HDD/Hanplanet/minecraft/bluemap-fabric</string>
 
   <key>RunAtLoad</key>
   <true/>
@@ -25,8 +25,8 @@
   <integer>10</integer>
 
   <key>StandardOutPath</key>
-  <string>/Users/imhanbyeol/Development/minecraft/logs/launchd.stdout.log</string>
+  <string>/Users/imhanbyeol/Development/minecraft-fabric/logs/launchd.stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/imhanbyeol/Development/minecraft/logs/launchd.stderr.log</string>
+  <string>/Users/imhanbyeol/Development/minecraft-fabric/logs/launchd.stderr.log</string>
 </dict>
 </plist>

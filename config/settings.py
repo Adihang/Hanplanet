@@ -201,7 +201,7 @@ DATA_BACKUP_RETENTION_DAYS = max(1, load_optional_int_secret("DATA_BACKUP_RETENT
 
 ALLOWED_HOSTS = env_list(
     "DJANGO_ALLOWED_HOSTS",
-    "hanplanet.com,www.hanplanet.com,mc.hanplanet.com,localhost,127.0.0.1,52.79.71.20,112.187.212.49,112.187.212.140",
+    "hanplanet.com,www.hanplanet.com,mc.hanplanet.com,rlc.hanplanet.com,localhost,127.0.0.1,52.79.71.20,112.187.212.49,112.187.212.140",
 )
 
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://www.hanplanet.com").rstrip("/")
@@ -238,7 +238,7 @@ MINECRAFT_LINK_SHARED_SECRET = load_optional_secret("MINECRAFT_LINK_SHARED_SECRE
 MINECRAFT_LINK_CODE_TTL_SECONDS = max(60, load_optional_int_secret("MINECRAFT_LINK_CODE_TTL_SECONDS", 600))
 MINECRAFT_LINK_HMAC_SKEW_SECONDS = max(30, load_optional_int_secret("MINECRAFT_LINK_HMAC_SKEW_SECONDS", 300))
 HANPLANET_RUNTIME = os.environ.get("HANPLANET_RUNTIME", "").strip().lower()
-MINECRAFT_SERVER_DIR = os.environ.get("MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft").strip()
+MINECRAFT_SERVER_DIR = os.environ.get("MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft-fabric").strip()
 MINECRAFT_CONSOLE_TRANSPORT = os.environ.get(
     "MINECRAFT_CONSOLE_TRANSPORT",
     "rcon" if HANPLANET_RUNTIME == "docker" else "fifo",
@@ -250,6 +250,16 @@ MINECRAFT_RCON_HOST = load_optional_secret(
 MINECRAFT_RCON_PORT = load_optional_int_secret("MINECRAFT_RCON_PORT", 25575)
 MINECRAFT_RCON_PASSWORD = load_optional_secret("MINECRAFT_RCON_PASSWORD", "")
 MINECRAFT_RCON_TIMEOUT_SECONDS = max(1, load_optional_int_secret("MINECRAFT_RCON_TIMEOUT_SECONDS", 3))
+PROMINENCE_CONSOLE_TRANSPORT = os.environ.get(
+    "PROMINENCE_CONSOLE_TRANSPORT",
+    "bridge" if HANPLANET_RUNTIME == "docker" else "fifo",
+).strip().lower()
+PROMINENCE_CONSOLE_BRIDGE_HOST = load_optional_secret(
+    "PROMINENCE_CONSOLE_BRIDGE_HOST",
+    "host.docker.internal" if HANPLANET_RUNTIME == "docker" else "127.0.0.1",
+)
+PROMINENCE_CONSOLE_BRIDGE_PORT = load_optional_int_secret("PROMINENCE_CONSOLE_BRIDGE_PORT", 25576)
+PROMINENCE_CONSOLE_BRIDGE_TOKEN = load_optional_secret("PROMINENCE_CONSOLE_BRIDGE_TOKEN", "")
 MAP_COLLAB_WS_PUBLIC_URL  = os.environ.get("MAP_COLLAB_WS_PUBLIC_URL",  "wss://map-collab.hanplanet.com").rstrip("/")
 MAP_COLLAB_WS_LOCAL_URL   = os.environ.get("MAP_COLLAB_WS_LOCAL_URL",   "ws://127.0.0.1:8083").rstrip("/")
 MAP_COLLAB_ADMIN_URL      = os.environ.get("MAP_COLLAB_ADMIN_URL",      "http://127.0.0.1:8084").rstrip("/")
@@ -458,6 +468,14 @@ GLOBAL_RATE_LIMIT_REQUESTS = max(
 GLOBAL_RATE_LIMIT_WINDOW_SECONDS = max(
     1, int(os.environ.get("DJANGO_GLOBAL_RATE_LIMIT_WINDOW_SECONDS", "60"))
 )
+
+# HanDrive upload/download pacing is enforced by the Django application and
+# can be changed centrally without touching the reverse-proxy configuration.
+# The value is bytes per second; 10,000,000 is the user-facing 10 MB/s default.
+HANDRIVE_TRANSFER_RATE_BYTES_PER_SECOND = max(
+    1, int(os.environ.get("HANDRIVE_TRANSFER_RATE_BYTES_PER_SECOND", "10000000"))
+)
+
 GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES = tuple(
     env_list(
         "DJANGO_GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES",
@@ -587,7 +605,7 @@ BUMPERCAR_SPIKY_INTERNAL_SECRET = load_optional_secret("BUMPERCAR_SPIKY_INTERNAL
 # 1) HTTPS에서 CSRF 신뢰 도메인 지정 (Django 4+는 스킴 포함해야 함)
 CSRF_TRUSTED_ORIGINS = env_list(
     "DJANGO_CSRF_TRUSTED_ORIGINS",
-    "https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com",
+    "https://hanplanet.com,https://www.hanplanet.com,https://mc.hanplanet.com,https://rlc.hanplanet.com",
 )
 CSRF_TRUSTED_ORIGINS = [
     origin for origin in CSRF_TRUSTED_ORIGINS
@@ -595,6 +613,8 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 if "https://mc.hanplanet.com" not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append("https://mc.hanplanet.com")
+if "https://rlc.hanplanet.com" not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append("https://rlc.hanplanet.com")
 
 # ── OAuth2 Provider (Gitea SSO) ──────────────────────────────
 OAUTH2_PROVIDER = {

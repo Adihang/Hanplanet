@@ -1641,8 +1641,6 @@
             permissionTargetEntry: null,
             permissionTargetEntries: [],
             expandedFolders: new Set(),
-            openingFolderPath: "",
-            openingAnimationOrder: 0,
             directoryCache: new Map(),
             aclOptionsLoaded: false,
             aclOptions: {
@@ -4932,7 +4930,6 @@
 
             await loadDirectory(folderPath);
             state.expandedFolders.add(folderPath);
-            state.openingFolderPath = folderPath;
             renderList();
         }
 
@@ -5036,17 +5033,6 @@
         function addEntryNode(entry, fragment, ancestorHasNextSiblings, isLastSibling) {
             const item = document.createElement("li");
             item.className = "handrive-item";
-            const openingFolderPath = state.openingFolderPath;
-            if (
-                openingFolderPath &&
-                entry.path &&
-                entry.path !== openingFolderPath &&
-                entry.path.startsWith(openingFolderPath + "/")
-            ) {
-                item.classList.add("is-entering");
-                item.style.animationDelay = String(Math.min(140, state.openingAnimationOrder * 14)) + "ms";
-                state.openingAnimationOrder += 1;
-            }
 
             const row = document.createElement("button");
             row.type = "button";
@@ -5208,7 +5194,6 @@
                 return;
             }
             listContainer.innerHTML = "";
-            state.openingAnimationOrder = 0;
             state.entryByPath = new Map();
             state.entryRowByPath = new Map();
             state.visibleEntryPaths = [];
@@ -5235,7 +5220,6 @@
                 listContainer.appendChild(fragment);
                 scheduleListBodyHeight();
                 syncPreviewFromSelection();
-                state.openingFolderPath = "";
                 return;
             }
             entries.forEach(function (entry, index) {
@@ -5254,7 +5238,6 @@
             scheduleListBodyHeight();
             syncPreviewFromSelection();
             scheduleSyncCurrentDirRowHeightWithSideHead();
-            state.openingFolderPath = "";
         }
 
         function openContextMenuForEntry(entry, x, y) {

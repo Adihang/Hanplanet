@@ -319,6 +319,25 @@ module.exports = {
         player.boostDisabledUntil = resolvedBoostDisabledUntil
         player.npcChargeWindupStartedAt = 0
         player.npcChargeWindupUntil = 0
+
+        // 더블 스핔이는 본체와 각 유닛이 돌진 상태를 별도로 보관한다.
+        // 본체만 정지시키면 유닛이 다음 틱에도 기존 돌진 방향으로 움직이므로,
+        // 살아 있는 유닛에도 동일한 충돌 정지/감속 잠금을 적용한다.
+        if (player.isDoubleSkin && Array.isArray(player.doubleUnits)) {
+            player.doubleUnits.forEach((unit) => {
+                if (!unit || Number(unit.health || 0) <= 0) {
+                    return
+                }
+                unit.boostState = "idle"
+                unit.boostDirectionX = 0
+                unit.boostDirectionY = 0
+                unit.currentSpeed = player.collisionSlowSpeed
+                unit.collisionRecoveryStartedAt = now
+                unit.collisionRecoveryUntil = resolvedRecoveryUntil
+                unit.boostDisabledStartedAt = now
+                unit.boostDisabledUntil = resolvedBoostDisabledUntil
+            })
+        }
     },
 
     /**

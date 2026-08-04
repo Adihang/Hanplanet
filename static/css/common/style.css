@@ -727,6 +727,46 @@ body ::-webkit-scrollbar-button:horizontal:end:increment,
     appearance: none;
 }
 
+/* Keep the horizontal/vertical scrollbar thumb, but remove native arrow
+   buttons even when a page or vendor stylesheet adds a scrollbar rule later. */
+html::-webkit-scrollbar-button,
+body::-webkit-scrollbar-button,
+body *::-webkit-scrollbar-button,
+html::-webkit-scrollbar-button:single-button,
+body::-webkit-scrollbar-button:single-button,
+body *::-webkit-scrollbar-button:single-button,
+html::-webkit-scrollbar-button:double-button,
+body::-webkit-scrollbar-button:double-button,
+body *::-webkit-scrollbar-button:double-button,
+html::-webkit-scrollbar-button:start,
+body::-webkit-scrollbar-button:start,
+body *::-webkit-scrollbar-button:start,
+html::-webkit-scrollbar-button:end,
+body::-webkit-scrollbar-button:end,
+body *::-webkit-scrollbar-button:end,
+html::-webkit-scrollbar-button:decrement,
+body::-webkit-scrollbar-button:decrement,
+body *::-webkit-scrollbar-button:decrement,
+html::-webkit-scrollbar-button:increment,
+body::-webkit-scrollbar-button:increment,
+body *::-webkit-scrollbar-button:increment {
+    display: none !important;
+    visibility: hidden !important;
+    width: 0 !important;
+    height: 0 !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+}
+
 html::-webkit-scrollbar-thumb,
 body ::-webkit-scrollbar-thumb {
     background: var(--site-scrollbar-thumb);

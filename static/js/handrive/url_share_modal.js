@@ -494,6 +494,7 @@
             currentAllowedUsers = [];
             shareCheckbox.disabled = false;
             shareEnabledToggle.hidden = false;
+            shareEnabledToggle.classList.remove("is-read-only");
             shareEditCheckbox.checked = false;
             shareEditCheckbox.disabled = false;
             shareEditToggle.hidden = true;
@@ -570,20 +571,17 @@
 
             shareCheckbox.checked = isUrlOnly;
             shareCheckbox.disabled = readOnly;
-            shareEnabledToggle.hidden = readOnly;
+            // The title lives inside the toggle label.  Hiding the label for
+            // inherited/read-only shares also hid the modal title entirely.
+            // Keep the label in the layout and suppress only the inactive
+            // switch so the title remains visible for shared child files.
+            shareEnabledToggle.hidden = false;
+            shareEnabledToggle.classList.toggle("is-read-only", readOnly);
             setTargetControlsDisabled(false);
             setUrlRowVisible(isUrlOnly || readOnly, shareUrl, downloadUrl);
             shareModal.hidden = false;
             lastFocusedElement = documentRef.activeElement;
             syncModalBodyState();
-            window.requestAnimationFrame(function () {
-                if (readOnly && shareInput) {
-                    shareInput.focus();
-                    shareInput.select();
-                    return;
-                }
-                shareCheckbox.focus();
-            });
         }
 
         shareCheckbox.addEventListener("change", function () {

@@ -195,9 +195,6 @@
         }
         logoutModal.hidden = !opened;
         if (opened) {
-            if (logoutCancelButton) {
-                logoutCancelButton.focus();
-            }
             return;
         }
         activeLogoutForm = null;

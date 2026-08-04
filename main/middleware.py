@@ -182,6 +182,11 @@ class GlobalRateLimitMiddleware:
         return getattr(settings, "GLOBAL_RATE_LIMIT_ENABLED", True)
 
     def _is_exempt_path(self, path):
+        # HanDrive uploads are sent as one multipart request per 256 KiB chunk.
+        # Counting every chunk against the site-wide request budget makes a
+        # normal large-file upload hit 429 before the file can finish.
+        if path.rstrip("/") == "/handrive/api/upload":
+            return True
         exempt_prefixes = getattr(
             settings,
             "GLOBAL_RATE_LIMIT_EXEMPT_PATH_PREFIXES",

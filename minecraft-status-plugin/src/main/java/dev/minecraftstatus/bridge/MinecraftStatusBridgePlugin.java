@@ -6,6 +6,7 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.OfflinePlayer;
+import org.bukkit.Sound;
 import org.bukkit.World;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -785,6 +786,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         }
         for (String notice : notices) {
             if (!strOrEmpty(notice).isEmpty()) {
+                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7f, 1.15f);
                 player.sendMessage(notice);
             }
         }
@@ -1131,6 +1133,7 @@ public final class MinecraftStatusBridgePlugin extends JavaPlugin implements Lis
         if (player == null || notice.isEmpty()) {
             return;
         }
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7f, 1.15f);
         player.sendMessage(notice);
     }
 

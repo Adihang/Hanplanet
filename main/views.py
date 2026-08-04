@@ -89,7 +89,15 @@ from .middleware import HANPLANET_ACCOUNT_ACTIVE_COOKIE_NAME
 from .onscripter_access import is_onscripter_user_allowed
 
 logger = logging.getLogger(__name__)
-from .restart_utils import restart_gunicorn_and_wait
+from .restart_utils import (
+    minecraft_restart_is_active,
+    prominence_restart_is_active,
+    read_minecraft_restart_state,
+    read_prominence_restart_state,
+    request_minecraft_server_restart,
+    request_prominence_server_restart,
+    restart_gunicorn_and_wait,
+)
 
 PORTFOLIO_DEFAULT_USERNAME = "HanbyelLim"
 
@@ -131,6 +139,7 @@ BUNGIE_EXCLUDED_ARMOR_PLUG_HASHES = {1959648454, 2931483505, 702981643}
 BUNGIE_FIRETEAM_CACHE_SECONDS = 30
 BUNGIE_DEFINITION_CACHE_SECONDS = 60 * 60 * 24
 MINECRAFT_PUBLIC_HOST = "mc.hanplanet.com"
+RLCRAFT_PUBLIC_HOST = "rlc.hanplanet.com"
 MINECRAFT_SERVER_ADDRESS = "mc.hanplanet.com"
 MINECRAFT_BEDROCK_SERVER_ADDRESS = "mcbe.hanplanet.com"
 MINECRAFT_BEDROCK_SERVER_PORT = 19132
@@ -138,11 +147,66 @@ MINECRAFT_SSO_QUERY_PARAM = "minecraft_sso"
 MINECRAFT_BEDROCK_SERVER_VERSION_FALLBACK = "26.30"
 MINECRAFT_BEDROCK_VERSION_CACHE_KEY = "minecraft_bedrock_server_version"
 MINECRAFT_BEDROCK_VERSION_CACHE_SECONDS = 60
+MINECRAFT_MODPACK_API_BASE_URL = "https://api.modrinth.com/v2"
+MINECRAFT_MODPACK_USER_AGENT = "Hanplanet-Minecraft-Modpack/1.0 (+https://mc.hanplanet.com/)"
+MINECRAFT_MODPACK_VERSION_CACHE_SECONDS = 60 * 30
+MINECRAFT_MODPACK_CACHE_DIR = Path(tempfile.gettempdir()) / "hanplanet-minecraft-modpacks"
+MINECRAFT_FABRIC_LOADER_VERSION_FALLBACK = "0.19.3"
+MINECRAFT_MODPACK_PROJECTS = (
+    ("fabric-api", "Fabric API"),
+    ("sodium", "Sodium"),
+    ("iris", "Iris"),
+    ("simple-voice-chat", "Simple Voice Chat"),
+    ("voxy", "Voxy"),
+    ("voxyserver", "VoxyServer"),
+    ("punchy-fpa", "Punchy!"),
+)
+MINECRAFT_MODPACK_PREFERRED_VERSIONS = {
+    # VoxyServer 1.2.3 explicitly supports this 26.2 Voxy beta.
+    "voxy": "0.2.17-beta",
+}
+MINECRAFT_VOXY_NATIVE_CACHE_MARKER = "voxy-macos-arm64-native-1"
+MINECRAFT_VOXY_ROCKSDB_URL = "https://repo1.maven.org/maven2/org/rocksdb/rocksdbjni/10.2.1/rocksdbjni-10.2.1.jar"
+MINECRAFT_VOXY_ROCKSDB_SHA512 = "b1bdafc6cd28645a666113b384da4c43489249c8d1767f78a83f2d4d6f9f5599bb01dd4a03042fe1bc418f4f9e2f8514e4bbf9eb8b285ac7d902b16cee33e3da"
+MINECRAFT_VOXY_ROCKSDB_SIZE = 72769957
 MINECRAFT_BEDROCK_PING_MAGIC = bytes.fromhex("00ffff00fefefefefdfdfdfd12345678")
 MINECRAFT_META_TITLE = "Minecraft Server | Hanplanet"
 MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
+PROMINENCE_META_TITLE = "Prominence II Server | Hanplanet"
+PROMINENCE_META_DESCRIPTION_KO = "Prominence II: Hasturian Era 1.20.1 Fabric 서버 접속 정보와 한국어 클라이언트 모드팩, Dynmap 월드 지도를 제공합니다."
+PROMINENCE_META_DESCRIPTION_EN = "Prominence II: Hasturian Era 1.20.1 Fabric server information, a Korean client modpack, and a Dynmap world map."
+PROMINENCE_CURSEFORGE_URL = "https://www.curseforge.com/minecraft/modpacks/prominence-2-hasturian-era"
+PROMINENCE_KOREAN_PATCH_URL = "https://moru.gg/ko/modpack/prominence-2-hasturian-era"
+PROMINENCE_PLAYER_HEAD_URL_TEMPLATE = "https://mc-heads.net/avatar/{uuid}/24.png"
+PROMINENCE_STATUS_HOST = os.getenv(
+    "PROMINENCE_STATUS_HOST",
+    "host.docker.internal" if os.getenv("HANPLANET_RUNTIME") == "docker" else "127.0.0.1",
+)
+PROMINENCE_STATUS_TIMEOUT_SECONDS = 1.5
+PROMINENCE_LATEST_LOG_PATH = Path(
+    os.getenv("PROMINENCE_LATEST_LOG_PATH", "/Users/imhanbyeol/Development/rlcraft/logs/latest.log")
+)
+PROMINENCE_CONSOLE_OUTPUT_PATH = Path(
+    os.getenv("PROMINENCE_CONSOLE_OUTPUT_PATH", "/Users/imhanbyeol/Development/rlcraft/run/console.out")
+)
+PROMINENCE_CONSOLE_INPUT_PATH = Path(
+    os.getenv("PROMINENCE_CONSOLE_INPUT_PATH", "/Users/imhanbyeol/Development/rlcraft/run/console.in")
+)
+PROMINENCE_LAUNCHD_LOG_PATH = Path(
+    os.getenv("PROMINENCE_LAUNCHD_LOG_PATH", "/Users/imhanbyeol/Development/rlcraft/logs/launchd.stdout.log")
+)
+PROMINENCE_USERCACHE_PATH = Path(
+    os.getenv("PROMINENCE_USERCACHE_PATH", "/Users/imhanbyeol/Development/rlcraft/usercache.json")
+)
+PROMINENCE_PLAYERDATA_PATH = Path(
+    os.getenv("PROMINENCE_PLAYERDATA_PATH", "/Users/imhanbyeol/Development/rlcraft/world/playerdata")
+)
+PROMINENCE_SERVER_VERSION = "1.20.1 Fabric 0.18.4"
+PROMINENCE_SERVER_ADDRESS = "rlc.hanplanet.com"
+PROMINENCE_SERVER_PORT = 25566
+PROMINENCE_MAP_URL = "/map/"
 MINECRAFT_WEATHER_ICON_URL = static("media/icons/minecraft/weather.svg")
 MINECRAFT_ITEM_ICON_BASE_URL = static("media/icons/minecraft/items/")
 MINECRAFT_ITEM_ICON_MANIFEST_URL = static("media/icons/minecraft/items/manifest.json")
@@ -210,11 +274,14 @@ MINECRAFT_UI_ICON_URLS = {
     "potion": static("media/icons/minecraft/ui/potion.png"),
     "slot": static("media/icons/minecraft/ui/slot.png"),
 }
-MINECRAFT_SERVER_DIR = Path(getattr(settings, "MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft"))
+MINECRAFT_SERVER_DIR = Path(getattr(settings, "MINECRAFT_SERVER_DIR", "/Users/imhanbyeol/Development/minecraft-fabric"))
 MINECRAFT_PLUGIN_DIR = MINECRAFT_SERVER_DIR / "plugins"
+MINECRAFT_MOD_DIR = MINECRAFT_SERVER_DIR / "mods"
 MINECRAFT_STATUS_PATH = MINECRAFT_SERVER_DIR / "web" / "status.json"
 MINECRAFT_PLAYER_HEADS_PATH = MINECRAFT_SERVER_DIR / "web" / "player-heads"
-MINECRAFT_CONSOLE_OUTPUT_PATH = MINECRAFT_SERVER_DIR / "run" / "console.out"
+MINECRAFT_CONSOLE_OUTPUT_PATH = Path(
+    os.getenv("MINECRAFT_CONSOLE_OUTPUT_PATH", str(MINECRAFT_SERVER_DIR / "run" / "console.out"))
+)
 MINECRAFT_CONSOLE_INPUT_PATH = MINECRAFT_SERVER_DIR / "run" / "console.in"
 MINECRAFT_LOG_TAIL_BYTES = 64 * 1024
 MINECRAFT_LOG_TAIL_LINES = 220
@@ -1822,7 +1889,7 @@ def apply_ui_context(request, context, ui_lang):
         ]
 
     context["site_home_url"] = context.get("site_home_url", "/")
-    if is_minecraft_host(request):
+    if is_minecraft_host(request) or is_rlcraft_host(request):
         apply_public_site_nav_urls(context)
 
 
@@ -5740,6 +5807,8 @@ def none(request, ui_lang=None):
     """Render the Hanplanet home page with root search, favorites, and install metadata."""
     if is_minecraft_host(request):
         return minecraft_home(request, ui_lang=ui_lang)
+    if is_rlcraft_host(request):
+        return rlcraft_home(request, ui_lang=ui_lang)
 
     context = dict()
     resolved_lang = resolve_ui_lang(request, ui_lang)
@@ -5808,6 +5877,12 @@ def is_minecraft_host(request):
     """Return true when the current request is for the Minecraft subdomain."""
     host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
     return host == MINECRAFT_PUBLIC_HOST
+
+
+def is_rlcraft_host(request):
+    """Return true when the current request is for the Prominence II subdomain."""
+    host = str(request.get_host() or "").split(":", 1)[0].strip().lower()
+    return host == RLCRAFT_PUBLIC_HOST
 
 
 def _should_attempt_minecraft_sso(request) -> bool:
@@ -6142,6 +6217,16 @@ def get_minecraft_korean_item_labels():
     return labels
 
 
+def get_minecraft_trade_notice_item_label(value, ui_lang):
+    """Return the item label used by an in-game trade notice."""
+    item_id = normalize_minecraft_trade_item_id(value)
+    if not item_id:
+        return ""
+    if str(ui_lang or "").strip().lower() == "en":
+        return format_minecraft_trade_item_label(item_id)
+    return get_minecraft_korean_item_labels().get(item_id) or format_minecraft_trade_item_label(item_id)
+
+
 def get_minecraft_trade_notice_ui_lang(user):
     """Return the language last selected by a trade recipient on the Minecraft site."""
     if not getattr(user, "is_authenticated", False):
@@ -6232,7 +6317,7 @@ def get_online_linked_minecraft_name(user):
     for linked_name in linked_names:
         if linked_name.lower() in online_name_keys:
             return linked_name, ""
-    return linked_names[0], ""
+    return "", "minecraft_account_offline"
 
 
 def validate_minecraft_trade_listing_account(user, minecraft_name):
@@ -6386,19 +6471,25 @@ def run_minecraft_trade_command(action, *args):
         return False, "console_unavailable", ""
 
     response_text = str(response or "")
-    if re.search(r"\bHANPLANET_TRADE_OK\b", response_text):
+    if "HANPLANET_TRADE_OK" in response_text:
         return True, "", response_text
-    error_match = re.search(r"\bHANPLANET_TRADE_ERROR\s+\S+\s+([a-z_]+)\b", response_text)
+    error_match = re.search(r"HANPLANET_TRADE_ERROR\s+\S+\s+([a-z_]+)\b", response_text)
     if error_match:
         return False, error_match.group(1), response_text
     logger.warning("Minecraft trade command returned unexpected response: command=%r response=%r", command, response_text)
     return False, "trade_command_no_response", response_text
 
 
+def encode_minecraft_trade_notice_label(value):
+    """Encode a localized label as one Minecraft console argument."""
+    return base64.urlsafe_b64encode(str(value or "").encode("utf-8")).decode("ascii").rstrip("=")
+
+
 def extract_minecraft_trade_escrow_item(response_text, action, listing_id):
     pattern = re.compile(
         r"\bHANPLANET_TRADE_ITEM\s+" + re.escape(str(action)) +
-        r"\s+" + re.escape(str(listing_id)) + r"\s+([A-Za-z0-9_-]+)\b"
+        r"\s+" + re.escape(str(listing_id)) +
+        r"\s+([A-Za-z0-9_-]+?)(?=\s*HANPLANET_TRADE_(?:OK|ERROR)\b|$)"
     )
     matches = pattern.findall(str(response_text or ""))
     for encoded_value in reversed(matches):
@@ -6612,8 +6703,12 @@ def minecraft_trade_create_json(request):
         price_item,
         price_amount,
         seller_notice_ui_lang,
+        encode_minecraft_trade_notice_label(get_minecraft_trade_notice_item_label(sell_item, seller_notice_ui_lang)),
+        encode_minecraft_trade_notice_label(get_minecraft_trade_notice_item_label(price_item, seller_notice_ui_lang)),
     )
     if not ok:
+        if f"HANPLANET_TRADE_ITEM reserve-escrow {listing.id}" in response_text:
+            run_minecraft_trade_command("release-escrow", listing.id, seller_minecraft_name)
         listing.delete()
         return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error))
 
@@ -6686,6 +6781,18 @@ def minecraft_trade_buy_json(request, listing_id):
             return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
 
         seller_notice_ui_lang = get_minecraft_trade_notice_ui_lang(listing.seller)
+        buyer_sell_notice_label = encode_minecraft_trade_notice_label(
+            get_minecraft_trade_notice_item_label(listing.sell_item, buyer_notice_ui_lang)
+        )
+        buyer_price_notice_label = encode_minecraft_trade_notice_label(
+            get_minecraft_trade_notice_item_label(listing.price_item, buyer_notice_ui_lang)
+        )
+        seller_sell_notice_label = encode_minecraft_trade_notice_label(
+            get_minecraft_trade_notice_item_label(listing.sell_item, seller_notice_ui_lang)
+        )
+        seller_price_notice_label = encode_minecraft_trade_notice_label(
+            get_minecraft_trade_notice_item_label(listing.price_item, seller_notice_ui_lang)
+        )
         escrow_id = minecraft_trade_escrow_id(listing)
         if listing.is_npc:
             ok, error, _response_text = run_minecraft_trade_command(
@@ -6696,6 +6803,8 @@ def minecraft_trade_buy_json(request, listing_id):
                 listing.sell_item,
                 requested_sell_amount,
                 buyer_notice_ui_lang,
+                buyer_price_notice_label,
+                buyer_sell_notice_label,
             )
         elif escrow_id:
             ok, error, _response_text = run_minecraft_trade_command(
@@ -6708,6 +6817,10 @@ def minecraft_trade_buy_json(request, listing_id):
                 listing.seller_minecraft_name,
                 buyer_notice_ui_lang,
                 seller_notice_ui_lang,
+                buyer_price_notice_label,
+                buyer_sell_notice_label,
+                seller_sell_notice_label,
+                seller_price_notice_label,
             )
         else:
             ok, error, _response_text = run_minecraft_trade_command(
@@ -6809,6 +6922,12 @@ def minecraft_trade_settle_json(request, listing_id):
                 listing.price_item,
                 listing.unclaimed_price_amount,
                 seller_notice_ui_lang,
+                encode_minecraft_trade_notice_label(
+                    get_minecraft_trade_notice_item_label(listing.price_item, seller_notice_ui_lang)
+                ),
+                encode_minecraft_trade_notice_label(
+                    get_minecraft_trade_notice_item_label(listing.sell_item, seller_notice_ui_lang)
+                ),
             )
         else:
             ok, error, _response_text = run_minecraft_trade_command(
@@ -6862,13 +6981,27 @@ def minecraft_trade_claim_json(request, listing_id):
             return minecraft_trade_error_response(account_error, status=minecraft_trade_error_status(account_error), listing=listing)
 
         seller_notice_ui_lang = resolve_ui_lang(request)
-        ok, error, _response_text = run_minecraft_trade_command(
-            "payout",
-            listing.seller_minecraft_name,
-            listing.price_item,
-            listing.unclaimed_price_amount,
-            seller_notice_ui_lang,
-        )
+        escrow_id = minecraft_trade_escrow_id(listing)
+        if escrow_id:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "payout-escrow",
+                escrow_id,
+                listing.seller_minecraft_name,
+                listing.price_item,
+                listing.unclaimed_price_amount,
+                seller_notice_ui_lang,
+                encode_minecraft_trade_notice_label(
+                    get_minecraft_trade_notice_item_label(listing.price_item, seller_notice_ui_lang)
+                ),
+            )
+        else:
+            ok, error, _response_text = run_minecraft_trade_command(
+                "payout",
+                listing.seller_minecraft_name,
+                listing.price_item,
+                listing.unclaimed_price_amount,
+                seller_notice_ui_lang,
+            )
         if not ok:
             return minecraft_trade_error_response(error, status=minecraft_trade_error_status(error), listing=listing)
 
@@ -7183,6 +7316,67 @@ def _write_minecraft_fifo_command(command):
         os.close(fd)
 
 
+def _write_prominence_fifo_command(command):
+    """Write a validated command line to the Prominence II process stdin FIFO."""
+    try:
+        input_stat = PROMINENCE_CONSOLE_INPUT_PATH.stat()
+    except OSError as exc:
+        raise RuntimeError("console_unavailable") from exc
+
+    if not stat.S_ISFIFO(input_stat.st_mode):
+        raise RuntimeError("console_input_invalid")
+
+    try:
+        fd = os.open(PROMINENCE_CONSOLE_INPUT_PATH, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError as exc:
+        raise RuntimeError("console_unavailable") from exc
+
+    try:
+        os.write(fd, f"{command}\n".encode("utf-8"))
+    except OSError as exc:
+        raise RuntimeError("console_write_failed") from exc
+    finally:
+        os.close(fd)
+
+
+def _send_prominence_bridge_command(command):
+    """Send a command to the host-side Prominence console bridge."""
+    host = str(getattr(settings, "PROMINENCE_CONSOLE_BRIDGE_HOST", "") or "").strip()
+    port = int(getattr(settings, "PROMINENCE_CONSOLE_BRIDGE_PORT", 25576) or 25576)
+    token = str(getattr(settings, "PROMINENCE_CONSOLE_BRIDGE_TOKEN", "") or "").strip()
+    timeout_seconds = float(getattr(settings, "MINECRAFT_RCON_TIMEOUT_SECONDS", 3) or 3)
+    if not host or not port or not token:
+        raise RuntimeError("console_bridge_unavailable")
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout_seconds) as bridge_socket:
+            bridge_socket.settimeout(timeout_seconds)
+            bridge_socket.sendall(f"{token}\t{command}\n".encode("utf-8"))
+            response = bridge_socket.recv(64).decode("utf-8", errors="replace").strip()
+    except OSError as exc:
+        raise RuntimeError("console_bridge_unavailable") from exc
+
+    if response != "OK":
+        raise RuntimeError(response.removeprefix("ERR ") or "console_bridge_failed")
+
+
+def write_prominence_console_command(command):
+    """Send a validated Prominence command through the configured transport."""
+    transport = str(getattr(settings, "PROMINENCE_CONSOLE_TRANSPORT", "") or "").strip().lower()
+    if transport in {"bridge", "bridge_first"}:
+        try:
+            return _send_prominence_bridge_command(command)
+        except RuntimeError as exc:
+            if transport == "bridge":
+                raise
+            bridge_error = exc
+        try:
+            return _write_prominence_fifo_command(command)
+        except RuntimeError:
+            raise bridge_error
+    return _write_prominence_fifo_command(command)
+
+
 def write_minecraft_console_command(command):
     """Send a validated command line using the configured Minecraft command transport."""
     transport = str(getattr(settings, "MINECRAFT_CONSOLE_TRANSPORT", "") or "").strip().lower()
@@ -7228,12 +7422,15 @@ def _read_plugin_yaml_scalar(text, key):
 
 
 def get_minecraft_server_plugins():
-    """Read installed Minecraft Bukkit/Paper plugin metadata from plugin jars."""
+    """Read installed Bukkit/Paper plugins and Fabric mods for the server panel."""
     plugins = []
-    try:
-        jar_paths = sorted(MINECRAFT_PLUGIN_DIR.glob("*.jar"), key=lambda path: path.name.lower())
-    except OSError:
-        return plugins
+    jar_paths = []
+    for directory in (MINECRAFT_PLUGIN_DIR, MINECRAFT_MOD_DIR):
+        try:
+            jar_paths.extend(directory.glob("*.jar"))
+        except OSError:
+            continue
+    jar_paths = sorted(jar_paths, key=lambda path: path.name.lower())
 
     for jar_path in jar_paths:
         plugin_name = jar_path.stem
@@ -7248,6 +7445,14 @@ def get_minecraft_server_plugins():
                     plugin_name = _read_plugin_yaml_scalar(metadata, "name") or plugin_name
                     plugin_version = _read_plugin_yaml_scalar(metadata, "version")
                     break
+                else:
+                    try:
+                        fabric_metadata = json.loads(jar_file.read("fabric.mod.json").decode("utf-8", errors="replace"))
+                    except (KeyError, json.JSONDecodeError):
+                        fabric_metadata = {}
+                    if isinstance(fabric_metadata, dict):
+                        plugin_name = str(fabric_metadata.get("name") or fabric_metadata.get("id") or plugin_name)
+                        plugin_version = str(fabric_metadata.get("version") or "")
         except (OSError, zipfile.BadZipFile):
             pass
 
@@ -7259,6 +7464,408 @@ def get_minecraft_server_plugins():
     return plugins
 
 
+def get_minecraft_fabric_loader_version():
+    """Read the exact Fabric Loader version used by the running server."""
+    log_paths = [MINECRAFT_SERVER_DIR / "logs" / "latest.log"]
+    try:
+        log_paths.extend(sorted((MINECRAFT_SERVER_DIR / "logs").glob("*.log"), reverse=True))
+    except OSError:
+        pass
+
+    pattern = re.compile(r"Loading Minecraft [^\s]+ with Fabric Loader ([^\s]+)")
+    for log_path in log_paths:
+        try:
+            text = log_path.read_text(encoding="utf-8", errors="replace")[-128 * 1024:]
+        except OSError:
+            continue
+        matches = pattern.findall(text)
+        if matches:
+            return matches[-1]
+    return MINECRAFT_FABRIC_LOADER_VERSION_FALLBACK
+
+
+def _get_local_fabric_api_version():
+    """Read the Fabric API version currently installed on the server."""
+    try:
+        jar_paths = sorted(MINECRAFT_MOD_DIR.glob("fabric-api*.jar"), key=lambda path: path.name.lower())
+    except OSError:
+        jar_paths = []
+
+    for jar_path in jar_paths:
+        try:
+            with zipfile.ZipFile(jar_path) as jar_file:
+                metadata = json.loads(jar_file.read("fabric.mod.json").decode("utf-8", errors="replace"))
+            version = str(metadata.get("version") or "").strip()
+            if version:
+                return version
+        except (OSError, KeyError, json.JSONDecodeError, zipfile.BadZipFile):
+            continue
+    return ""
+
+
+def _get_local_fabric_mod_version(project_slug):
+    """Read a matching Fabric mod version from the running server's mods directory."""
+    expected_ids = {
+        "fabric-api": {"fabric-api"},
+        "simple-voice-chat": {"voicechat"},
+    }.get(project_slug, set())
+    if not expected_ids:
+        return ""
+
+    try:
+        jar_paths = sorted(MINECRAFT_MOD_DIR.glob("*.jar"), key=lambda path: path.name.lower())
+    except OSError:
+        jar_paths = []
+
+    for jar_path in jar_paths:
+        try:
+            with zipfile.ZipFile(jar_path) as jar_file:
+                metadata = json.loads(jar_file.read("fabric.mod.json").decode("utf-8", errors="replace"))
+            if str(metadata.get("id") or "").strip() not in expected_ids:
+                continue
+            version = str(metadata.get("version") or "").strip()
+            if version:
+                return version
+        except (OSError, KeyError, json.JSONDecodeError, zipfile.BadZipFile):
+            continue
+    return ""
+
+
+def _fetch_minecraft_modrinth_versions(project_slug, minecraft_version):
+    """Fetch Fabric versions for one Modrinth project with a short cache."""
+    cache_key = f"minecraft_modpack_modrinth:{project_slug}:{minecraft_version}"
+    cached_versions = cache.get(cache_key)
+    if isinstance(cached_versions, list):
+        return cached_versions
+
+    query = urlencode({
+        "game_versions": json.dumps([minecraft_version], separators=(",", ":")),
+        "loaders": json.dumps(["fabric"], separators=(",", ":")),
+    })
+    request = Request(
+        f"{MINECRAFT_MODPACK_API_BASE_URL}/project/{quote(project_slug, safe='')}/version?{query}",
+        headers={"User-Agent": MINECRAFT_MODPACK_USER_AGENT, "Accept": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=8) as response:
+            payload = json.loads(response.read(4 * 1024 * 1024).decode("utf-8", errors="replace"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError("modrinth_unavailable") from exc
+
+    if not isinstance(payload, list):
+        raise RuntimeError("modrinth_invalid_response")
+    cache.set(cache_key, payload, MINECRAFT_MODPACK_VERSION_CACHE_SECONDS)
+    return payload
+
+
+def _select_minecraft_modrinth_version(project_slug, minecraft_version, preferred_version=""):
+    """Select a listed release and its primary JAR from Modrinth."""
+    versions = _fetch_minecraft_modrinth_versions(project_slug, minecraft_version)
+    candidates = [
+        version for version in versions
+        if isinstance(version, dict)
+        and version.get("status", "listed") == "listed"
+        and version.get("version_type", "release") == "release"
+    ] or [version for version in versions if isinstance(version, dict)]
+
+    selected = None
+    if preferred_version:
+        selected = next(
+            (version for version in candidates if str(version.get("version_number") or "") == preferred_version),
+            None,
+        )
+    selected = selected or (candidates[0] if candidates else None)
+    if selected is None:
+        raise RuntimeError(f"mod_not_available:{project_slug}")
+
+    files = selected.get("files")
+    if not isinstance(files, list):
+        raise RuntimeError(f"mod_file_unavailable:{project_slug}")
+    primary_file = next((file for file in files if isinstance(file, dict) and file.get("primary")), None)
+    primary_file = primary_file or next((file for file in files if isinstance(file, dict)), None)
+    if not isinstance(primary_file, dict):
+        raise RuntimeError(f"mod_file_unavailable:{project_slug}")
+
+    downloads_url = str(primary_file.get("url") or "").strip()
+    filename = Path(str(primary_file.get("filename") or "")).name
+    hashes = primary_file.get("hashes") if isinstance(primary_file.get("hashes"), dict) else {}
+    sha1 = str(hashes.get("sha1") or "").strip().lower()
+    sha512 = str(hashes.get("sha512") or "").strip().lower()
+    file_size = int(primary_file.get("size") or 0)
+    if not downloads_url.startswith("https://cdn.modrinth.com/") or not filename.endswith(".jar") or not sha512:
+        raise RuntimeError(f"mod_file_invalid:{project_slug}")
+
+    return {
+        "project": project_slug,
+        "project_id": str(selected.get("project_id") or ""),
+        "version_id": str(selected.get("id") or ""),
+        "version_number": str(selected.get("version_number") or ""),
+        "name": str(selected.get("name") or project_slug),
+        "filename": filename,
+        "url": downloads_url,
+        "sha1": sha1,
+        "sha512": sha512,
+        "size": file_size,
+    }
+
+
+def _resolve_minecraft_client_modpack():
+    """Resolve an exact client pack for the server's Java and Fabric versions."""
+    minecraft_version = get_minecraft_server_version() or "26.2"
+    loader_version = get_minecraft_fabric_loader_version()
+    specs = []
+    for project_slug, _label in MINECRAFT_MODPACK_PROJECTS:
+        preferred_version = MINECRAFT_MODPACK_PREFERRED_VERSIONS.get(project_slug) or _get_local_fabric_mod_version(project_slug)
+        specs.append(_select_minecraft_modrinth_version(project_slug, minecraft_version, preferred_version))
+    return {
+        "minecraft_version": minecraft_version,
+        "loader_version": loader_version,
+        "mods": specs,
+    }
+
+
+def _minecraft_modpack_read_cached_file(spec):
+    """Download and cache a Modrinth JAR after validating its published hash."""
+    MINECRAFT_MODPACK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    target = MINECRAFT_MODPACK_CACHE_DIR / f"{spec['sha512']}.jar"
+    if target.is_file() and target.stat().st_size == spec["size"]:
+        return _minecraft_modpack_patch_voxy_for_macos(target, spec) if spec.get("project") == "voxy" else target
+
+    temporary_path = None
+    request = Request(spec["url"], headers={"User-Agent": MINECRAFT_MODPACK_USER_AGENT})
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=MINECRAFT_MODPACK_CACHE_DIR,
+            prefix=f".{spec['sha512']}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+        with urlopen(request, timeout=20) as response, temporary_path.open("wb") as output_file:
+            shutil.copyfileobj(response, output_file, length=1024 * 1024)
+        raw_bytes = temporary_path.read_bytes()
+        if spec["size"] and len(raw_bytes) != spec["size"]:
+            raise RuntimeError("mod_file_size_mismatch")
+        if hashlib.sha512(raw_bytes).hexdigest() != spec["sha512"]:
+            raise RuntimeError("mod_file_hash_mismatch")
+        os.replace(temporary_path, target)
+    except (OSError, RuntimeError) as exc:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        if isinstance(exc, RuntimeError):
+            raise
+        raise RuntimeError("mod_download_failed") from exc
+    if spec.get("project") == "voxy":
+        return _minecraft_modpack_patch_voxy_for_macos(target, spec)
+    return target
+
+
+def _minecraft_modpack_read_voxy_rocksdb_file():
+    """Cache the official RocksDB JNI bundle used to add Apple Silicon support."""
+    target = MINECRAFT_MODPACK_CACHE_DIR / f"rocksdbjni-{MINECRAFT_VOXY_ROCKSDB_SHA512}.jar"
+    if target.is_file() and target.stat().st_size == MINECRAFT_VOXY_ROCKSDB_SIZE:
+        return target
+
+    temporary_path = None
+    request = Request(MINECRAFT_VOXY_ROCKSDB_URL, headers={"User-Agent": MINECRAFT_MODPACK_USER_AGENT})
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=MINECRAFT_MODPACK_CACHE_DIR,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+        with urlopen(request, timeout=60) as response, temporary_path.open("wb") as output_file:
+            shutil.copyfileobj(response, output_file, length=1024 * 1024)
+        raw_bytes = temporary_path.read_bytes()
+        if len(raw_bytes) != MINECRAFT_VOXY_ROCKSDB_SIZE:
+            raise RuntimeError("voxy_native_size_mismatch")
+        if hashlib.sha512(raw_bytes).hexdigest() != MINECRAFT_VOXY_ROCKSDB_SHA512:
+            raise RuntimeError("voxy_native_hash_mismatch")
+        os.replace(temporary_path, target)
+    except (OSError, RuntimeError) as exc:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        if isinstance(exc, RuntimeError):
+            raise
+        raise RuntimeError("voxy_native_download_failed") from exc
+    return target
+
+
+def _minecraft_modpack_patch_voxy_for_macos(source_path, spec):
+    """Add the missing macOS arm64 RocksDB binary to the Voxy nested dependency."""
+    target = MINECRAFT_MODPACK_CACHE_DIR / f"{spec['sha512']}-{MINECRAFT_VOXY_NATIVE_CACHE_MARKER}.jar"
+    if target.is_file() and target.stat().st_size > spec["size"]:
+        return target
+
+    rocksdb_bundle_path = _minecraft_modpack_read_voxy_rocksdb_file()
+    nested_path = "META-INF/jars/rocksdbjni-10.2.1.jar"
+    native_path = "librocksdbjni-osx-arm64.jnilib"
+    try:
+        with zipfile.ZipFile(source_path) as source_archive:
+            nested_bytes = source_archive.read(nested_path)
+            with zipfile.ZipFile(rocksdb_bundle_path) as rocksdb_bundle:
+                native_bytes = rocksdb_bundle.read(native_path)
+
+            nested_output = io.BytesIO()
+            with zipfile.ZipFile(io.BytesIO(nested_bytes)) as nested_archive, zipfile.ZipFile(
+                nested_output, "w", compression=zipfile.ZIP_DEFLATED
+            ) as patched_nested_archive:
+                names = set()
+                for entry in nested_archive.infolist():
+                    names.add(entry.filename)
+                    patched_nested_archive.writestr(entry, nested_archive.read(entry.filename))
+                if native_path not in names:
+                    patched_nested_archive.writestr(native_path, native_bytes, compress_type=zipfile.ZIP_STORED)
+
+            output = io.BytesIO()
+            with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as patched_archive:
+                for entry in source_archive.infolist():
+                    contents = nested_output.getvalue() if entry.filename == nested_path else source_archive.read(entry.filename)
+                    patched_archive.writestr(entry, contents)
+
+        temporary_path = None
+        with tempfile.NamedTemporaryFile(
+            dir=MINECRAFT_MODPACK_CACHE_DIR,
+            prefix=f".{target.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(output.getvalue())
+        os.replace(temporary_path, target)
+    except (OSError, KeyError, zipfile.BadZipFile, RuntimeError) as exc:
+        if "temporary_path" in locals() and temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        if isinstance(exc, RuntimeError):
+            raise
+        raise RuntimeError("voxy_macos_patch_failed") from exc
+    return target
+
+
+def _minecraft_modpack_readme(pack_info):
+    mods = "\n".join(
+        f"- {spec['name']} ({spec['version_number']})"
+        for spec in pack_info["mods"]
+    )
+    return (
+        "Hanplanet Minecraft Client Modpack\n"
+        "==================================\n\n"
+        f"Minecraft Java Edition: {pack_info['minecraft_version']}\n"
+        f"Fabric Loader: {pack_info['loader_version']}\n\n"
+        "Recommended: import the .mrpack file into Modrinth App or Prism Launcher.\n"
+        "Official Launcher: install Fabric first, then copy the contents of the mods folder\n"
+        "into the Fabric profile's mods folder.\n\n"
+        "Included client mods:\n"
+        f"{mods}\n\n"
+        "Server: mc.hanplanet.com\n"
+        "Fabric installation guide: https://docs.fabricmc.net/players/installing-fabric/\n"
+    ).encode("utf-8")
+
+
+def _build_minecraft_modpack_archive(pack_format="mrpack"):
+    """Build or reuse a client modpack archive."""
+    if pack_format not in {"mrpack", "zip"}:
+        raise RuntimeError("invalid_modpack_format")
+
+    pack_info = _resolve_minecraft_client_modpack()
+    version_key = "-".join([
+        pack_info["minecraft_version"],
+        pack_info["loader_version"],
+        MINECRAFT_VOXY_NATIVE_CACHE_MARKER,
+        *(spec["version_id"] for spec in pack_info["mods"]),
+    ])
+    cache_key = hashlib.sha256(version_key.encode("utf-8")).hexdigest()[:20]
+    extension = "mrpack" if pack_format == "mrpack" else "zip"
+    archive_path = MINECRAFT_MODPACK_CACHE_DIR / f"hanplanet-minecraft-{cache_key}.{extension}"
+    if archive_path.is_file() and archive_path.stat().st_size > 0:
+        return archive_path
+
+    MINECRAFT_MODPACK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    temporary_path = MINECRAFT_MODPACK_CACHE_DIR / f".{archive_path.name}.tmp"
+    manifest_specs = []
+    pack_files = {}
+    for spec in pack_info["mods"]:
+        if pack_format == "zip":
+            pack_path = _minecraft_modpack_read_cached_file(spec)
+            prepared_spec = dict(spec)
+            raw_bytes = pack_path.read_bytes()
+            prepared_spec["sha1"] = hashlib.sha1(raw_bytes).hexdigest()
+            prepared_spec["sha512"] = hashlib.sha512(raw_bytes).hexdigest()
+            prepared_spec["size"] = len(raw_bytes)
+            manifest_specs.append(prepared_spec)
+            pack_files[spec["filename"]] = pack_path
+        else:
+            manifest_specs.append(spec)
+            if spec.get("project") == "voxy":
+                pack_files[spec["filename"]] = _minecraft_modpack_read_cached_file(spec)
+
+    manifest_files = [
+        {
+            "path": f"mods/{spec['filename']}",
+            "hashes": {key: value for key, value in {"sha1": spec["sha1"], "sha512": spec["sha512"]}.items() if value},
+            "env": {
+                "client": "required",
+                "server": "required" if spec["project"] in {"fabric-api", "simple-voice-chat", "voxyserver"} else "unsupported",
+            },
+            "downloads": [spec["url"]],
+            "fileSize": spec["size"],
+        }
+        for spec in manifest_specs
+    ]
+    manifest = {
+        "formatVersion": 1,
+        "game": "minecraft",
+        "versionId": f"hanplanet-{pack_info['minecraft_version']}-{cache_key}",
+        "name": f"Hanplanet Minecraft {pack_info['minecraft_version']}",
+        "versionNumber": f"1.0.0+mc{pack_info['minecraft_version']}",
+        "dependencies": {
+            "minecraft": pack_info["minecraft_version"],
+            "fabric-loader": pack_info["loader_version"],
+        },
+        "files": manifest_files,
+    }
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=MINECRAFT_MODPACK_CACHE_DIR,
+            prefix=f".{archive_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+        with zipfile.ZipFile(temporary_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            if pack_format == "mrpack":
+                archive.writestr("modrinth.index.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
+                archive.writestr("overrides/README.txt", _minecraft_modpack_readme(pack_info))
+                for filename, pack_path in pack_files.items():
+                    archive.write(pack_path, f"overrides/mods/{filename}")
+            else:
+                archive.writestr("hanplanet-modpack.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
+                archive.writestr("README.txt", _minecraft_modpack_readme(pack_info))
+                for filename, pack_path in pack_files.items():
+                    archive.write(pack_path, f"mods/{filename}")
+        os.replace(temporary_path, archive_path)
+    except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+        if temporary_path is not None:
+            try:
+                temporary_path.unlink()
+            except OSError:
+                pass
+        raise RuntimeError("modpack_build_failed") from exc
+    return archive_path
+
+
 def read_minecraft_server_status():
     """Read the generated Minecraft status payload, if available."""
     try:
@@ -7267,6 +7874,254 @@ def read_minecraft_server_status():
     except (OSError, json.JSONDecodeError):
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def _minecraft_status_varint(value):
+    """Encode one Minecraft protocol VarInt for a server-list ping."""
+    value = int(value)
+    encoded = bytearray()
+    while True:
+        current = value & 0x7F
+        value >>= 7
+        encoded.append(current | 0x80 if value else current)
+        if not value:
+            return bytes(encoded)
+
+
+def _minecraft_status_read_varint(stream):
+    """Read one Minecraft protocol VarInt from an open socket."""
+    value = 0
+    shift = 0
+    for _ in range(5):
+        current = stream.recv(1)
+        if not current:
+            raise OSError("minecraft_status_connection_closed")
+        byte_value = current[0]
+        value |= (byte_value & 0x7F) << shift
+        if not byte_value & 0x80:
+            return value
+        shift += 7
+    raise OSError("minecraft_status_invalid_varint")
+
+
+def _minecraft_status_read_exact(stream, length):
+    """Read an exact number of bytes from a Minecraft status socket."""
+    chunks = bytearray()
+    while len(chunks) < length:
+        chunk = stream.recv(length - len(chunks))
+        if not chunk:
+            raise OSError("minecraft_status_connection_closed")
+        chunks.extend(chunk)
+    return bytes(chunks)
+
+
+def _minecraft_status_packet(payload):
+    return _minecraft_status_varint(len(payload)) + payload
+
+
+def read_prominence_server_ping():
+    """Read the public Java server-list status for the Prominence server."""
+    host = str(PROMINENCE_STATUS_HOST or "127.0.0.1").strip()
+    address = host.encode("utf-8")
+    handshake = (
+        _minecraft_status_varint(0)
+        + _minecraft_status_varint(763)
+        + _minecraft_status_varint(len(address))
+        + address
+        + struct.pack(">H", PROMINENCE_SERVER_PORT)
+        + _minecraft_status_varint(1)
+    )
+    with socket.create_connection(
+        (host, PROMINENCE_SERVER_PORT),
+        timeout=PROMINENCE_STATUS_TIMEOUT_SECONDS,
+    ) as server_socket:
+        server_socket.sendall(_minecraft_status_packet(handshake) + _minecraft_status_packet(_minecraft_status_varint(0)))
+        packet_length = _minecraft_status_read_varint(server_socket)
+        packet = _minecraft_status_read_exact(server_socket, packet_length)
+        packet_id = packet[0]
+        packet_offset = 1
+        if packet_id & 0x80:
+            packet_offset = 0
+            packet_id = 0
+            packet_id_shift = 0
+            while packet_offset < len(packet) and packet_offset < 5:
+                current = packet[packet_offset]
+                packet_offset += 1
+                packet_id |= (current & 0x7F) << packet_id_shift
+                if not current & 0x80:
+                    break
+                packet_id_shift += 7
+        if packet_id != 0:
+            raise OSError("minecraft_status_unexpected_packet")
+        status_length = packet[packet_offset]
+        status_offset = packet_offset + 1
+        if status_length & 0x80:
+            status_length = 0
+            status_shift = 0
+            status_offset = packet_offset
+            while status_offset < len(packet) and status_offset < packet_offset + 5:
+                current = packet[status_offset]
+                status_offset += 1
+                status_length |= (current & 0x7F) << status_shift
+                if not current & 0x80:
+                    break
+                status_shift += 7
+        status_text = packet[status_offset:status_offset + status_length].decode("utf-8")
+    payload = json.loads(status_text)
+    return payload if isinstance(payload, dict) else {}
+
+
+def build_prominence_player_head_url(uuid_value):
+    """Return a skin-service head URL for a Java player UUID."""
+    try:
+        player_uuid = uuid_lib.UUID(str(uuid_value or "").strip())
+    except (TypeError, ValueError):
+        return ""
+    if player_uuid.int == 0:
+        return ""
+    return PROMINENCE_PLAYER_HEAD_URL_TEMPLATE.format(uuid=player_uuid)
+
+
+PROMINENCE_PLAYER_EVENT_PATTERN = re.compile(
+    r"\]\s+(?:\[[^\]]+\]:\s+)?(?P<name>[A-Za-z0-9_.]{1,32})(?:\[[^\]]+\])?\s+(?P<event>joined the game|left the game|lost connection):?"
+)
+
+
+def _read_tail_text(path, max_bytes=512 * 1024):
+    try:
+        with path.open("rb") as log_file:
+            log_file.seek(0, os.SEEK_END)
+            size = log_file.tell()
+            log_file.seek(max(0, size - max_bytes))
+            return log_file.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def read_prominence_player_states():
+    """Replay recent join/leave messages to supplement anonymous ping samples."""
+    states = {}
+    for path in (PROMINENCE_LAUNCHD_LOG_PATH, PROMINENCE_LATEST_LOG_PATH):
+        for line in _read_tail_text(path).splitlines():
+            match = PROMINENCE_PLAYER_EVENT_PATTERN.search(line)
+            if not match:
+                continue
+            key = match.group("name").casefold()
+            states[key] = {
+                "name": match.group("name"),
+                "online": match.group("event") == "joined the game",
+            }
+    return states
+
+
+def read_prominence_saved_player_uuids():
+    """Return UUIDs with persisted server-side player data."""
+    try:
+        return {
+            path.stem.casefold()
+            for path in PROMINENCE_PLAYERDATA_PATH.glob("*.dat")
+            if path.is_file()
+        }
+    except OSError:
+        return set()
+
+
+def read_prominence_server_status():
+    """Build the RLCraft page status payload without requiring a server mod."""
+    try:
+        ping = read_prominence_server_ping()
+    except (OSError, ValueError, json.JSONDecodeError, struct.error):
+        return {
+            "serverOnline": False,
+            "onlineCount": 0,
+            "maxPlayers": 0,
+            "players": [],
+        }
+
+    player_states = read_prominence_player_states()
+    saved_player_uuids = read_prominence_saved_player_uuids()
+    ping_players = (ping.get("players") or {}) if isinstance(ping, dict) else {}
+    sample = ping_players.get("sample") if isinstance(ping_players, dict) else []
+    ping_sample_names = set()
+    ping_sample_uuids = set()
+    if isinstance(sample, list):
+        for entry in sample:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            uuid_value = str(entry.get("id") or "").strip()
+            if name and name.casefold() != "anonymous player":
+                ping_sample_names.add(name.casefold())
+            if uuid_value:
+                ping_sample_uuids.add(uuid_value.casefold())
+
+    cached_players = []
+    try:
+        parsed_cache = json.loads(PROMINENCE_USERCACHE_PATH.read_text(encoding="utf-8"))
+        if isinstance(parsed_cache, list):
+            cached_players = [entry for entry in parsed_cache if isinstance(entry, dict)]
+    except (OSError, json.JSONDecodeError):
+        cached_players = []
+
+    players = []
+    seen_names = set()
+    for entry in cached_players:
+        name = str(entry.get("name") or "").strip()
+        if not name or name.startswith("MHF_") or name.casefold() in seen_names:
+            continue
+        state = player_states.get(name.casefold(), {})
+        uuid_value = str(entry.get("uuid") or "").strip()
+        uuid_key = uuid_value.casefold()
+        is_online = bool(state.get("online")) or name.casefold() in ping_sample_names
+        is_known_player = (
+            is_online
+            or bool(state)
+            or uuid_key in saved_player_uuids
+            or uuid_key in ping_sample_uuids
+        )
+        if not is_known_player:
+            continue
+        player = {
+            "name": name,
+            "online": is_online,
+            "uuid": uuid_value,
+        }
+        head_url = build_prominence_player_head_url(player["uuid"])
+        if head_url:
+            player["headUrl"] = head_url
+        players.append(player)
+        seen_names.add(name.casefold())
+
+    for key, state in player_states.items():
+        if state.get("online") and key not in seen_names:
+            players.append({"name": state["name"], "online": True})
+            seen_names.add(key)
+
+    if isinstance(sample, list):
+        for entry in sample:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name or name.casefold() == "anonymous player" or name.casefold() in seen_names:
+                continue
+            uuid_value = str(entry.get("id") or "").strip()
+            player = {"name": name, "online": True, "uuid": uuid_value}
+            head_url = build_prominence_player_head_url(uuid_value)
+            if head_url:
+                player["headUrl"] = head_url
+            players.append(player)
+            seen_names.add(name.casefold())
+
+    online_count = ping_players.get("online", 0) if isinstance(ping_players, dict) else 0
+    max_players = ping_players.get("max", 0) if isinstance(ping_players, dict) else 0
+    version = ping.get("version") if isinstance(ping, dict) else {}
+    return {
+        "serverOnline": True,
+        "onlineCount": int(online_count or 0),
+        "maxPlayers": int(max_players or 0),
+        "players": players,
+        "version": version if isinstance(version, dict) else {},
+    }
 
 
 def build_minecraft_player_head_url(uuid_value):
@@ -7316,14 +8171,15 @@ def sanitize_minecraft_status_payload(
                 "online": bool(raw_player.get("online")),
             }
             player_name_key = normalize_minecraft_player_name(raw_player.get("name")).lower()
-            if player_name_key and player_name_key in current_account_name_keys:
+            is_current_account = bool(player_name_key and player_name_key in current_account_name_keys)
+            if is_current_account:
                 player["currentAccount"] = True
             head_url = sanitize_minecraft_player_head_url(raw_player.get("headUrl"))
             if not head_url:
                 head_url = build_minecraft_player_head_url(raw_player.get("uuid"))
             if head_url:
                 player["headUrl"] = head_url
-            if include_private_player_data:
+            if include_private_player_data or is_current_account:
                 uuid_value = str(raw_player.get("uuid") or "").strip()
                 detail = raw_player.get("detail")
                 if uuid_value:
@@ -7456,8 +8312,13 @@ def clean_minecraft_log_text(text):
 
 def read_minecraft_server_log(cursor=None):
     """Read a bounded chunk from the current Minecraft console output buffer."""
+    return _read_bounded_server_log(MINECRAFT_CONSOLE_OUTPUT_PATH, cursor)
+
+
+def _read_bounded_server_log(log_path, cursor=None):
+    """Read a bounded, sanitized chunk from a server console log."""
     try:
-        size = MINECRAFT_CONSOLE_OUTPUT_PATH.stat().st_size
+        size = log_path.stat().st_size
     except OSError:
         return {
             "cursor": 0,
@@ -7481,7 +8342,7 @@ def read_minecraft_server_log(cursor=None):
         drop_partial_first_line = start > 0
 
     try:
-        with MINECRAFT_CONSOLE_OUTPUT_PATH.open("rb") as log_file:
+        with log_path.open("rb") as log_file:
             log_file.seek(start)
             raw_text = log_file.read(size - start).decode("utf-8", errors="replace")
     except OSError:
@@ -7504,6 +8365,272 @@ def read_minecraft_server_log(cursor=None):
         "text": "\n".join(lines),
         "truncated": truncated,
     }
+
+
+def read_prominence_server_log(cursor=None):
+    """Read a bounded chunk from the current Prominence II console log."""
+    return _read_bounded_server_log(PROMINENCE_CONSOLE_OUTPUT_PATH, cursor)
+
+
+def rlcraft_home(request, ui_lang=None):
+    """Render the Prominence II server page through Django for rlc.hanplanet.com."""
+    resolved_lang = resolve_ui_lang(request, ui_lang)
+    is_english = resolved_lang == "en"
+    is_rlcraft_admin = is_minecraft_admin_user(getattr(request, "user", None))
+    current_path = request.get_full_path() or "/"
+    encoded_current_path = quote(current_path, safe="/")
+    meta_description = PROMINENCE_META_DESCRIPTION_EN if is_english else PROMINENCE_META_DESCRIPTION_KO
+    context = {
+        "page_title": "Prominence II Server",
+        "home_label": "Hanplanet",
+        "home_url": build_public_site_nav_url("/"),
+        "sub_label": "Sub",
+        "sub_url": build_public_site_nav_url(reverse("main:sub_lang", kwargs={"ui_lang": resolved_lang})),
+        "rlcraft_server_address": PROMINENCE_SERVER_ADDRESS,
+        "rlcraft_server_version": PROMINENCE_SERVER_VERSION,
+        "rlcraft_status_url": reverse("main:rlcraft_status_json"),
+        "rlcraft_restart_url": reverse("main:rlcraft_restart_server"),
+        "rlcraft_restart_status_url": reverse("main:rlcraft_restart_status_json"),
+        "rlcraft_is_admin": is_rlcraft_admin,
+        "rlcraft_server_log_url": reverse("main:rlcraft_server_log_json") if is_rlcraft_admin else "",
+        "rlcraft_server_command_url": reverse("main:rlcraft_server_command_json") if is_rlcraft_admin else "",
+        "rlcraft_server_log_title": "Prominence II Server Console" if is_english else "Prominence II 서버 콘솔",
+        "rlcraft_server_log_loading_label": "Loading server console." if is_english else "서버 콘솔을 불러오는 중입니다.",
+        "rlcraft_server_log_updated_label": "Console updated." if is_english else "콘솔이 갱신되었습니다.",
+        "rlcraft_server_log_failed_label": "Could not load the server console." if is_english else "서버 콘솔을 불러오지 못했습니다.",
+        "rlcraft_server_command_placeholder": "Enter a server command" if is_english else "서버 명령어 입력",
+        "rlcraft_server_command_send_label": "Run" if is_english else "실행",
+        "rlcraft_server_command_sending_label": "Running" if is_english else "실행 중",
+        "rlcraft_server_command_failed_label": "Command failed" if is_english else "명령 실행 실패",
+        "rlcraft_server_command_empty_label": "Enter a command" if is_english else "명령어를 입력하세요",
+        "rlcraft_restart_title": "Restart Prominence II server" if is_english else "Prominence II 서버 재시작",
+        "rlcraft_restart_message": (
+            "Restart the Prominence II server now? Connected players may be disconnected."
+            if is_english
+            else "Prominence II 서버를 지금 재시작할까요? 접속 중인 유저의 연결이 끊길 수 있습니다."
+        ),
+        "rlcraft_restart_cancel_label": "Cancel" if is_english else "취소",
+        "rlcraft_restart_confirm_label": "Restart" if is_english else "재시작",
+        "rlcraft_restart_failed_label": "The server restart request failed." if is_english else "서버 재시작 요청에 실패했습니다.",
+        "rlcraft_restart_progress_title": "Restarting Prominence II server" if is_english else "Prominence II 서버 재시작 중",
+        "rlcraft_restart_progress_close_label": "Close" if is_english else "닫기",
+        "rlcraft_restart_phase_queued": "Restart request queued." if is_english else "재시작 요청을 대기열에 등록했습니다.",
+        "rlcraft_restart_phase_stopping": "Stopping the server safely." if is_english else "서버를 안전하게 종료하는 중입니다.",
+        "rlcraft_restart_phase_starting": "Starting the server process." if is_english else "서버 프로세스를 다시 시작하는 중입니다.",
+        "rlcraft_restart_phase_ready": "The server is online again." if is_english else "서버가 다시 온라인 상태가 되었습니다.",
+        "rlcraft_restart_phase_failed": "The server restart could not be completed." if is_english else "서버 재시작을 완료하지 못했습니다.",
+        "rlcraft_curseforge_url": PROMINENCE_CURSEFORGE_URL,
+        "rlcraft_korean_patch_url": PROMINENCE_KOREAN_PATCH_URL,
+        "rlcraft_page_splitter_label": "Resize main and side areas" if is_english else "메인 영역과 사이드 영역 크기 조절",
+        "rlcraft_map_url": PROMINENCE_MAP_URL,
+        "rlcraft_players_panel_title": "Players" if is_english else "플레이어",
+        "rlcraft_status_loading_label": "Loading player status." if is_english else "플레이어 상태를 불러오는 중입니다.",
+        "rlcraft_status_failed_label": "Could not load player status." if is_english else "플레이어 상태를 불러오지 못했습니다.",
+        "rlcraft_server_offline_label": "Server offline" if is_english else "서버 오프라인",
+        "rlcraft_players_empty_label": "No players recorded yet." if is_english else "확인된 플레이어가 없습니다.",
+        "rlcraft_online_label": "Online" if is_english else "온라인",
+        "rlcraft_offline_label": "Offline" if is_english else "오프라인",
+        "rlcraft_player_detail_title": "Player details" if is_english else "플레이어 정보",
+        "rlcraft_player_detail_status_label": "Status" if is_english else "상태",
+        "rlcraft_player_detail_platform_label": "Server" if is_english else "서버",
+        "rlcraft_player_detail_uuid_label": "UUID" if is_english else "UUID",
+        "rlcraft_player_detail_platform_value": "Prominence II · Fabric" if is_english else "Prominence II · Fabric",
+        "rlcraft_player_detail_unavailable_label": "Additional player details are not available for this server." if is_english else "이 서버에서는 추가 플레이어 상세 정보를 제공하지 않습니다.",
+        "rlcraft_player_edit_apply_label": "Apply" if is_english else "적용",
+        "rlcraft_player_command_sent_label": "Command sent." if is_english else "명령어를 전송했습니다.",
+        "rlcraft_player_command_failed_label": "Could not send the command." if is_english else "명령어를 전송하지 못했습니다.",
+        "rlcraft_player_command_empty_label": "Select a value first." if is_english else "값을 선택하세요.",
+        "rlcraft_player_game_mode_label": "Game mode" if is_english else "게임모드",
+        "rlcraft_player_effect_label": "Effect" if is_english else "버프",
+        "rlcraft_player_effect_level_label": "Level" if is_english else "수치",
+        "rlcraft_player_effect_duration_label": "Seconds" if is_english else "시간(초)",
+        "rlcraft_player_add_effect_label": "Add effect" if is_english else "버프 적용",
+        "rlcraft_effect_options_json": json.dumps(get_minecraft_effect_options(is_english), ensure_ascii=False),
+        "rlcraft_server_panel_title": "Map" if is_english else "지도",
+        "rlcraft_map_title": "Prominence II world map" if is_english else "Prominence II 월드 지도",
+        "rlcraft_address_label": "Server address" if is_english else "서버 주소",
+        "rlcraft_copy_label": "Copy server address" if is_english else "서버 주소 복사",
+        "rlcraft_copy_feedback": "Copied!" if is_english else "복사됨!",
+        "rlcraft_modpack_title": "Prominence II client modpack" if is_english else "Prominence II 클라이언트 모드팩",
+        "rlcraft_modpack_description": (
+            "Install the official Prominence II: Hasturian Era profile in CurseForge for Minecraft 1.20.1. The server uses Fabric, so launch the Fabric profile and apply the optional Korean patch afterward."
+            if is_english
+            else "CurseForge에서 Minecraft 1.20.1용 공식 Prominence II: Hasturian Era 프로필을 설치하세요. 서버는 Fabric을 사용하므로 Fabric 프로필로 실행한 뒤 필요하면 한국어 패치를 추가합니다."
+        ),
+        "rlcraft_curseforge_label": "Install with CurseForge" if is_english else "CurseForge에서 설치",
+        "rlcraft_download_label": "Korean patch guide" if is_english else "한국어 패치 안내",
+        "rlcraft_install_title": "Installation" if is_english else "설치 방법",
+        "rlcraft_install_steps": (
+            [
+                "Open the official Prominence II: Hasturian Era page in CurseForge and install the Minecraft 1.20.1 profile.",
+                "Launch the installed Fabric profile once from CurseForge so the required mods and configuration are created.",
+                "Select the Prominence II profile, launch Minecraft, and connect to rlc.hanplanet.com.",
+            ]
+            if is_english
+            else [
+                "CurseForge의 공식 Prominence II: Hasturian Era 페이지를 열고 Minecraft 1.20.1 프로필을 설치합니다.",
+                "CurseForge에서 설치된 Fabric 프로필을 한 번 실행해 필요한 모드와 설정을 생성합니다.",
+                "Prominence II 프로필로 Minecraft를 실행한 뒤 rlc.hanplanet.com에 접속합니다.",
+            ]
+        ),
+        "rlcraft_license_note": (
+            "The official CurseForge profile is the required base pack. Use the external Korean patch guide for the localized resources."
+            if is_english
+            else "공식 CurseForge 프로필이 기본 모드팩입니다. 한국어 리소스팩은 외부 한국어 패치 안내에서 확인할 수 있습니다."
+        ),
+        "meta_title": PROMINENCE_META_TITLE,
+        "meta_og_title": PROMINENCE_META_TITLE,
+        "meta_description": meta_description,
+        "meta_og_description": meta_description,
+        "meta_canonical_url": f"https://{RLCRAFT_PUBLIC_HOST}{request.path or '/'}",
+        "meta_og_url": f"https://{RLCRAFT_PUBLIC_HOST}{request.path or '/'}",
+        "meta_site_name": "Hanplanet Prominence II",
+        "meta_og_image": MINECRAFT_SERVER_IMAGE_URL,
+        "meta_twitter_image": MINECRAFT_SERVER_IMAGE_URL,
+        "meta_image_alt": "Hanplanet Prominence II server preview image",
+        "meta_robots": "index,follow",
+        "sub_category": "game",
+    }
+    apply_ui_context(request, context, resolved_lang)
+    context["is_root_entry"] = False
+    context["handrive_login_url"] = f"{reverse('main:handrive_login_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
+    context["handrive_signup_url"] = f"{reverse('main:handrive_signup_lang', kwargs={'ui_lang': resolved_lang})}?next={encoded_current_path}"
+    context["handrive_logout_url"] = reverse("main:handrive_logout_lang", kwargs={"ui_lang": resolved_lang})
+    if request.user.is_authenticated:
+        portfolio_profile = PortfolioProfile.objects.filter(user=request.user).only("profile_img").first()
+        context["account_display_name"] = get_account_display_name(request.user)
+        context["account_profile_image_url"] = (
+            portfolio_profile.profile_img.url if portfolio_profile and portfolio_profile.profile_img else ""
+        )
+        context["account_email"] = str(request.user.email or "").strip()
+        context["account_profile_upload_url"] = reverse(
+            "main:account_profile_image_upload_lang",
+            kwargs={"ui_lang": resolved_lang},
+        )
+        context["account_logout_form_id"] = "auth-logout-form-rlcraft"
+        context["account_logout_next"] = current_path
+        context["account_logout_url"] = context["handrive_logout_url"]
+
+    response = render(request, "main/rlcraft_home.html", context)
+    response["Cache-Control"] = "no-cache"
+    response["X-Hanplanet-App"] = "django-prominence-ii"
+    return response
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def rlcraft_restart_server(request):
+    """Queue a restart for the Prominence II launchd service for superusers only."""
+    if not is_rlcraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+        raise Http404
+
+    current_state = read_prominence_restart_state()
+    if prominence_restart_is_active(current_state):
+        return JsonResponse(
+            {"ok": True, "mode": "in_progress", "state": current_state},
+            status=202,
+        )
+
+    try:
+        restart_mode = request_prominence_server_restart()
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.exception("Prominence II restart request failed: %s", exc)
+        return JsonResponse({"ok": False, "error": "restart_failed"}, status=503)
+
+    logger.info(
+        "Prominence II restart requested by superuser=%s mode=%s",
+        getattr(request.user, "username", ""),
+        restart_mode,
+    )
+    return JsonResponse(
+        {
+            "ok": True,
+            "mode": restart_mode,
+            "state": read_prominence_restart_state(),
+        },
+        status=202,
+    )
+
+
+@cache_control(no_store=True)
+@require_GET
+def rlcraft_restart_status_json(request):
+    """Expose restart progress to the RLCraft superuser only."""
+    if not is_rlcraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+        raise Http404
+
+    state = read_prominence_restart_state()
+    return JsonResponse(
+        {
+            "ok": True,
+            "active": prominence_restart_is_active(state),
+            "phase": state.get("phase", "idle"),
+            "updated_at": state.get("updated_at", 0.0),
+        }
+    )
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def minecraft_restart_server(request):
+    """Queue a restart for the Minecraft launchd service for superusers only."""
+    if (
+        not is_minecraft_host(request)
+        or not _ensure_valid_minecraft_account_session(request)
+        or not is_minecraft_admin_user(getattr(request, "user", None))
+    ):
+        raise Http404
+
+    current_state = read_minecraft_restart_state()
+    if minecraft_restart_is_active(current_state):
+        return JsonResponse(
+            {"ok": True, "mode": "in_progress", "state": current_state},
+            status=202,
+        )
+
+    try:
+        restart_mode = request_minecraft_server_restart()
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.exception("Minecraft restart request failed: %s", exc)
+        return JsonResponse({"ok": False, "error": "restart_failed"}, status=503)
+
+    logger.info(
+        "Minecraft restart requested by superuser=%s mode=%s",
+        getattr(request.user, "username", ""),
+        restart_mode,
+    )
+    return JsonResponse(
+        {
+            "ok": True,
+            "mode": restart_mode,
+            "state": read_minecraft_restart_state(),
+        },
+        status=202,
+    )
+
+
+@cache_control(no_store=True)
+@require_GET
+def minecraft_restart_status_json(request):
+    """Expose Minecraft restart progress to the Minecraft superuser only."""
+    if (
+        not is_minecraft_host(request)
+        or not _ensure_valid_minecraft_account_session(request)
+        or not is_minecraft_admin_user(getattr(request, "user", None))
+    ):
+        raise Http404
+
+    state = read_minecraft_restart_state()
+    return JsonResponse(
+        {
+            "ok": True,
+            "active": minecraft_restart_is_active(state),
+            "phase": state.get("phase", "idle"),
+            "updated_at": state.get("updated_at", 0.0),
+        }
+    )
 
 
 def minecraft_home(request, ui_lang=None):
@@ -7552,6 +8679,36 @@ def minecraft_home(request, ui_lang=None):
         "server_version_text": server_version_text,
         "bedrock_server_version_text": bedrock_server_version_text,
         "status_url": reverse("main:minecraft_status_json"),
+        "minecraft_modpack_url": reverse("main:minecraft_modpack_download"),
+        "minecraft_modpack_zip_url": f"{reverse('main:minecraft_modpack_download')}?format=zip",
+        "minecraft_modpack_server_version": server_version or "26.2",
+        "minecraft_modpack_loader_version": get_minecraft_fabric_loader_version(),
+        "minecraft_modpack_panel_title": "Server Modpack Setup" if is_english else "서버용 모드팩 설치",
+        "minecraft_modpack_fabric_step": "Open Fabric installer" if is_english else "Fabric 설치 페이지 열기",
+        "minecraft_modpack_download_step": "Download mods ZIP" if is_english else "모드 ZIP 다운로드",
+        "minecraft_modpack_apply_step": (
+            f"Launch Fabric {server_version or '26.2'} in the official Minecraft Launcher, then join mc.hanplanet.com."
+            if is_english
+            else f"공식 Minecraft 런처에서 Fabric {server_version or '26.2'}를 실행한 뒤 mc.hanplanet.com에 접속하세요."
+        ),
+        "minecraft_modpack_fabric_link_label": "Open Fabric installer" if is_english else "Fabric 설치 페이지",
+        "minecraft_modpack_mrpack_label": "Download .mrpack" if is_english else ".mrpack 다운로드",
+        "minecraft_modpack_zip_label": "Download mods ZIP" if is_english else "모드 ZIP 다운로드",
+        "minecraft_modpack_import_hint": (
+            "Extract the ZIP and copy every .jar file from its mods folder to the Fabric profile's mods folder."
+            if is_english
+            else "ZIP 압축을 풀고 mods 폴더 안의 .jar 파일을 모두 Fabric 프로필의 mods 폴더에 복사하세요."
+        ),
+        "minecraft_modpack_manual_hint": (
+            "macOS:   ~/Library/Application Support/minecraft/mods\nWindows: %AppData%\\.minecraft\\mods"
+            if is_english
+            else "macOS:   ~/Library/Application Support/minecraft/mods\nWindows: %AppData%\\.minecraft\\mods"
+        ),
+        "minecraft_modpack_mods_label": (
+            "Included: Fabric API, Sodium, Iris, Simple Voice Chat, Voxy, VoxyServer, Punchy!"
+            if is_english
+            else "포함 모드: Fabric API, Sodium, Iris, Simple Voice Chat, Voxy, VoxyServer, Punchy!"
+        ),
         "page_title": "Minecraft Server",
         "home_label": "Hanplanet",
         "home_url": build_public_site_nav_url("/"),
@@ -7644,7 +8801,8 @@ def minecraft_home(request, ui_lang=None):
         "server_address_copy_feedback_label": "Copied!" if is_english else "복사됨!",
         "server_version_label": "Version" if is_english else "버전",
         "server_hint": "",
-        "links_panel_title": "Plugins" if is_english else "플러그인",
+        "links_panel_title": "Server Modpack Setup" if is_english else "서버용 모드팩 설치",
+        "minecraft_plugin_list_label": "Plugin list" if is_english else "플러그인 목록",
         "server_log_title": "Server Console" if is_english else "서버 콘솔",
         "minecraft_command_help_title": "Server command help" if is_english else "서버 명령어 도움말",
         "minecraft_command_help_html": build_page_help_html(resolved_lang, "minecraft", handrive_text),
@@ -7654,6 +8812,24 @@ def minecraft_home(request, ui_lang=None):
         "server_log_failed_label": "Unavailable" if is_english else "확인 실패",
         "server_log_url": reverse("main:minecraft_server_log_json") if minecraft_admin_log_enabled else "",
         "server_command_url": reverse("main:minecraft_server_command_json") if minecraft_admin_log_enabled else "",
+        "minecraft_restart_url": reverse("main:minecraft_restart_server") if minecraft_admin_log_enabled else "",
+        "minecraft_restart_status_url": reverse("main:minecraft_restart_status_json") if minecraft_admin_log_enabled else "",
+        "minecraft_restart_title": "Restart Minecraft server" if is_english else "Minecraft 서버 재시작",
+        "minecraft_restart_message": (
+            "Restart the Minecraft server now? Connected players may be disconnected."
+            if is_english
+            else "Minecraft 서버를 지금 재시작할까요? 접속 중인 유저의 연결이 끊길 수 있습니다."
+        ),
+        "minecraft_restart_cancel_label": "Cancel" if is_english else "취소",
+        "minecraft_restart_confirm_label": "Restart" if is_english else "재시작",
+        "minecraft_restart_failed_label": "The Minecraft server restart request failed." if is_english else "Minecraft 서버 재시작 요청에 실패했습니다.",
+        "minecraft_restart_progress_title": "Restarting Minecraft server" if is_english else "Minecraft 서버 재시작 중",
+        "minecraft_restart_progress_close_label": "Close" if is_english else "닫기",
+        "minecraft_restart_phase_queued": "Restart request queued." if is_english else "재시작 요청을 대기열에 등록했습니다.",
+        "minecraft_restart_phase_stopping": "Stopping the server safely." if is_english else "서버를 안전하게 종료하는 중입니다.",
+        "minecraft_restart_phase_starting": "Starting the server process." if is_english else "서버 프로세스를 다시 시작하는 중입니다.",
+        "minecraft_restart_phase_ready": "The server is online again." if is_english else "서버가 다시 온라인 상태가 되었습니다.",
+        "minecraft_restart_phase_failed": "The server restart could not be completed." if is_english else "서버 재시작을 완료하지 못했습니다.",
         "server_command_placeholder": (
             "Enter server command"
             if is_english
@@ -7790,6 +8966,31 @@ def minecraft_home(request, ui_lang=None):
 
 
 @cache_control(no_store=True)
+@require_http_methods(["GET", "HEAD"])
+def minecraft_modpack_download(request):
+    """Generate a client modpack matched to the live Fabric server."""
+    if not is_minecraft_host(request):
+        raise Http404
+
+    pack_format = str(request.GET.get("format") or "mrpack").strip().lower()
+    try:
+        archive_path = _build_minecraft_modpack_archive(pack_format)
+    except RuntimeError as exc:
+        logger.warning("Minecraft modpack generation failed: %s", exc)
+        return JsonResponse({"ok": False, "error": "modpack_unavailable"}, status=503)
+
+    if pack_format == "zip":
+        content_type = "application/zip"
+        filename = "hanplanet-minecraft-modpack.zip"
+    else:
+        content_type = "application/x-modrinth-modpack"
+        filename = "hanplanet-minecraft-modpack.mrpack"
+    response = FileResponse(archive_path.open("rb"), content_type=content_type, as_attachment=True, filename=filename)
+    response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
 def minecraft_status_json(request):
     """Serve the generated Minecraft status JSON through Django."""
     if not is_minecraft_host(request):
@@ -7803,7 +9004,11 @@ def minecraft_status_json(request):
             "maxPlayers": 0,
             "players": [],
         }
-    minecraft_account_names = get_current_minecraft_account_names(getattr(request, "user", None)) if has_valid_account_session else []
+    minecraft_account_names = (
+        get_current_minecraft_account_names(getattr(request, "user", None))
+        if has_valid_account_session
+        else []
+    )
     payload = sanitize_minecraft_status_payload(
         payload,
         include_private_player_data=has_valid_account_session and is_minecraft_admin_user(getattr(request, "user", None)),
@@ -7811,6 +9016,75 @@ def minecraft_status_json(request):
     )
     response = JsonResponse(payload)
     response["X-Hanplanet-App"] = "django-minecraft"
+    return response
+
+
+@cache_control(no_store=True)
+@require_http_methods(["GET", "HEAD"])
+def rlcraft_status_json(request):
+    """Serve the Prominence II player status for the RLCraft subdomain."""
+    if not is_rlcraft_host(request):
+        raise Http404
+    response = JsonResponse(read_prominence_server_status())
+    response["X-Hanplanet-App"] = "django-prominence-ii"
+    return response
+
+
+@cache_control(no_store=True)
+@require_http_methods(["GET"])
+def rlcraft_server_log_json(request):
+    """Serve a bounded Prominence II console tail to superusers on the RLC host."""
+    if not is_rlcraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+        raise Http404
+
+    cursor = None
+    cursor_value = str(request.GET.get("cursor") or "").strip()
+    if cursor_value:
+        try:
+            cursor = max(0, int(cursor_value))
+        except ValueError:
+            cursor = None
+
+    response = JsonResponse(read_prominence_server_log(cursor))
+    response["X-Hanplanet-App"] = "django-prominence-ii"
+    return response
+
+
+@cache_control(no_store=True)
+@csrf_protect
+@require_http_methods(["POST"])
+def rlcraft_server_command_json(request):
+    """Execute a Prominence II command through its stdin FIFO for superusers only."""
+    if not is_rlcraft_host(request) or not is_minecraft_admin_user(getattr(request, "user", None)):
+        raise Http404
+
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        payload = {}
+
+    command = normalize_minecraft_command(payload.get("command") or request.POST.get("command"))
+    if not command:
+        return JsonResponse({"ok": False, "error": "invalid_command"}, status=400)
+
+    try:
+        write_prominence_console_command(command)
+    except RuntimeError as exc:
+        logger.warning(
+            "Prominence II server command failed: user=%s command=%r error=%s",
+            getattr(getattr(request, "user", None), "username", ""),
+            command,
+            exc,
+        )
+        return JsonResponse({"ok": False, "error": "console_unavailable"}, status=503)
+
+    logger.info(
+        "Prominence II server command sent: user=%s command=%r",
+        getattr(getattr(request, "user", None), "username", ""),
+        command,
+    )
+    response = JsonResponse({"ok": True})
+    response["X-Hanplanet-App"] = "django-prominence-ii"
     return response
 
 
@@ -9572,6 +10846,7 @@ def ProjectDetail(request, project_id, ui_lang=None):
     content_md = project.content_en if use_english_content else project.content
     project.content = render_markdown_with_raw_html(content_md)
     context["project"] = project
+    context["load_markdown_mermaid"] = True
     return render(request, 'main/ProjectDetail.html', context)
 
 
@@ -9591,6 +10866,7 @@ def ProjectDetailByUser(request, user_id, project_number, ui_lang=None):
     context["project"] = project
     context["portfolio_owner"] = owner
     context["portfolio_owner_username"] = owner.username
+    context["load_markdown_mermaid"] = True
     return render(request, "main/ProjectDetail.html", context)
 
 
@@ -9617,6 +10893,7 @@ def DummyProjectDetail(request, sample_id, ui_lang=None):
         content=render_markdown_with_raw_html(sample["content"]),
     )
     context["project"] = project
+    context["load_markdown_mermaid"] = True
     context["meta_title"] = f"{sample['title']} | Hanplanet"
     context["meta_og_title"] = context["meta_title"]
     context["meta_description"] = (
@@ -12446,7 +13723,12 @@ def _normalize_translation_lang(raw_value, fallback):
 
 def _clean_translation_output(text):
     """Trim common wrapper quotes/code fences so the UI gets plain translated text."""
-    cleaned = sanitize_text(text).strip()
+    # Translation responses may legitimately be longer than the default 500
+    # character chat-message limit.  Applying that default here silently
+    # truncated the model response before the structured parser and made the
+    # translator row end in the middle of a sentence.  Keep the HTML/tag
+    # sanitisation, but do not clamp the response length at this boundary.
+    cleaned = sanitize_text(text, max_length=None).strip()
     if cleaned.startswith("```") and cleaned.endswith("```"):
         cleaned = re.sub(r"^\s*```[^\n]*\n?", "", cleaned)
         cleaned = re.sub(r"\n?```\s*$", "", cleaned)

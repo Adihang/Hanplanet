@@ -457,17 +457,11 @@
     function setModalOpen(open) {
         if (!modal) return;
         modal.hidden = !open;
-        if (open && handriveCloseButton) {
-            handriveCloseButton.focus();
-        }
     }
 
     function setSourceModalOpen(open) {
         if (!sourceModal) return;
         sourceModal.hidden = !open;
-        if (open && sourceLocalButton) {
-            sourceLocalButton.focus();
-        }
     }
 
     function buildApiUrl(baseUrl, params) {

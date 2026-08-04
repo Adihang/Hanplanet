@@ -1,0 +1,23 @@
+{% include "popup/handrive/_confirm_modal.html" with modal_id="minecraftRestartModal" backdrop_id="minecraft-restart-backdrop" title_id="minecraft-restart-title" message_id="minecraft-restart-message" cancel_button_id="minecraft-restart-cancel-btn" confirm_button_id="minecraft-restart-confirm-btn" title_text=minecraft_restart_title message_text=minecraft_restart_message cancel_text=minecraft_restart_cancel_label confirm_text=minecraft_restart_confirm_label %}
+<div id="minecraftRestartProgressModal" class="handrive-help-modal minecraft-restart-progress-modal" hidden>
+    <div class="handrive-help-modal-backdrop site-modal-backdrop" id="minecraft-restart-progress-backdrop"></div>
+    <div class="handrive-help-modal-dialog site-modal-dialog minecraft-restart-progress-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="minecraft-restart-progress-title" aria-describedby="minecraft-restart-progress-status">
+        <header class="handrive-help-modal-head site-modal-head">
+            <h2 class="handrive-popup-title handrive-help-modal-title" id="minecraft-restart-progress-title">{{ minecraft_restart_progress_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="minecraft-restart-progress-close-btn" close_label=minecraft_restart_progress_close_label %}
+        </header>
+        <div class="minecraft-restart-progress-body site-modal-body">
+            <div class="minecraft-restart-progress-status" id="minecraft-restart-progress-status" role="status" aria-live="polite">
+                <span class="site-loading-spinner" aria-hidden="true"></span>
+                <span id="minecraft-restart-progress-message">{{ minecraft_restart_phase_queued }}</span>
+            </div>
+            <ol class="minecraft-restart-progress-steps" aria-label="{{ minecraft_restart_progress_title }}">
+                <li class="minecraft-restart-progress-step" data-minecraft-restart-phase="queued">{{ minecraft_restart_phase_queued }}</li>
+                <li class="minecraft-restart-progress-step" data-minecraft-restart-phase="stopping">{{ minecraft_restart_phase_stopping }}</li>
+                <li class="minecraft-restart-progress-step" data-minecraft-restart-phase="starting">{{ minecraft_restart_phase_starting }}</li>
+                <li class="minecraft-restart-progress-step" data-minecraft-restart-phase="ready">{{ minecraft_restart_phase_ready }}</li>
+            </ol>
+            <p class="minecraft-restart-progress-note" id="minecraft-restart-progress-note"></p>
+        </div>
+    </div>
+</div>

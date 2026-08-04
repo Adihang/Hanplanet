@@ -112,9 +112,6 @@
             }
             logoutModal.hidden = !opened;
             if (opened) {
-                if (logoutCancelButton) {
-                    logoutCancelButton.focus();
-                }
                 return;
             }
             if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {

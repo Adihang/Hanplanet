@@ -57,6 +57,14 @@
     const encounterOverlayNode = root.querySelector('[data-game-encounter-overlay]');
     const encounterMessageNode = root.querySelector('[data-game-encounter-message]');
     const encounterCountdownNode = root.querySelector('[data-game-encounter-countdown]');
+    const raiseSpeakiBirthOverlay = root.querySelector('[data-game-raise-speaki-birth-overlay]');
+    const raiseSpeakiBirthTitleNode = root.querySelector('[data-game-raise-speaki-birth-title]');
+    const raiseSpeakiBirthCountdownNode = root.querySelector('[data-game-raise-speaki-birth-countdown]');
+    const raiseSpeakiWinnerOverlay = root.querySelector('[data-game-raise-speaki-winner-overlay]');
+    const raiseSpeakiWinnerTitleNode = root.querySelector('[data-game-raise-speaki-winner-title]');
+    const raiseSpeakiWinnerCharacterNode = root.querySelector('[data-game-raise-speaki-winner-character]');
+    const raiseSpeakiWinnerNameNode = root.querySelector('[data-game-raise-speaki-winner-name]');
+    const raiseSpeakiWinnerCountdownNode = root.querySelector('[data-game-raise-speaki-winner-countdown]');
     const confettiLayer = root.querySelector('[data-game-confetti-layer]');
     const pingNode = root.querySelector('[data-game-ping]');
     const sharedLivesNode = root.querySelector('[data-game-shared-lives]');
@@ -95,6 +103,10 @@
     const deathRespawnLabel = root.getAttribute('data-death-respawn-label') || 'Respawn';
     const deathNoLivesLabel = root.getAttribute('data-death-no-lives-label') || 'No Lives Left';
     const deathSpectateEmptyLabel = root.getAttribute('data-death-spectate-empty-label') || 'No players to spectate';
+    const raiseSpeakiWinnerTitleLabel = root.getAttribute('data-raise-speaki-winner-title') || '제가 진짜 스피키에요!';
+    const raiseSpeakiWinnerRestartLabel = root.getAttribute('data-raise-speaki-winner-restart') || '{count}초 뒤 다시 시작';
+    const raiseSpeakiBirthTitleLabel = root.getAttribute('data-raise-speaki-birth-title') || '스피키가 탄생 했습니다.';
+    const raiseSpeakiBirthCountdownLabel = root.getAttribute('data-raise-speaki-birth-countdown') || '{count}초 후 스피키 승리';
     const skinLockedLabel = window.document.documentElement.lang === 'en' ? 'Locked' : '잠김';
     const playerName = root.getAttribute('data-player-name') || 'Player';
     const skinCatalog = (function () {
@@ -191,11 +203,9 @@
     const viewZoom = 4.266666666666667;
     const smallPlayerSpriteThresholdPx = 26;
     const renderOverscan = 2;
-    const cameraDeadZoneRatioX = 0.16;
-    const cameraDeadZoneRatioY = 0.2;
-    const cameraLeadRatioX = 0.12;
-    const cameraLeadRatioY = 0.14;
-    const cameraLeadSpeedThreshold = 18;
+    const cameraLeadMaxRatioX = 0.28;
+    const cameraLeadMaxRatioY = 0.3;
+    const cameraLeadSmoothingPerSecond = 5.5;
     const remoteRenderDelaySeconds = 0.06;
     const MUSIC_MUTED_STORAGE_KEY = 'bumpercar_spiky_music_muted';
     const SFX_MUTED_STORAGE_KEY = 'bumpercar_spiky_sfx_muted';
@@ -259,6 +269,7 @@
     let lastRenderTime = 0;
     let cameraX = worldSize / 2;
     let cameraY = worldSize / 2;
+    let cameraLeadSmoothedRatio = 0;
     let predictedSelf = null;
     let renderedSelf = null;
     let currentMoveSpeed = basePlayerSpeedPerSecond;
@@ -289,6 +300,9 @@
     let encounterCountdownSeconds = 0;
     let encounterFinaleActive = false;
     let encounterFinaleUntil = 0;
+    let raiseSpeakiWinnerPhase = '';
+    let raiseSpeakiWinnerCountdownSeconds = 0;
+    let raiseSpeakiWinner = null;
     let confettiParticles = [];
     let lastConfettiSpawnAt = 0;
     let lastSentInputSignature = '';
@@ -991,6 +1005,92 @@
         updateBackgroundMusic();
     };
 
+    const clearRaiseSpeakiWinnerInput = function () {
+        input.up = false;
+        input.down = false;
+        input.left = false;
+        input.right = false;
+        input.boost = false;
+        input.special = false;
+        keyboardDirectionInput.up = false;
+        keyboardDirectionInput.down = false;
+        keyboardDirectionInput.left = false;
+        keyboardDirectionInput.right = false;
+        mouseDirectionInput.up = false;
+        mouseDirectionInput.down = false;
+        mouseDirectionInput.left = false;
+        mouseDirectionInput.right = false;
+        mouseMoveActive = false;
+        mouseBoostRequested = false;
+        mouseLeftHeld = false;
+        mouseRightHeld = false;
+        syncDirectionalInput();
+        resetJoystick();
+        currentMoveSpeed = 0;
+        boostState = 'idle';
+    };
+
+    const setRaiseSpeakiWinnerOverlayState = function () {
+        const hasWinner = Boolean(raiseSpeakiWinner);
+        const visible = raiseSpeakiWinnerPhase === 'result' && hasWinner;
+        const birthCountdownVisible = raiseSpeakiWinnerPhase === 'countdown' && hasWinner;
+        if (raiseSpeakiBirthOverlay) {
+            raiseSpeakiBirthOverlay.hidden = !birthCountdownVisible;
+        }
+        if (raiseSpeakiWinnerOverlay) {
+            raiseSpeakiWinnerOverlay.hidden = !visible;
+        }
+        root.classList.toggle('is-raise-speaki-winner-frozen', visible);
+        if (!hasWinner) {
+            return;
+        }
+        if (raiseSpeakiBirthTitleNode) {
+            raiseSpeakiBirthTitleNode.textContent = raiseSpeakiBirthTitleLabel;
+        }
+        if (raiseSpeakiBirthCountdownNode) {
+            raiseSpeakiBirthCountdownNode.textContent = raiseSpeakiBirthCountdownLabel.replace(
+                '{count}',
+                String(Math.max(0, raiseSpeakiWinnerCountdownSeconds))
+            );
+        }
+        if (raiseSpeakiWinnerTitleNode) {
+            raiseSpeakiWinnerTitleNode.textContent = raiseSpeakiWinnerTitleLabel;
+        }
+        if (raiseSpeakiWinnerNameNode) {
+            raiseSpeakiWinnerNameNode.textContent = raiseSpeakiWinner.displayName || raiseSpeakiWinner.id || '';
+        }
+        if (raiseSpeakiWinnerCountdownNode) {
+            raiseSpeakiWinnerCountdownNode.textContent = raiseSpeakiWinnerRestartLabel.replace(
+                '{count}',
+                String(Math.max(0, raiseSpeakiWinnerCountdownSeconds))
+            );
+        }
+        if (raiseSpeakiWinnerCharacterNode) {
+            const winnerSkin = getSkinConfig(raiseSpeakiWinner.skinName || 'default');
+            const winnerImageUrl = getManagedImageSource(winnerSkin.previewIcon) || getManagedImageSource(winnerSkin.legacyIcon);
+            raiseSpeakiWinnerCharacterNode.src = winnerImageUrl || '';
+            raiseSpeakiWinnerCharacterNode.alt = raiseSpeakiWinner.displayName || raiseSpeakiWinner.id || '';
+        }
+        if (!visible) {
+            return;
+        }
+        clearRaiseSpeakiWinnerInput();
+    };
+
+    const updateRaiseSpeakiWinnerStateFromPlayer = function (player) {
+        if (!player) {
+            return;
+        }
+        raiseSpeakiWinnerPhase = String(player.raiseSpeakiWinnerPhase || '');
+        raiseSpeakiWinnerCountdownSeconds = typeof player.raiseSpeakiWinnerCountdownSeconds === 'number'
+            ? Math.max(0, Math.round(player.raiseSpeakiWinnerCountdownSeconds))
+            : 0;
+        raiseSpeakiWinner = player.raiseSpeakiWinner && typeof player.raiseSpeakiWinner === 'object'
+            ? player.raiseSpeakiWinner
+            : null;
+        setRaiseSpeakiWinnerOverlayState();
+    };
+
     const setIdleModalOpen = function (opened) {
         if (!idleModal) {
             return;
@@ -1211,6 +1311,10 @@
         encounterCountdownSeconds = 0;
         encounterFinaleActive = false;
         encounterFinaleUntil = 0;
+        raiseSpeakiWinnerPhase = '';
+        raiseSpeakiWinnerCountdownSeconds = 0;
+        raiseSpeakiWinner = null;
+        setRaiseSpeakiWinnerOverlayState();
         stopBackgroundMusic();
         spectateTargetId = '';
         setSharedLives(selfLevel, selfCurrentHealth, selfMaxHealth);
@@ -2698,6 +2802,24 @@
         };
     };
 
+    const getCameraLeadSpeedRatio = function (player, directionMagnitude) {
+        if (!player || directionMagnitude <= 0.001) {
+            return 0;
+        }
+
+        const playerProfile = getPlayerSkinProfile(player.skinName || activeSelfSkinName || selectedSkinName);
+        const maxCameraSpeed = Math.max(1, Number(playerProfile.maxBoostSpeed || playerProfile.baseSpeed || 1));
+        const reportedSpeed = player.id === selfId
+            ? Number(currentMoveSpeed || 0)
+            : Number(player.currentSpeed || 0);
+        const velocitySpeed = Math.hypot(Number(player.velocityX || 0), Number(player.velocityY || 0));
+        const movementSpeed = Number.isFinite(reportedSpeed) && reportedSpeed > 0
+            ? reportedSpeed
+            : velocitySpeed;
+
+        return Math.max(0, Math.min(1, movementSpeed / maxCameraSpeed));
+    };
+
     const updateVisualAnimation = function (visual, deltaSeconds) {
         if (!visual) {
             return;
@@ -3163,6 +3285,14 @@
                 serverPlayers = Array.from(serverPlayerMap.values());
                 const selfPlayer = serverPlayerMap.get(selfId) || null;
                 updateEncounterStateFromPlayer(
+                    selfPlayer ||
+                    serverPlayers.find(function (player) {
+                        return !player.isHouse;
+                    }) ||
+                    serverPlayers[0] ||
+                    null
+                );
+                updateRaiseSpeakiWinnerStateFromPlayer(
                     selfPlayer ||
                     serverPlayers.find(function (player) {
                         return !player.isHouse;
@@ -5235,7 +5365,8 @@
         const effectiveZoom = getEffectiveZoom();
 
         let inputVector = getInputVector();
-        if (encounterFinaleActive || selfDeathActive) {
+        const inputBlockedByRoundState = encounterFinaleActive || selfDeathActive || raiseSpeakiWinnerPhase === 'result';
+        if (inputBlockedByRoundState) {
             input.up = false;
             input.down = false;
             input.left = false;
@@ -5249,7 +5380,7 @@
             input.boost = false;
             currentMoveSpeed = serverReportedMoveSpeed;
             boostState = 'idle';
-        } else {
+        } else if (!inputBlockedByRoundState) {
             updateMoveSpeed(deltaSeconds, inputVector);
         }
         const movementVector = (boostState === 'charging' || boostState === 'cooldown')
@@ -5677,39 +5808,29 @@
         }
         const viewportWorldWidth = getViewportDisplayWidth() / effectiveZoom;
         const viewportWorldHeight = getViewportDisplayHeight() / effectiveZoom;
-        const deadZoneWidth = viewportWorldWidth * cameraDeadZoneRatioX;
-        const deadZoneHeight = viewportWorldHeight * cameraDeadZoneRatioY;
-        const currentCenterX = cameraX + viewportWorldWidth / 2;
-        const currentCenterY = cameraY + viewportWorldHeight / 2;
         let desiredCenterX = cameraTargetPlayer.x;
         let desiredCenterY = cameraTargetPlayer.y;
         const cameraTargetVisual = getPlayerVisual(cameraTargetPlayer.id);
         const cameraLeadVector = getPlayerDirectionVector(cameraTargetPlayer, cameraTargetVisual);
         const cameraLeadMagnitude = Math.hypot(cameraLeadVector.dx, cameraLeadVector.dy);
-        const cameraIsMoving = cameraLeadMagnitude > cameraLeadSpeedThreshold;
-        if (cameraLeadMagnitude > cameraLeadSpeedThreshold) {
-            desiredCenterX += (cameraLeadVector.dx / cameraLeadMagnitude) * viewportWorldWidth * cameraLeadRatioX;
-            desiredCenterY += (cameraLeadVector.dy / cameraLeadMagnitude) * viewportWorldHeight * cameraLeadRatioY;
+        const cameraLeadTargetRatio = getCameraLeadSpeedRatio(cameraTargetPlayer, cameraLeadMagnitude);
+        const cameraLeadBlend = 1 - Math.exp(-cameraLeadSmoothingPerSecond * deltaSeconds);
+        cameraLeadSmoothedRatio += (cameraLeadTargetRatio - cameraLeadSmoothedRatio) * cameraLeadBlend;
+        if (cameraLeadSmoothedRatio < 0.0005) {
+            cameraLeadSmoothedRatio = 0;
         }
-        let targetCenterX = currentCenterX;
-        let targetCenterY = currentCenterY;
-
-        if (!cameraIsMoving) {
-            targetCenterX = desiredCenterX;
-            targetCenterY = desiredCenterY;
-        } else {
-            if (desiredCenterX < currentCenterX - deadZoneWidth) {
-                targetCenterX = desiredCenterX + deadZoneWidth;
-            } else if (desiredCenterX > currentCenterX + deadZoneWidth) {
-                targetCenterX = desiredCenterX - deadZoneWidth;
-            }
-
-            if (desiredCenterY < currentCenterY - deadZoneHeight) {
-                targetCenterY = desiredCenterY + deadZoneHeight;
-            } else if (desiredCenterY > currentCenterY + deadZoneHeight) {
-                targetCenterY = desiredCenterY - deadZoneHeight;
-            }
+        if (cameraLeadMagnitude > 0.001 && cameraLeadSmoothedRatio > 0) {
+            desiredCenterX += (cameraLeadVector.dx / cameraLeadMagnitude) * viewportWorldWidth * cameraLeadMaxRatioX * cameraLeadSmoothedRatio;
+            desiredCenterY += (cameraLeadVector.dy / cameraLeadMagnitude) * viewportWorldHeight * cameraLeadMaxRatioY * cameraLeadSmoothedRatio;
         }
+        const minCameraCenterX = Math.min(worldSize / 2, viewportWorldWidth / 2);
+        const maxCameraCenterX = Math.max(worldSize / 2, worldSize - viewportWorldWidth / 2);
+        const minCameraCenterY = Math.min(worldSize / 2, viewportWorldHeight / 2);
+        const maxCameraCenterY = Math.max(worldSize / 2, worldSize - viewportWorldHeight / 2);
+        desiredCenterX = Math.max(minCameraCenterX, Math.min(maxCameraCenterX, desiredCenterX));
+        desiredCenterY = Math.max(minCameraCenterY, Math.min(maxCameraCenterY, desiredCenterY));
+        const targetCenterX = desiredCenterX;
+        const targetCenterY = desiredCenterY;
 
         const targetCameraX = targetCenterX - viewportWorldWidth / 2;
         const targetCameraY = targetCenterY - viewportWorldHeight / 2;
@@ -5727,6 +5848,45 @@
         updateConfetti(deltaSeconds, now);
         updateLoadingSpinner(now);
         window.requestAnimationFrame(render);
+    };
+
+    window.render_game_to_text = function () {
+        const player = renderPlayers.find(function (candidate) {
+            return candidate.id === selfId;
+        }) || null;
+        const zoom = getEffectiveZoom();
+        const viewportWidth = getViewportDisplayWidth() / zoom;
+        const viewportHeight = getViewportDisplayHeight() / zoom;
+        const visual = player ? getPlayerVisual(player.id) : null;
+        const direction = player ? getPlayerDirectionVector(player, visual) : { dx: 0, dy: 0 };
+        const directionMagnitude = Math.hypot(direction.dx, direction.dy);
+
+        return JSON.stringify({
+            coordinateSystem: 'world origin is top-left; positive X is right and positive Y is down',
+            player: player ? {
+                x: Math.round(player.x),
+                y: Math.round(player.y),
+                currentSpeed: Math.round(Number(currentMoveSpeed || player.currentSpeed || 0))
+            } : null,
+            camera: {
+                x: Math.round(cameraX),
+                y: Math.round(cameraY),
+                right: Math.round(cameraX + viewportWidth),
+                bottom: Math.round(cameraY + viewportHeight),
+                worldSize: worldSize,
+                leadSpeedRatio: Number(cameraLeadSmoothedRatio.toFixed(3)),
+                targetLeadSpeedRatio: player ? Number(getCameraLeadSpeedRatio(player, directionMagnitude).toFixed(3)) : 0
+            },
+            roundWinner: {
+                phase: raiseSpeakiWinnerPhase,
+                winner: raiseSpeakiWinner ? {
+                    id: raiseSpeakiWinner.id || '',
+                    displayName: raiseSpeakiWinner.displayName || '',
+                    level: Number(raiseSpeakiWinner.level || 0)
+                } : null,
+                restartCountdownSeconds: raiseSpeakiWinnerCountdownSeconds
+            }
+        });
     };
 
     const handleKey = function (value) {

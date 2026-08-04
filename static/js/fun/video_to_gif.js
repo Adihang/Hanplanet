@@ -828,17 +828,11 @@
     function setSourceModalOpen(open) {
         if (!sourceModal) return;
         sourceModal.hidden = !open;
-        if (open && sourceLocalButton) {
-            sourceLocalButton.focus();
-        }
     }
 
     function setHandriveModalOpen(open) {
         if (!handriveModal) return;
         handriveModal.hidden = !open;
-        if (open && handriveCloseButton) {
-            handriveCloseButton.focus();
-        }
     }
 
     function buildApiUrl(baseUrl, params) {

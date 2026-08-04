@@ -44,7 +44,7 @@ const LEVEL_SCALE_FACTOR = 1.1
 const DEFAULT_LEVEL = 1
 const MAX_LEVEL = 10
 const DEFAULT_PUMPKIN_LEVEL = 4
-const NEUTRAL_PUMPKIN_COUNT = 2
+const NEUTRAL_PUMPKIN_COUNT = 4
 const AI_RESPAWN_DELAY_MS = 10000
 const RAISE_SPEAKI_AI_WINDUP_DURATION_MS = 500
 const RAISE_SPEAKI_LEVEL_DROP_SCATTER_RADIUS = 90
@@ -54,6 +54,9 @@ const RAISE_SPEAKI_LEVEL_DROP_SOLID_DURATION_MS = 3000
 const RAISE_SPEAKI_LEVEL_DROP_DRIFT_SPEED_PER_SECOND = 22
 const RAISE_SPEAKI_LEVEL_DROP_AI_DETECTION_RADIUS = 260
 const LEVEL_MOVE_SPEED_DECREASE_PER_LEVEL = 0.01
+const RAISE_SPEAKI_WIN_CONFIRMATION_DURATION_MS = 10000
+const RAISE_SPEAKI_WINNER_DISPLAY_DURATION_MS = 5000
+const RAISE_SPEAKI_TARGET_DISTANCE_FLOOR = 48
 
 class RaiseSpeakiWorld extends BaseWorld {
     constructor() {
@@ -72,6 +75,10 @@ class RaiseSpeakiWorld extends BaseWorld {
         this.encounterFinaleRewarded = false
         this.encounterResetOnAllDead = false
         this.lastTrackedNerCombatPhase = 1
+        this.raiseSpeakiWinnerPhase = ""
+        this.raiseSpeakiWinnerCountdownUntil = 0
+        this.raiseSpeakiWinnerRestartUntil = 0
+        this.raiseSpeakiWinner = null
 
         for (const player of this.players.values()) {
             if (player.isDummy) {
@@ -116,6 +123,143 @@ class RaiseSpeakiWorld extends BaseWorld {
     beginStageTwoNer() {}
     beginStageThreeNer() {}
     beginEncounterFinale() {}
+
+    getRaiseSpeakiWinnerCountdownSeconds(now = Date.now()) {
+        const deadline = this.raiseSpeakiWinnerPhase === "countdown"
+            ? this.raiseSpeakiWinnerCountdownUntil
+            : (this.raiseSpeakiWinnerPhase === "result" ? this.raiseSpeakiWinnerRestartUntil : 0)
+        return deadline > now ? Math.max(0, Math.ceil((deadline - now) / 1000)) : 0
+    }
+
+    getRaiseSpeakiWinnerSnapshot(player) {
+        if (!player) {
+            return null
+        }
+        return {
+            id: String(player.id || ""),
+            displayName: String(player.displayName || player.dummyDefaultDisplayName || player.id || ""),
+            skinName: String(player.skinName || DEFAULT_SKIN_NAME),
+            isNpc: Boolean(player.isNpc),
+            isDummy: Boolean(player.isDummy),
+            level: Math.max(1, Number(player.level || DEFAULT_LEVEL)),
+            sizeMultiplier: Math.max(0.6, Number(player.sizeMultiplier || 1)),
+        }
+    }
+
+    getRaiseSpeakiWinnerCandidate() {
+        const candidates = Array.from(this.players.values()).filter((player) => (
+            player &&
+            !player.isHouse &&
+            !player.isPumpkinNpc &&
+            !this.isPlayerDead(player) &&
+            Number(player.level || DEFAULT_LEVEL) >= MAX_LEVEL
+        ))
+        candidates.sort((left, right) => (
+            Number(right.level || DEFAULT_LEVEL) - Number(left.level || DEFAULT_LEVEL) ||
+            String(left.id || "").localeCompare(String(right.id || ""))
+        ))
+        return candidates[0] || null
+    }
+
+    beginRaiseSpeakiWinnerCountdown(winner, now = Date.now()) {
+        if (!winner || this.raiseSpeakiWinnerPhase) {
+            return false
+        }
+        this.raiseSpeakiWinner = this.getRaiseSpeakiWinnerSnapshot(winner)
+        this.raiseSpeakiWinnerPhase = "countdown"
+        this.raiseSpeakiWinnerCountdownUntil = now + RAISE_SPEAKI_WIN_CONFIRMATION_DURATION_MS
+        this.raiseSpeakiWinnerRestartUntil = 0
+        return true
+    }
+
+    freezeRaiseSpeakiRound() {
+        for (const player of this.players.values()) {
+            if (!player) {
+                continue
+            }
+            player.input = {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+                boost: false,
+                special: false,
+                respawn: false,
+                moveX: 0,
+                moveY: 0,
+            }
+            player.currentSpeed = 0
+            player.boostState = "idle"
+            player.boostDirectionX = 0
+            player.boostDirectionY = 0
+            player.lastMoveX = 0
+            player.lastMoveY = 0
+            if (player.isDummy) {
+                player.dummyState = "idle"
+                player.dummyChargeDistanceRemaining = 0
+                player.dummyChargeDistanceTotal = 0
+                player.dummyChargeWindupStartedAt = 0
+                player.dummyChargeWindupUntil = 0
+                player.dummyQueuedExtraCharges = 0
+            }
+            if (Array.isArray(player.doubleUnits)) {
+                player.doubleUnits.forEach((unit) => {
+                    if (!unit) {
+                        return
+                    }
+                    unit.currentSpeed = 0
+                    unit.boostState = "idle"
+                    unit.boostDirectionX = 0
+                    unit.boostDirectionY = 0
+                    unit.lastMoveX = 0
+                    unit.lastMoveY = 0
+                })
+            }
+        }
+    }
+
+    resetRaiseSpeakiRound(now = Date.now()) {
+        this.raiseSpeakiWinnerPhase = ""
+        this.raiseSpeakiWinnerCountdownUntil = 0
+        this.raiseSpeakiWinnerRestartUntil = 0
+        this.raiseSpeakiWinner = null
+        this.raiseSpeakiLevelDrops = []
+        this.pendingNeutralPumpkinRespawns = 0
+        this.playerProgress.clear()
+        for (const player of this.players.values()) {
+            if (!player || player.isHouse) {
+                continue
+            }
+            this.resetRaiseSpeakiPlayer(player, { preservePosition: false })
+            player.defeatDealtCount = 0
+            player.lastActiveInputAt = now
+            if (isPersistentHumanPlayer(player)) {
+                this.updateStoredPlayerProgress(player)
+            }
+        }
+        this.normalizeNeutralPumpkinCount()
+        this.ensureNeutralPumpkinCount()
+    }
+
+    advanceRaiseSpeakiWinnerRound(now = Date.now()) {
+        if (this.raiseSpeakiWinnerPhase === "countdown") {
+            if (now < this.raiseSpeakiWinnerCountdownUntil) {
+                return false
+            }
+            this.raiseSpeakiWinnerPhase = "result"
+            this.raiseSpeakiWinnerRestartUntil = now + RAISE_SPEAKI_WINNER_DISPLAY_DURATION_MS
+            this.freezeRaiseSpeakiRound()
+            return true
+        }
+        if (this.raiseSpeakiWinnerPhase === "result") {
+            this.freezeRaiseSpeakiRound()
+            if (now >= this.raiseSpeakiWinnerRestartUntil) {
+                this.resetRaiseSpeakiRound(now)
+            }
+            return true
+        }
+        return false
+    }
 
     ensureNeutralPumpkinCount() {
         const neutralPumpkins = this.getPumpkinPlayers().filter((player) => Boolean(player.isNeutralPumpkinNpc))
@@ -842,21 +986,79 @@ class RaiseSpeakiWorld extends BaseWorld {
         attacker.raiseSpeakiLastRewardUnitIndex = -1
     }
 
-    chooseRaiseSpeakiDummyTarget(player) {
-        const canTargetNeutralPumpkin = !isPumpkinSkinPlayer(player)
+    getRaiseSpeakiDummyTargetDistance(player, candidate) {
+        return Math.hypot(
+            Number(candidate && candidate.x || 0) - Number(player && player.x || 0),
+            Number(candidate && candidate.y || 0) - Number(player && player.y || 0)
+        )
+    }
+
+    getRaiseSpeakiDummyTargetWeight(player, candidate) {
+        const distance = this.getRaiseSpeakiDummyTargetDistance(player, candidate)
+        const targetLevel = Math.max(1, Number(candidate && candidate.level || DEFAULT_LEVEL))
+        return targetLevel / Math.max(RAISE_SPEAKI_TARGET_DISTANCE_FLOOR, distance)
+    }
+
+    chooseRaiseSpeakiDummyTarget(player, options = {}) {
+        const canTargetPumpkins = !isPumpkinSkinPlayer(player)
+        const excludedTargetId = String(options.excludeTargetId || "")
         const candidates = Array.from(this.players.values()).filter((candidate) => (
             candidate.id !== player.id &&
+            candidate.id !== excludedTargetId &&
             !candidate.isHouse &&
-            (!candidate.isPumpkinNpc || (canTargetNeutralPumpkin && candidate.isNeutralPumpkinNpc)) &&
+            (!candidate.isPumpkinNpc || canTargetPumpkins) &&
             !this.isPlayerDead(candidate)
         ))
         if (!candidates.length) {
             player.dummyRetaliationTargetId = ""
             return null
         }
-        const nextTarget = candidates[Math.floor(Math.random() * candidates.length)]
+        const closestPumpkin = candidates
+            .filter((candidate) => candidate.isPumpkinNpc)
+            .reduce((closest, candidate) => (
+                !closest || this.getRaiseSpeakiDummyTargetDistance(player, candidate) < this.getRaiseSpeakiDummyTargetDistance(player, closest)
+                    ? candidate
+                    : closest
+            ), null)
+        if (closestPumpkin) {
+            const closestPumpkinDistance = this.getRaiseSpeakiDummyTargetDistance(player, closestPumpkin)
+            const hasCloserNonPumpkinTarget = candidates.some((candidate) => (
+                !candidate.isPumpkinNpc &&
+                this.getRaiseSpeakiDummyTargetDistance(player, candidate) < closestPumpkinDistance
+            ))
+            if (!hasCloserNonPumpkinTarget) {
+                player.dummyRetaliationTargetId = closestPumpkin.id
+                return closestPumpkin
+            }
+        }
+        const weightedCandidates = candidates
+            .filter((candidate) => !candidate.isPumpkinNpc)
+            .map((candidate) => ({
+            candidate,
+            weight: this.getRaiseSpeakiDummyTargetWeight(player, candidate),
+            }))
+        const totalWeight = weightedCandidates.reduce((sum, entry) => sum + entry.weight, 0)
+        let roll = Math.random() * totalWeight
+        let nextTarget = weightedCandidates[weightedCandidates.length - 1].candidate
+        for (const entry of weightedCandidates) {
+            roll -= entry.weight
+            if (roll <= 0) {
+                nextTarget = entry.candidate
+                break
+            }
+        }
         player.dummyRetaliationTargetId = nextTarget.id
         return nextTarget
+    }
+
+    retargetRaiseSpeakiDummyAfterDashHit(attacker, defeatedTarget) {
+        if (!attacker || !attacker.isDummy) {
+            return
+        }
+        attacker.dummyRetaliationTargetId = ""
+        this.chooseRaiseSpeakiDummyTarget(attacker, {
+            excludeTargetId: defeatedTarget ? defeatedTarget.id : "",
+        })
     }
 
     getDummyRetaliationTarget(player) {
@@ -868,8 +1070,8 @@ class RaiseSpeakiWorld extends BaseWorld {
             return this.chooseRaiseSpeakiDummyTarget(player)
         }
         const target = this.players.get(targetId)
-        const canTargetNeutralPumpkin = !isPumpkinSkinPlayer(player)
-        const invalidPumpkinTarget = Boolean(target && target.isPumpkinNpc && (!canTargetNeutralPumpkin || !target.isNeutralPumpkinNpc))
+        const canTargetPumpkins = !isPumpkinSkinPlayer(player)
+        const invalidPumpkinTarget = Boolean(target && target.isPumpkinNpc && !canTargetPumpkins)
         if (!target || target.isHouse || invalidPumpkinTarget || this.isPlayerDead(target) || target.id === player.id) {
             return this.chooseRaiseSpeakiDummyTarget(player)
         }
@@ -1190,6 +1392,9 @@ class RaiseSpeakiWorld extends BaseWorld {
     }
 
     handleInput(player, data) {
+        if (this.raiseSpeakiWinnerPhase === "result") {
+            return
+        }
         super.handleInput(player, data)
         if (!player) {
             return
@@ -1403,6 +1608,7 @@ class RaiseSpeakiWorld extends BaseWorld {
                         playerA.collisionImpactY = -normalY
                         this.applyRaiseSpeakiDamage(playerA, playerBDamage)
                         this.markRaiseSpeakiDashHit(playerA, playerB)
+                        this.retargetRaiseSpeakiDummyAfterDashHit(playerB, playerA)
                         playerB.defeatDealtCount += 1
                     }
                     if (!playerBProtectedFromA && !playerBAlreadyHitByA) {
@@ -1412,6 +1618,7 @@ class RaiseSpeakiWorld extends BaseWorld {
                         playerA.raiseSpeakiLastRewardUnitIndex = playerA.isDoubleSkin ? this.getRaiseSpeakiAttackRewardSource(playerA, normalX, normalY).unitIndex : -1
                         this.applyRaiseSpeakiDamage(playerB, playerADamage)
                         this.markRaiseSpeakiDashHit(playerB, playerA)
+                        this.retargetRaiseSpeakiDummyAfterDashHit(playerA, playerB)
                         playerA.defeatDealtCount += 1
                     }
                 } else if (playerAAttacking) {
@@ -1423,6 +1630,7 @@ class RaiseSpeakiWorld extends BaseWorld {
                         playerA.raiseSpeakiLastRewardUnitIndex = playerA.isDoubleSkin ? this.getRaiseSpeakiAttackRewardSource(playerA, normalX, normalY).unitIndex : -1
                         this.applyRaiseSpeakiDamage(playerB, playerADamage)
                         this.markRaiseSpeakiDashHit(playerB, playerA)
+                        this.retargetRaiseSpeakiDummyAfterDashHit(playerA, playerB)
                         if (playerB.isDummy && !playerA.isNpc && !playerA.isDummy) {
                             playerB.dummyRetaliationTargetId = playerA.id
                         }
@@ -1436,6 +1644,7 @@ class RaiseSpeakiWorld extends BaseWorld {
                         playerB.raiseSpeakiLastRewardUnitIndex = playerB.isDoubleSkin ? this.getRaiseSpeakiAttackRewardSource(playerB, -normalX, -normalY).unitIndex : -1
                         this.applyRaiseSpeakiDamage(playerA, playerBDamage)
                         this.markRaiseSpeakiDashHit(playerA, playerB)
+                        this.retargetRaiseSpeakiDummyAfterDashHit(playerB, playerA)
                         if (playerA.isDummy && !playerB.isNpc && !playerB.isDummy) {
                             playerA.dummyRetaliationTargetId = playerB.id
                         }
@@ -1526,11 +1735,15 @@ class RaiseSpeakiWorld extends BaseWorld {
     }
 
     update() {
+        const now = Date.now()
+        if (this.advanceRaiseSpeakiWinnerRound(now)) {
+            return
+        }
         this.syncRaiseSpeakiAttackSequences()
-        this.processRaiseSpeakiSpecialSkills(Date.now())
+        this.processRaiseSpeakiSpecialSkills(now)
         super.update()
         this.syncRaiseSpeakiAttackSequences()
-        this.processRaiseSpeakiLevelDrops(Date.now())
+        this.processRaiseSpeakiLevelDrops(now)
         this.processPendingNeutralPumpkinRespawns()
         this.normalizeNeutralPumpkinCount()
         for (const player of Array.from(this.players.values())) {
@@ -1544,6 +1757,10 @@ class RaiseSpeakiWorld extends BaseWorld {
             } else {
                 player.currentHealth = 0
             }
+        }
+        const winnerCandidate = this.getRaiseSpeakiWinnerCandidate()
+        if (winnerCandidate) {
+            this.beginRaiseSpeakiWinnerCountdown(winnerCandidate, now)
         }
     }
 }

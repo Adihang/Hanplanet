@@ -1,0 +1,2166 @@
+{% extends "base.html" %}
+
+{% block body_class %}ui-page rlcraft-page{% endblock %}
+
+{% block extra_head %}
+{% include "handrive/_assets_head.html" %}
+<style>
+    body.rlcraft-page {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    body.rlcraft-page .ui-toolbar-wrap,
+    body.rlcraft-page .footer-links {
+        flex: 0 0 auto;
+    }
+
+    body.rlcraft-page .footer-links {
+        margin-top: 0;
+    }
+
+    .rlcraft-content {
+        flex: 1 1 auto;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr);
+        align-content: stretch;
+        gap: 12px;
+        height: auto;
+        min-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        container-type: size;
+        overflow: hidden;
+    }
+
+    .rlcraft-page-layout {
+        width: min(1300px, 100%);
+        height: 100%;
+        min-height: 0;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: minmax(320px, 1fr) 14px minmax(300px, clamp(300px, 27%, 360px));
+        column-gap: 0;
+        row-gap: 8px;
+        align-items: stretch;
+        overflow: auto;
+    }
+
+    .rlcraft-main-layout {
+        grid-column: 1;
+        grid-row: 1;
+        display: grid;
+        grid-template-rows: minmax(0, 1fr);
+        height: 100%;
+        min-width: 0;
+        min-height: 0;
+    }
+
+    .rlcraft-page-divider {
+        position: relative;
+        z-index: 3;
+        display: block;
+        grid-column: 2;
+        grid-row: 1;
+        width: 14px;
+        padding: 0;
+        border: 0;
+        min-height: 0;
+        color: var(--handrive-border-heavy);
+        background: transparent;
+        appearance: none;
+        -webkit-appearance: none;
+        cursor: col-resize !important;
+        touch-action: none;
+    }
+
+    .rlcraft-page-divider::before {
+        position: absolute;
+        inset-block: 0;
+        left: 50%;
+        width: 1px;
+        transform: translateX(-50%);
+        background: var(--handrive-border-soft);
+        content: "";
+        pointer-events: none;
+        transition: background-color 0.15s ease, width 0.15s ease;
+    }
+
+    .rlcraft-page-divider:hover::before,
+    .rlcraft-page-divider:focus-visible::before,
+    .rlcraft-page-divider.is-active::before {
+        width: 3px;
+        background: color-mix(in srgb, var(--handrive-text-stronger) 68%, var(--handrive-border-soft));
+    }
+
+    .rlcraft-page-divider:focus-visible {
+        outline: 2px solid color-mix(in srgb, currentColor 72%, transparent);
+        outline-offset: -2px;
+    }
+
+    .rlcraft-side-layout {
+        grid-column: 3;
+        grid-row: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+        min-width: 0;
+        height: 100%;
+        min-height: 0;
+        padding-bottom: 1px;
+        box-sizing: border-box;
+        overflow: hidden;
+    }
+
+    .rlcraft-panel.minecraft-panel {
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-lg);
+        background: var(--shared-card-bg);
+        color: var(--handrive-text-stronger);
+        padding: 10px;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-server-panel {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+
+    .rlcraft-page .minecraft-panel-heading,
+    .rlcraft-page .minecraft-status-header {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-width: 0;
+        min-height: 22px;
+        margin-bottom: 8px;
+    }
+
+    .rlcraft-page .minecraft-status-header {
+        margin-bottom: 0;
+    }
+
+    .rlcraft-page .minecraft-panel-title {
+        min-width: 0;
+        margin: 0;
+        color: var(--handrive-text-stronger);
+        font-size: 18px;
+        font-weight: var(--site-weight-title-strong);
+        line-height: 1.2;
+    }
+
+    .rlcraft-server-description {
+        margin: 0 10px 8px;
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
+    .rlcraft-server-subtitle {
+        flex: 0 1 auto;
+        min-width: 0;
+        margin: 0 0 0 auto;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        line-height: 1.2;
+        text-align: right;
+    }
+
+    .rlcraft-server-restart-trigger {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        cursor: pointer;
+    }
+
+    .rlcraft-server-restart-trigger:hover,
+    .rlcraft-server-restart-trigger:focus-visible {
+        color: var(--handrive-text-stronger);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        outline: none;
+    }
+
+    .rlcraft-console-trigger.ui-path-current {
+        display: inline;
+        min-width: 0;
+        max-width: 100%;
+        padding: 1px 3px;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-weight: 700;
+        line-height: inherit;
+        cursor: pointer;
+        transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .rlcraft-console-trigger.ui-path-current:hover,
+    .rlcraft-console-trigger.ui-path-current:focus-visible {
+        color: var(--handrive-text-strong);
+        background: var(--handrive-hover);
+        outline: none;
+    }
+
+    .rlcraft-restart-progress-dialog {
+        width: min(440px, calc(100vw - 24px));
+    }
+
+    .rlcraft-restart-progress-body {
+        display: grid;
+        gap: 16px;
+        padding: 4px 14px 14px;
+    }
+
+    .rlcraft-restart-progress-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 38px;
+        color: var(--handrive-text-stronger);
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    .rlcraft-restart-progress-status .site-loading-spinner {
+        flex: 0 0 auto;
+        width: 24px;
+        height: 24px;
+        border-width: 2px;
+    }
+
+    .rlcraft-restart-progress-status.is-complete .site-loading-spinner,
+    .rlcraft-restart-progress-status.is-error .site-loading-spinner {
+        display: none;
+    }
+
+    .rlcraft-restart-progress-steps {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+    }
+
+    .rlcraft-restart-progress-step {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+    }
+
+    .rlcraft-restart-progress-step::before {
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: 50%;
+        color: transparent;
+        content: "";
+        box-sizing: border-box;
+    }
+
+    .rlcraft-restart-progress-step.is-active {
+        color: var(--handrive-text-stronger);
+        font-weight: var(--site-weight-title-strong);
+    }
+
+    .rlcraft-restart-progress-step.is-active::before {
+        border-color: var(--theme-accent-strong, #2563eb);
+        box-shadow: inset 0 0 0 4px var(--shared-card-bg), inset 0 0 0 7px var(--theme-accent-strong, #2563eb);
+    }
+
+    .rlcraft-restart-progress-step.is-complete::before {
+        border-color: var(--theme-accent-strong, #2563eb);
+        background: var(--theme-accent-strong, #2563eb);
+        box-shadow: inset 0 0 0 4px var(--shared-card-bg);
+    }
+
+    .rlcraft-server-log-modal .rlcraft-server-log-dialog {
+        width: min(920px, calc(100vw - 20px));
+        height: min(680px, calc(100vh - 20px));
+        height: min(680px, calc(100dvh - 20px));
+        display: flex;
+        flex-direction: column;
+    }
+
+    .rlcraft-server-log-modal-head {
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .rlcraft-server-log-panel {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
+        padding: 0 10px 10px;
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-server-log-output {
+        flex: 1 1 auto;
+        width: 100%;
+        min-height: 220px;
+        margin: 0;
+        padding: 10px;
+        overflow: auto;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+        color: var(--handrive-text-stronger);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        box-sizing: border-box;
+    }
+
+    .minecraft-server-command-form {
+        display: block;
+        margin-top: 6px;
+    }
+
+    .rlcraft-server-log-status {
+        margin-top: 4px;
+    }
+
+    .minecraft-server-command-control {
+        position: relative;
+        width: 100%;
+        height: 38px;
+    }
+
+    .minecraft-server-command-input {
+        display: block;
+        width: 100%;
+        height: 38px;
+        padding: 0 48px 0 12px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        color: var(--handrive-text-stronger);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 16px;
+        box-sizing: border-box;
+    }
+
+    .minecraft-server-command-input:focus {
+        border-color: var(--handrive-border-strong);
+        outline: none;
+    }
+
+    .minecraft-server-command-button {
+        position: absolute;
+        top: 50%;
+        right: 4px;
+        display: inline-grid;
+        place-items: center;
+        width: 34px;
+        height: 32px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--handrive-radius-sm);
+        background: transparent;
+        color: var(--handrive-text-muted);
+        cursor: pointer;
+        transform: translateY(-50%);
+        transition: color 0.16s ease, background-color 0.16s ease;
+    }
+
+    .minecraft-server-command-button:hover,
+    .minecraft-server-command-button:focus-visible {
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        outline: none;
+    }
+
+    .minecraft-server-command-button:disabled {
+        cursor: default;
+        opacity: 0.55;
+    }
+
+    .minecraft-server-command-button svg {
+        display: block;
+        width: 20px;
+        height: 20px;
+    }
+
+    .minecraft-player-detail-body {
+        padding: 0 10px 10px;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-map-embed-section {
+        flex: 1 1 auto;
+        overflow: hidden;
+        width: 100%;
+        min-height: 320px;
+        height: auto;
+        margin-bottom: 6px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-lg);
+        background: #050505;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-map-embed {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #050505;
+    }
+
+    .rlcraft-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+        gap: 10px;
+        container-type: inline-size;
+    }
+
+    .rlcraft-detail-grid > .rlcraft-field + .rlcraft-field {
+        position: relative;
+    }
+
+    @container (min-width: 690px) {
+        .rlcraft-detail-grid > .rlcraft-field + .rlcraft-field::before {
+            position: absolute;
+            inset-block: 0;
+            inset-inline-start: -5px;
+            width: 1px;
+            background: var(--handrive-border-soft);
+            content: "";
+        }
+    }
+
+    .rlcraft-field {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .rlcraft-field-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .rlcraft-label {
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.2;
+    }
+
+    .rlcraft-meta {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .rlcraft-server-version {
+        flex: 0 1 auto;
+        min-width: 0;
+        margin-left: auto;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.2;
+        text-align: right;
+    }
+
+    .rlcraft-address {
+        position: relative;
+        min-height: 52px;
+        padding: 8px 56px 8px 12px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-address-text {
+        display: block;
+        width: 100%;
+        min-width: 0;
+        color: inherit;
+        font-family: inherit;
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.25;
+        overflow-wrap: anywhere;
+    }
+
+    .rlcraft-address-copy {
+        width: 40px;
+        height: 40px;
+    }
+
+    .rlcraft-address-copy svg {
+        display: block;
+        width: 30px;
+        height: 30px;
+    }
+
+    .rlcraft-side-panel {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    .rlcraft-player-panel {
+        flex: 1 1 auto;
+    }
+
+    .rlcraft-player-item.is-online[role="button"] {
+        cursor: pointer;
+        translate: 0 0 !important;
+        transition: background-color 0.16s ease, border-color 0.16s ease;
+    }
+
+    .rlcraft-player-item.is-online[role="button"]:hover,
+    .rlcraft-player-item.is-online[role="button"]:focus-visible,
+    .rlcraft-player-item.is-online[role="button"]:active {
+        border-color: #2f9d58;
+        background: var(--handrive-surface-muted-strong);
+        translate: 0 0 !important;
+        outline: none;
+    }
+
+    .rlcraft-player-detail-modal .minecraft-player-detail-dialog {
+        width: 560px;
+        max-width: calc(100vw - 20px);
+        height: auto;
+        max-height: calc(100vh - 20px);
+        max-height: calc(100dvh - 20px);
+        display: flex;
+        flex-direction: column;
+    }
+
+    .rlcraft-player-detail-body {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-height: 0;
+        padding: 10px;
+        overflow: auto;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-player-detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        align-items: start;
+        min-width: 0;
+    }
+
+    .rlcraft-player-detail-card {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        min-width: 0;
+        padding: 10px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+        box-sizing: border-box;
+    }
+
+    .rlcraft-player-detail-card.is-wide {
+        grid-column: 1 / -1;
+    }
+
+    .rlcraft-player-detail-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .rlcraft-player-detail-card-title {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .rlcraft-player-detail-value {
+        color: var(--handrive-text-stronger);
+        font-size: 15px;
+        font-weight: 800;
+        line-height: 1.2;
+    }
+
+    .rlcraft-player-detail-card-body {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+    }
+
+    .rlcraft-player-detail-meta-label {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .rlcraft-player-detail-meta-value {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--handrive-text-stronger);
+        font-size: 14px;
+        font-weight: 800;
+    }
+
+    .rlcraft-player-detail-identity {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .rlcraft-player-detail-identity .minecraft-player-avatar-wrap {
+        flex: 0 0 36px;
+        width: 36px;
+        height: 36px;
+    }
+
+    .rlcraft-player-detail-identity .minecraft-player-avatar,
+    .rlcraft-player-detail-identity .minecraft-player-avatar-fallback {
+        width: 36px;
+        height: 36px;
+    }
+
+    .rlcraft-player-detail-identity-name {
+        min-width: 0;
+        color: var(--handrive-text-stronger);
+        font-size: 16px;
+        font-weight: 800;
+        overflow-wrap: anywhere;
+    }
+
+    .rlcraft-player-edit-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 6px;
+        align-items: center;
+        min-width: 0;
+    }
+
+    .rlcraft-player-edit-form.is-effect {
+        grid-template-columns: minmax(0, 1.3fr) minmax(54px, 0.7fr) minmax(70px, 0.8fr) auto;
+    }
+
+    .rlcraft-player-edit-select,
+    .rlcraft-player-edit-input {
+        width: 100%;
+        min-width: 0;
+        min-height: 34px;
+        padding: 6px 8px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--shared-card-bg);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        box-sizing: border-box;
+    }
+
+    .rlcraft-player-edit-form .site-custom-select.rlcraft-player-edit-select {
+        height: 38px;
+        min-height: 38px;
+        padding: 0;
+        overflow: visible;
+    }
+
+    .rlcraft-player-edit-form .site-custom-select.rlcraft-player-edit-select .site-custom-select-button {
+        height: 100%;
+        min-height: 0;
+        padding: 0 8px;
+        line-height: 1.25;
+    }
+
+    .rlcraft-player-edit-form .site-custom-select.rlcraft-player-edit-select .site-custom-select-label {
+        line-height: 1.25;
+    }
+
+    .rlcraft-player-edit-button {
+        min-height: 34px;
+        padding: 6px 10px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+    }
+
+    .rlcraft-player-edit-button:hover,
+    .rlcraft-player-edit-button:focus-visible {
+        border-color: var(--handrive-border-heavy);
+        background: var(--handrive-hover);
+        outline: none;
+    }
+
+    .rlcraft-player-command-status {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .rlcraft-player-command-status.is-error {
+        color: #dc2626;
+    }
+
+    @media (max-width: 620px) {
+        .rlcraft-player-detail-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .rlcraft-player-detail-card.is-wide {
+            grid-column: auto;
+        }
+
+        .rlcraft-player-edit-form.is-effect {
+            grid-template-columns: 1fr 1fr;
+        }
+
+        .rlcraft-player-edit-form.is-effect .rlcraft-player-edit-select,
+        .rlcraft-player-edit-form.is-effect .rlcraft-player-edit-button {
+            grid-column: 1 / -1;
+        }
+    }
+
+    .rlcraft-modpack-panel {
+        flex: 0 0 auto;
+        cursor: pointer;
+    }
+
+    .rlcraft-modpack-panel:hover,
+    .rlcraft-modpack-panel:focus-visible {
+        border-color: var(--handrive-border-heavy);
+        background: var(--handrive-hover);
+        outline: none;
+    }
+
+    .rlcraft-modpack-install-trigger {
+        display: block;
+        align-items: center;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 18px;
+        font-weight: var(--site-weight-title-strong);
+        line-height: 1.2;
+        text-align: left;
+        cursor: inherit;
+    }
+
+    .rlcraft-modpack-dialog {
+        width: min(720px, calc(100vw - 20px));
+        max-width: calc(100vw - 20px);
+        max-height: calc(100dvh - 20px);
+    }
+
+    .rlcraft-modpack-body {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .rlcraft-modpack-dialog.site-modal-dialog > .rlcraft-modpack-body {
+        padding-top: 1px !important;
+    }
+
+    .rlcraft-modpack-body p,
+    .rlcraft-modpack-body ol {
+        margin: 0;
+    }
+
+    .rlcraft-player-panel .minecraft-panel-collapsible-content {
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+    }
+
+    .minecraft-status-summary {
+        flex: 0 1 auto;
+        min-width: 0;
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        line-height: 1.2;
+        text-align: right;
+    }
+
+    .minecraft-status-summary.is-error {
+        color: var(--site-danger, #b63d3d);
+    }
+
+    .minecraft-panel-collapse-trigger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border: 0;
+        border-radius: var(--handrive-radius-sm);
+        background: transparent;
+        color: var(--handrive-text-muted);
+        cursor: pointer;
+    }
+
+    .minecraft-panel-collapse-trigger:hover,
+    .minecraft-panel-collapse-trigger:focus-visible {
+        background: var(--handrive-hover);
+        color: var(--handrive-text-stronger);
+        outline: none;
+    }
+
+    .minecraft-panel-collapse-icon {
+        display: block;
+        width: 18px;
+        height: 18px;
+        transition: transform 0.16s ease;
+    }
+
+    .minecraft-panel.is-collapsed .minecraft-panel-collapse-icon {
+        transform: rotate(-90deg);
+    }
+
+    .minecraft-panel-collapsible-content[hidden] {
+        display: none;
+    }
+
+    .minecraft-panel-list {
+        display: grid;
+        flex: 1 1 auto;
+        grid-auto-rows: 38px;
+        align-content: start;
+        gap: 6px;
+        min-height: 0;
+        width: 100%;
+        margin: 0;
+        padding: 1px 0;
+        box-sizing: border-box;
+        overflow: auto;
+        list-style: none;
+    }
+
+    .minecraft-panel-list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        height: 38px;
+        min-height: 38px;
+        padding: 0 12px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted);
+        box-sizing: border-box;
+    }
+
+    .minecraft-player-name {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        color: var(--handrive-text-stronger);
+        font-size: 15px;
+        font-weight: 700;
+    }
+
+    .minecraft-player-item.is-offline .minecraft-player-name {
+        color: var(--handrive-text-muted);
+        opacity: 0.62;
+    }
+
+    .minecraft-player-avatar-wrap {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        flex: 0 0 24px;
+        overflow: hidden;
+        border-radius: 4px;
+        background: var(--handrive-surface-muted-strong);
+        image-rendering: pixelated;
+        opacity: 0.72;
+    }
+
+    .minecraft-player-item.is-online .minecraft-player-avatar-wrap {
+        opacity: 1;
+    }
+
+    .minecraft-player-avatar {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        image-rendering: pixelated;
+    }
+
+    .minecraft-player-item.is-online {
+        border-color: #2f9d58;
+    }
+
+    .minecraft-player-avatar-fallback {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        color: var(--handrive-text-muted);
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1;
+        text-transform: uppercase;
+    }
+
+    .minecraft-player-state {
+        flex: 0 0 auto;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+    }
+
+    .minecraft-player-item.is-online .minecraft-player-state {
+        color: #2f9d58;
+    }
+
+    .rlcraft-player-loading {
+        display: grid;
+        place-items: center;
+        flex: 1 1 auto;
+        min-height: 72px;
+    }
+
+    .rlcraft-player-empty {
+        margin: auto 0;
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        line-height: 1.5;
+        text-align: center;
+    }
+
+    .rlcraft-side-content {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .rlcraft-side-copy,
+    .rlcraft-side-note {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .rlcraft-install-list {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding-left: 22px;
+        color: var(--handrive-text-stronger);
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .rlcraft-install-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .rlcraft-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: var(--handrive-radius-sm);
+        background: var(--handrive-surface-muted-strong);
+        color: var(--handrive-text-stronger);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.2;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+        box-sizing: border-box;
+        transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, translate 0.12s ease;
+    }
+
+    .rlcraft-action:hover,
+    .rlcraft-action:focus-visible {
+        border-color: var(--handrive-border-heavy);
+        background: var(--handrive-hover);
+        color: var(--handrive-text-stronger);
+        outline: none;
+        translate: 0 var(--btn-template-hover-lift, -1px);
+    }
+
+    .rlcraft-action:active {
+        translate: 0 var(--btn-template-active-press-depth, 1px);
+    }
+
+    .rlcraft-action-primary {
+        border-color: var(--handrive-text-stronger);
+        background: var(--handrive-text-stronger);
+        color: var(--handrive-surface);
+    }
+
+    .rlcraft-action-primary:hover,
+    .rlcraft-action-primary:focus-visible {
+        border-color: var(--handrive-text-strong);
+        background: var(--handrive-text-strong);
+        color: var(--handrive-surface);
+    }
+
+    @media (max-width: 840px), (orientation: portrait) {
+        .rlcraft-page-layout {
+            grid-template-columns: 1fr;
+            grid-template-rows: 100% max-content;
+            align-content: start;
+            height: 100%;
+            overflow: auto;
+        }
+
+        .rlcraft-main-layout {
+            grid-column: 1;
+            grid-row: 1;
+            height: 100%;
+        }
+
+        .rlcraft-page-divider {
+            display: none;
+        }
+
+        .rlcraft-side-layout {
+            grid-column: 1;
+            grid-row: 2;
+            height: max-content;
+            min-height: max-content;
+            overflow: visible;
+        }
+
+        .rlcraft-side-panel {
+            flex: 0 0 auto;
+            max-height: 80vw;
+        }
+
+        .rlcraft-player-panel {
+            max-height: 80vw;
+        }
+
+        .rlcraft-player-panel .minecraft-panel-list {
+            max-height: calc(80vw - 72px);
+        }
+
+        .rlcraft-server-panel .rlcraft-map-embed-section {
+            min-height: 0;
+            aspect-ratio: 1 / 1;
+        }
+
+        .rlcraft-page .minecraft-panel-heading,
+        .rlcraft-page .minecraft-status-header {
+            align-items: flex-start;
+            height: auto;
+        }
+
+        .rlcraft-detail-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .rlcraft-detail-grid > .rlcraft-field + .rlcraft-field::before {
+            display: none;
+        }
+    }
+
+    @media (max-width: 560px) {
+        .rlcraft-page .minecraft-panel-title {
+            font-size: 17px;
+        }
+
+        .rlcraft-address-text {
+            font-size: 19px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ui-toolbar-wrap">
+    <div class="ui-shell ui-toolbar">
+        <div class="ui-toolbar-left">
+            <div class="ui-title-row">
+                <h1 class="ui-title">{{ page_title }}</h1>
+            </div>
+            <div class="ui-subtitle ui-path-breadcrumbs">
+                <a class="ui-path-link" href="{{ home_url }}">{{ home_label }}</a>
+                <span class="ui-path-sep">/</span>
+                <a class="ui-path-link" href="{{ sub_url }}">{{ sub_label }}</a>
+                <span class="ui-path-sep">/</span>
+                {% if rlcraft_is_admin %}
+                <button class="ui-path-current rlcraft-console-trigger" type="button" id="rlcraftConsoleTrigger" aria-controls="rlcraftServerLogModal" aria-expanded="false">{{ page_title }}</button>
+                {% else %}
+                <span class="ui-path-current">{{ page_title }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% include "partials/toolbar_auth_right.html" %}
+    </div>
+</div>
+
+<main class="ui-shell ui-content rlcraft-content">
+    <div class="rlcraft-page-layout" id="rlcraftPageLayout">
+        <div class="rlcraft-main-layout" id="rlcraftMainLayout">
+            <section class="rlcraft-panel minecraft-panel rlcraft-server-panel" aria-labelledby="rlcraft-server-title">
+                <div class="minecraft-panel-heading">
+                    <h2 class="minecraft-panel-title" id="rlcraft-server-title">{{ rlcraft_server_panel_title }}</h2>
+                    <p class="rlcraft-server-subtitle">Prominence II: Hasturian Era v3.9.27</p>
+                </div>
+                <section class="rlcraft-map-embed-section" aria-label="{{ rlcraft_map_title }}">
+                    <iframe class="rlcraft-map-embed" src="{{ rlcraft_map_url }}" title="{{ rlcraft_map_title }}" loading="lazy" allowfullscreen referrerpolicy="same-origin"></iframe>
+                </section>
+                <div class="rlcraft-detail-grid">
+                    <div class="rlcraft-field">
+                        <div class="rlcraft-field-heading">
+                            <span class="rlcraft-label">{{ rlcraft_address_label }}</span>
+                            <p class="rlcraft-meta rlcraft-server-version">{{ rlcraft_server_version }}</p>
+                        </div>
+                        <div class="rlcraft-address handrive-inline-copy-field" data-server-address="{{ rlcraft_server_address }}">
+                            <code class="rlcraft-address-text" id="rlcraftServerAddress">{{ rlcraft_server_address }}</code>
+                            <button class="rlcraft-address-copy handrive-inline-copy-action" type="button" id="rlcraftCopyButton" aria-label="{{ rlcraft_copy_label }}" data-copy-label="{{ rlcraft_copy_label }}" data-copied-label="{{ rlcraft_copy_feedback }}" data-copy-feedback-label="{{ rlcraft_copy_feedback }}" data-copy-target="rlcraftServerAddress">
+                                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="7" y="6" width="9" height="11" rx="1.5"></rect><path d="M4 13V4.5C4 3.7 4.7 3 5.5 3H13"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <button class="rlcraft-page-divider" id="rlcraftPageDivider" type="button" role="separator" aria-label="{{ rlcraft_page_splitter_label }}" aria-controls="rlcraftMainLayout rlcraftSideLayout" aria-orientation="vertical" aria-valuemin="25" aria-valuemax="55" aria-valuenow="27" data-ui-press-disabled="true"></button>
+
+        <div class="rlcraft-side-layout" id="rlcraftSideLayout">
+            <section class="rlcraft-panel minecraft-panel rlcraft-side-panel rlcraft-player-panel" aria-labelledby="rlcraft-players-title">
+                <div class="minecraft-status-header" data-rlcraft-panel-header>
+                    <h2 class="minecraft-panel-title" id="rlcraft-players-title">{{ rlcraft_players_panel_title }}</h2>
+                    <p class="minecraft-status-summary" id="rlcraftPlayerSummary">{{ rlcraft_status_loading_label }}</p>
+                    <button class="minecraft-panel-collapse-trigger" id="rlcraftPlayerPanelToggle" type="button" aria-expanded="true" aria-controls="rlcraftPlayerPanelContent" aria-label="{{ rlcraft_players_panel_title }}" title="{{ rlcraft_players_panel_title }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
+                </div>
+                <div class="minecraft-panel-collapsible-content" id="rlcraftPlayerPanelContent">
+                    <ul class="minecraft-panel-list minecraft-player-list" id="rlcraftPlayerList"></ul>
+                    <div class="rlcraft-player-loading" id="rlcraftPlayerLoading" role="status" aria-live="polite" aria-label="{{ rlcraft_status_loading_label }}">
+                        <span class="site-loading-spinner" aria-hidden="true"></span>
+                    </div>
+                    <p class="rlcraft-player-empty" id="rlcraftPlayerEmpty" hidden></p>
+                </div>
+            </section>
+
+            <section class="rlcraft-panel minecraft-panel rlcraft-side-panel rlcraft-modpack-panel" id="rlcraftModpackPanel" role="button" tabindex="0" aria-labelledby="rlcraftModpackInstallTrigger" aria-controls="rlcraftModpackModal" aria-expanded="false">
+                <div class="minecraft-status-header">
+                    <h2 class="minecraft-panel-title rlcraft-modpack-install-trigger" id="rlcraftModpackInstallTrigger">{{ rlcraft_modpack_title }}</h2>
+                </div>
+            </section>
+
+        </div>
+    </div>
+</main>
+
+{% include "partials/site_footer_links.html" %}
+
+<div id="rlcraftModpackModal" class="handrive-help-modal rlcraft-modpack-modal" hidden>
+    <div class="handrive-help-modal-backdrop site-modal-backdrop" id="rlcraft-modpack-backdrop"></div>
+    <div class="handrive-help-modal-dialog site-modal-dialog rlcraft-modpack-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="rlcraft-modpack-modal-title">
+        <header class="handrive-help-modal-head site-modal-head">
+            <h2 class="handrive-popup-title handrive-help-modal-title" id="rlcraft-modpack-modal-title">{{ rlcraft_modpack_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="rlcraft-modpack-close-btn" click_target_id="rlcraft-modpack-backdrop" %}
+        </header>
+        <div class="handrive-help-modal-body rlcraft-modpack-body">
+            <p class="rlcraft-side-copy">{{ rlcraft_modpack_description }}</p>
+            <h3 class="rlcraft-label">{{ rlcraft_install_title }}</h3>
+            <ol class="rlcraft-install-list">
+                {% for step in rlcraft_install_steps %}
+                <li>{{ step }}</li>
+                {% endfor %}
+            </ol>
+            <div class="rlcraft-install-actions">
+                <a class="rlcraft-action rlcraft-action-primary" href="{{ rlcraft_curseforge_url }}" target="_blank" rel="noopener">{{ rlcraft_curseforge_label }}</a>
+                <a class="rlcraft-action" href="{{ rlcraft_korean_patch_url }}" target="_blank" rel="noopener">{{ rlcraft_download_label }}</a>
+            </div>
+            <p class="rlcraft-side-note">{{ rlcraft_license_note }}</p>
+        </div>
+    </div>
+</div>
+
+{% include "popup/minecraft/player_detail_modal.html" with player_detail_title=rlcraft_player_detail_title %}
+
+{% if rlcraft_is_admin %}
+{% include "popup/rlcraft/server_log_modal.html" %}
+{% include "popup/handrive/_confirm_modal.html" with modal_id="rlcraftRestartModal" backdrop_id="rlcraft-restart-backdrop" title_id="rlcraft-restart-title" message_id="rlcraft-restart-message" cancel_button_id="rlcraft-restart-cancel-btn" confirm_button_id="rlcraft-restart-confirm-btn" title_text=rlcraft_restart_title message_text=rlcraft_restart_message cancel_text=rlcraft_restart_cancel_label confirm_text=rlcraft_restart_confirm_label %}
+<div id="rlcraftRestartProgressModal" class="handrive-help-modal rlcraft-restart-progress-modal" hidden>
+    <div class="handrive-help-modal-backdrop site-modal-backdrop" id="rlcraft-restart-progress-backdrop"></div>
+    <div class="handrive-help-modal-dialog site-modal-dialog rlcraft-restart-progress-dialog" data-popup-fit-bottom role="dialog" aria-modal="true" aria-labelledby="rlcraft-restart-progress-title" aria-describedby="rlcraft-restart-progress-status">
+        <header class="handrive-help-modal-head site-modal-head">
+            <h2 class="handrive-popup-title handrive-help-modal-title" id="rlcraft-restart-progress-title">{{ rlcraft_restart_progress_title }}</h2>
+            {% include "popup/handrive/_popup_close_button.html" with button_id="rlcraft-restart-progress-close-btn" close_label=rlcraft_restart_progress_close_label %}
+        </header>
+        <div class="rlcraft-restart-progress-body site-modal-body">
+            <div class="rlcraft-restart-progress-status" id="rlcraft-restart-progress-status" role="status" aria-live="polite">
+                <span class="site-loading-spinner" aria-hidden="true"></span>
+                <span id="rlcraft-restart-progress-message">{{ rlcraft_restart_phase_queued }}</span>
+            </div>
+            <ol class="rlcraft-restart-progress-steps" aria-label="{{ rlcraft_restart_progress_title }}">
+                <li class="rlcraft-restart-progress-step" data-restart-phase="queued">{{ rlcraft_restart_phase_queued }}</li>
+                <li class="rlcraft-restart-progress-step" data-restart-phase="stopping">{{ rlcraft_restart_phase_stopping }}</li>
+                <li class="rlcraft-restart-progress-step" data-restart-phase="starting">{{ rlcraft_restart_phase_starting }}</li>
+                <li class="rlcraft-restart-progress-step" data-restart-phase="ready">{{ rlcraft_restart_phase_ready }}</li>
+            </ol>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<script>
+    (function () {
+        const address = document.getElementById('rlcraftServerAddress');
+        const copyButton = document.getElementById('rlcraftCopyButton');
+        if (!address || !copyButton) return;
+
+        copyButton.addEventListener('click', async function () {
+            try {
+                await navigator.clipboard.writeText(address.textContent.trim());
+                if (typeof window.showHandriveInlineCopyFeedback === 'function') {
+                    window.showHandriveInlineCopyFeedback(copyButton, '{{ rlcraft_copy_feedback|escapejs }}');
+                }
+            } catch (error) {}
+        });
+    })();
+
+    (function () {
+        const statusUrl = '{{ rlcraft_status_url|escapejs }}';
+        const summary = document.getElementById('rlcraftPlayerSummary');
+        const list = document.getElementById('rlcraftPlayerList');
+        const loading = document.getElementById('rlcraftPlayerLoading');
+        const empty = document.getElementById('rlcraftPlayerEmpty');
+        const panel = document.querySelector('.rlcraft-player-panel');
+        const content = document.getElementById('rlcraftPlayerPanelContent');
+        const toggle = document.getElementById('rlcraftPlayerPanelToggle');
+        const playerDetailModal = document.getElementById('minecraftPlayerDetailModal');
+        const playerDetailBackdrop = document.getElementById('minecraft-player-detail-backdrop');
+        const playerDetailClose = document.getElementById('minecraft-player-detail-close-btn');
+        const playerDetailTitle = document.getElementById('minecraft-player-detail-title');
+        const playerDetailBody = document.getElementById('minecraftPlayerDetailBody');
+        const commandUrl = '{{ rlcraft_server_command_url|escapejs }}';
+        const isRlcAdmin = {{ rlcraft_is_admin|yesno:"true,false" }};
+        const effectOptions = JSON.parse('{{ rlcraft_effect_options_json|escapejs }}');
+        const labels = {
+            online: '{{ rlcraft_online_label|escapejs }}',
+            offline: '{{ rlcraft_offline_label|escapejs }}',
+            loading: '{{ rlcraft_status_loading_label|escapejs }}',
+            failed: '{{ rlcraft_status_failed_label|escapejs }}',
+            offlineServer: '{{ rlcraft_server_offline_label|escapejs }}',
+            empty: '{{ rlcraft_players_empty_label|escapejs }}',
+            detailTitle: '{{ rlcraft_player_detail_title|escapejs }}',
+            detailStatus: '{{ rlcraft_player_detail_status_label|escapejs }}',
+            detailPlatform: '{{ rlcraft_player_detail_platform_label|escapejs }}',
+            detailUuid: '{{ rlcraft_player_detail_uuid_label|escapejs }}',
+            detailPlatformValue: '{{ rlcraft_player_detail_platform_value|escapejs }}',
+            detailUnavailable: '{{ rlcraft_player_detail_unavailable_label|escapejs }}',
+            apply: '{{ rlcraft_player_edit_apply_label|escapejs }}',
+            commandSent: '{{ rlcraft_player_command_sent_label|escapejs }}',
+            commandFailed: '{{ rlcraft_player_command_failed_label|escapejs }}',
+            commandEmpty: '{{ rlcraft_player_command_empty_label|escapejs }}',
+            gameMode: '{{ rlcraft_player_game_mode_label|escapejs }}',
+            effect: '{{ rlcraft_player_effect_label|escapejs }}',
+            effectLevel: '{{ rlcraft_player_effect_level_label|escapejs }}',
+            effectDuration: '{{ rlcraft_player_effect_duration_label|escapejs }}',
+            addEffect: '{{ rlcraft_player_add_effect_label|escapejs }}'
+        };
+        let hasLoaded = false;
+        let latestPlayersByName = new Map();
+        let activePlayerDetailName = '';
+        let playerDetailLastFocusedElement = null;
+
+        if (!summary || !list || !loading || !empty || !statusUrl) return;
+
+        function escapeHtml(value) {
+            return String(value || '').replace(/[&<>'"]/g, function (character) {
+                return {'&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'}[character];
+            });
+        }
+
+        function renderAvatar(player) {
+            const name = String(player && player.name || '').trim();
+            const headUrl = String(player && player.headUrl || '').trim();
+            if (headUrl) {
+                return '<span class="minecraft-player-avatar-wrap"><img class="minecraft-player-avatar" src="' + escapeHtml(headUrl) + '" alt="" loading="lazy"><span class="minecraft-player-avatar-fallback" aria-hidden="true" hidden>' + escapeHtml(name.slice(0, 1)) + '</span></span>';
+            }
+            return '<span class="minecraft-player-avatar-wrap"><span class="minecraft-player-avatar-fallback" aria-hidden="true">' + escapeHtml(name.slice(0, 1)) + '</span></span>';
+        }
+
+        function normalizePlayerName(value) {
+            return String(value || '').trim().toLocaleLowerCase();
+        }
+
+        function renderPlayerDetailCard(title, bodyHtml, variant) {
+            const classes = ['minecraft-player-detail-card', 'rlcraft-player-detail-card'];
+            if (variant) classes.push('is-' + variant);
+            return '<section class="' + classes.join(' ') + '">' +
+                '<div class="minecraft-player-detail-card-head rlcraft-player-detail-card-head">' +
+                '<h3 class="minecraft-player-detail-card-title rlcraft-player-detail-card-title">' + escapeHtml(title) + '</h3>' +
+                '</div>' +
+                '<div class="minecraft-player-detail-card-body rlcraft-player-detail-card-body">' + bodyHtml + '</div>' +
+                '</section>';
+        }
+
+        function renderPlayerDetail(player) {
+            if (!playerDetailModal || !playerDetailTitle || !playerDetailBody) return;
+            const name = String(player && player.name || '').trim() || 'Unknown';
+            playerDetailTitle.textContent = labels.detailTitle + ' - ' + name;
+            if (!player || !player.online) {
+                playerDetailBody.innerHTML = '';
+                return;
+            }
+            const uuid = String(player.uuid || '').trim();
+            const identity = '<div class="rlcraft-player-detail-identity">' + renderAvatar(player) + '<span class="rlcraft-player-detail-identity-name">' + escapeHtml(name) + '</span></div>';
+            const status = '<div class="minecraft-player-detail-meta"><span class="minecraft-player-detail-meta-label rlcraft-player-detail-meta-label">' + escapeHtml(labels.detailStatus) + '</span><span class="minecraft-player-detail-meta-value rlcraft-player-detail-meta-value">' + escapeHtml(labels.online) + '</span></div>';
+            const platform = '<div class="minecraft-player-detail-meta"><span class="minecraft-player-detail-meta-label rlcraft-player-detail-meta-label">' + escapeHtml(labels.detailPlatform) + '</span><span class="minecraft-player-detail-meta-value rlcraft-player-detail-meta-value">' + escapeHtml(labels.detailPlatformValue) + '</span></div>';
+            const uuidMeta = '<div class="minecraft-player-detail-meta"><span class="minecraft-player-detail-meta-label rlcraft-player-detail-meta-label">' + escapeHtml(labels.detailUuid) + '</span><span class="minecraft-player-detail-meta-value rlcraft-player-detail-meta-value">' + escapeHtml(uuid || '-') + '</span></div>';
+            const gameModeOptions = ['survival', 'creative', 'adventure', 'spectator'];
+            const gameModeForm = '<form class="rlcraft-player-edit-form" data-rlcraft-command="gamemode">' +
+                '<select class="rlcraft-player-edit-select" name="gamemode" aria-label="' + escapeHtml(labels.gameMode) + '">' +
+                '<option value=""></option>' +
+                gameModeOptions.map(function (mode) {
+                    return '<option value="' + escapeHtml(mode) + '">' + escapeHtml(mode.charAt(0).toUpperCase() + mode.slice(1)) + '</option>';
+                }).join('') +
+                '</select>' +
+                '<button class="rlcraft-player-edit-button" type="submit">' + escapeHtml(labels.apply) + '</button>' +
+                '</form>';
+            const effectForm = '<form class="rlcraft-player-edit-form is-effect" data-rlcraft-command="effect">' +
+                '<select class="rlcraft-player-edit-select" name="effect" aria-label="' + escapeHtml(labels.effect) + '">' +
+                '<option value="">' + escapeHtml(labels.effect) + '</option>' +
+                (Array.isArray(effectOptions) ? effectOptions : []).map(function (option) {
+                    return '<option value="' + escapeHtml(option && option.value) + '">' + escapeHtml(option && option.label) + '</option>';
+                }).join('') +
+                '</select>' +
+                '<input class="rlcraft-player-edit-input" name="level" type="number" min="1" max="256" step="1" value="1" aria-label="' + escapeHtml(labels.effectLevel) + '">' +
+                '<input class="rlcraft-player-edit-input" name="duration" type="number" min="1" max="86400" step="1" value="60" aria-label="' + escapeHtml(labels.effectDuration) + '">' +
+                '<button class="rlcraft-player-edit-button" type="submit">' + escapeHtml(labels.addEffect) + '</button>' +
+                '</form>';
+            const adminControls = isRlcAdmin ?
+                renderPlayerDetailCard(labels.gameMode, gameModeForm, '') +
+                renderPlayerDetailCard(labels.effect, effectForm, 'wide') : '';
+            const commandStatus = isRlcAdmin ? '<p class="rlcraft-player-command-status" id="rlcraftPlayerCommandStatus" hidden></p>' : '';
+            playerDetailBody.innerHTML = '<div class="minecraft-player-detail-grid rlcraft-player-detail-grid">' +
+                renderPlayerDetailCard(labels.detailTitle, identity, 'wide') +
+                renderPlayerDetailCard(labels.detailStatus, status, '') +
+                renderPlayerDetailCard(labels.detailPlatform, platform, '') +
+                renderPlayerDetailCard(labels.detailUuid, uuidMeta, 'wide') +
+                adminControls +
+                '</div>' +
+                commandStatus;
+        }
+
+        function setPlayerDetailModalOpen(opened, player) {
+            if (!playerDetailModal) return;
+            playerDetailModal.hidden = !opened;
+            if (opened) {
+                const nextName = normalizePlayerName(player && player.name);
+                if (!nextName || !player || !player.online) return;
+                playerDetailLastFocusedElement = document.activeElement;
+                activePlayerDetailName = nextName;
+                renderPlayerDetail(player);
+                if (window.SiteModalStack && typeof window.SiteModalStack.bringToFront === 'function') {
+                    window.SiteModalStack.bringToFront(playerDetailModal);
+                }
+                const dialog = playerDetailModal.querySelector('[role="dialog"]');
+                if (dialog) {
+                    dialog.setAttribute('tabindex', '-1');
+                    dialog.focus({preventScroll: true});
+                }
+                return;
+            }
+            if (playerDetailLastFocusedElement && typeof playerDetailLastFocusedElement.focus === 'function') {
+                playerDetailLastFocusedElement.focus({preventScroll: true});
+            }
+            playerDetailLastFocusedElement = null;
+            activePlayerDetailName = '';
+        }
+
+        function getPlayerFromListItem(target) {
+            const item = target && target.closest ? target.closest('.minecraft-player-item[data-player-name]') : null;
+            if (!item || !list.contains(item)) return null;
+            return latestPlayersByName.get(normalizePlayerName(item.dataset.playerName)) || null;
+        }
+
+        function getCsrfToken() {
+            const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+            return tokenMeta ? tokenMeta.getAttribute('content') || '' : '';
+        }
+
+        function setPlayerCommandStatus(message, isError) {
+            if (!playerDetailBody) return;
+            const status = playerDetailBody.querySelector('#rlcraftPlayerCommandStatus');
+            if (!status) return;
+            status.textContent = message || '';
+            status.hidden = !message;
+            status.classList.toggle('is-error', Boolean(isError));
+        }
+
+        async function sendPlayerCommand(command, form) {
+            if (!isRlcAdmin || !commandUrl || !command) return;
+            const button = form.querySelector('button[type="submit"]');
+            if (button) button.disabled = true;
+            setPlayerCommandStatus('', false);
+            try {
+                const response = await fetch(commandUrl, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({command: command})
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (!response.ok || !payload.ok) throw new Error('command request failed');
+                setPlayerCommandStatus(labels.commandSent, false);
+            } catch (error) {
+                setPlayerCommandStatus(labels.commandFailed, true);
+            } finally {
+                if (button) button.disabled = false;
+            }
+        }
+
+        function handlePlayerCommandSubmit(event) {
+            const form = event.target && event.target.closest ? event.target.closest('form[data-rlcraft-command]') : null;
+            if (!form || !playerDetailBody || !playerDetailBody.contains(form)) return;
+            event.preventDefault();
+            const player = latestPlayersByName.get(activePlayerDetailName);
+            if (!player || !player.online) return;
+            const targetName = String(player.name || '').trim();
+            let command = '';
+            if (form.dataset.rlcraftCommand === 'gamemode') {
+                const mode = String(form.elements.gamemode && form.elements.gamemode.value || '').trim();
+                if (!mode) {
+                    setPlayerCommandStatus(labels.commandEmpty, true);
+                    return;
+                }
+                command = 'gamemode ' + mode + ' ' + targetName;
+            } else if (form.dataset.rlcraftCommand === 'effect') {
+                const effect = String(form.elements.effect && form.elements.effect.value || '').trim();
+                const level = Math.max(1, Math.min(256, Number(form.elements.level && form.elements.level.value) || 1));
+                const duration = Math.max(1, Math.min(86400, Number(form.elements.duration && form.elements.duration.value) || 60));
+                if (!effect) {
+                    setPlayerCommandStatus(labels.commandEmpty, true);
+                    return;
+                }
+                command = 'effect give ' + targetName + ' ' + effect + ' ' + Math.round(duration) + ' ' + (Math.round(level) - 1);
+            }
+            sendPlayerCommand(command, form);
+        }
+
+        function setEmpty(message, isError) {
+            list.innerHTML = '';
+            loading.hidden = true;
+            empty.textContent = message || '';
+            empty.hidden = !message;
+            empty.classList.toggle('is-error', Boolean(isError));
+        }
+
+        function renderStatus(status) {
+            const players = (Array.isArray(status && status.players) ? status.players : []).slice().sort(function (left, right) {
+                const leftOnline = Boolean(left && left.online);
+                const rightOnline = Boolean(right && right.online);
+                if (leftOnline !== rightOnline) return leftOnline ? -1 : 1;
+                return String(left && left.name || '').localeCompare(String(right && right.name || ''), undefined, {sensitivity: 'base'});
+            });
+            const onlineCount = Number.isFinite(status && status.onlineCount) ? status.onlineCount : players.filter(function (player) { return player.online; }).length;
+            const maxPlayers = Number.isFinite(status && status.maxPlayers) && status.maxPlayers > 0 ? status.maxPlayers : 0;
+            summary.classList.remove('is-error');
+
+            if (!status || !status.serverOnline) {
+                summary.textContent = labels.offlineServer;
+                setEmpty(labels.failed, true);
+                return;
+            }
+
+            summary.textContent = labels.online + ' ' + onlineCount + (maxPlayers ? ' / ' + maxPlayers : '');
+            if (!players.length) {
+                setEmpty(labels.empty, false);
+                return;
+            }
+
+            loading.hidden = true;
+            empty.hidden = true;
+            latestPlayersByName = new Map();
+            players.forEach(function (player) {
+                const key = normalizePlayerName(player && player.name);
+                if (key) latestPlayersByName.set(key, player);
+            });
+            list.innerHTML = players.map(function (player) {
+                const isOnline = Boolean(player && player.online);
+                const itemClass = 'minecraft-panel-list-item minecraft-player-item ' + (isOnline ? 'is-online' : 'is-offline');
+                const interactiveAttributes = isOnline
+                    ? ' role="button" tabindex="0" data-player-name="' + escapeHtml(player && player.name) + '"'
+                    : '';
+                return '<li class="' + itemClass + '"' + interactiveAttributes + '>' +
+                    '<span class="minecraft-player-name">' + renderAvatar(player) + escapeHtml(player && player.name) + '</span>' +
+                    '<span class="minecraft-player-state">' + (isOnline ? labels.online : labels.offline) + '</span>' +
+                    '</li>';
+            }).join('');
+            if (activePlayerDetailName && playerDetailModal && !playerDetailModal.hidden) {
+                const activePlayer = latestPlayersByName.get(activePlayerDetailName);
+                if (activePlayer) renderPlayerDetail(activePlayer);
+            }
+        }
+
+        function setCollapsed(collapsed) {
+            if (!panel || !content || !toggle) return;
+            panel.classList.toggle('is-collapsed', collapsed);
+            content.hidden = collapsed;
+            toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
+
+        async function loadStatus() {
+            if (!hasLoaded) {
+                summary.textContent = labels.loading;
+                loading.hidden = false;
+                empty.hidden = true;
+            }
+            try {
+                const response = await fetch(statusUrl + '?t=' + Date.now(), {cache: 'no-store'});
+                if (!response.ok) throw new Error('status request failed');
+                renderStatus(await response.json());
+                hasLoaded = true;
+            } catch (error) {
+                summary.textContent = labels.failed;
+                summary.classList.add('is-error');
+                setEmpty(labels.failed, true);
+                hasLoaded = true;
+            }
+        }
+
+        if (toggle) {
+            toggle.addEventListener('click', function () {
+                setCollapsed(!panel.classList.contains('is-collapsed'));
+            });
+        }
+        list.addEventListener('click', function (event) {
+            const player = getPlayerFromListItem(event.target);
+            if (player && player.online) setPlayerDetailModalOpen(true, player);
+        });
+        list.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const player = getPlayerFromListItem(event.target);
+            if (!player || !player.online) return;
+            event.preventDefault();
+            setPlayerDetailModalOpen(true, player);
+        });
+        if (playerDetailBackdrop) {
+            playerDetailBackdrop.addEventListener('click', function () { setPlayerDetailModalOpen(false); });
+        }
+        if (playerDetailClose) {
+            playerDetailClose.addEventListener('click', function () { setPlayerDetailModalOpen(false); });
+        }
+        if (playerDetailBody) {
+            playerDetailBody.addEventListener('submit', handlePlayerCommandSubmit);
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape' || !playerDetailModal || playerDetailModal.hidden) return;
+            event.preventDefault();
+            setPlayerDetailModalOpen(false);
+        });
+        list.addEventListener('error', function (event) {
+            const image = event.target && event.target.closest ? event.target.closest('.minecraft-player-avatar') : null;
+            if (!image) return;
+            image.hidden = true;
+            const fallback = image.parentElement ? image.parentElement.querySelector('.minecraft-player-avatar-fallback') : null;
+            if (fallback) fallback.hidden = false;
+        }, true);
+        loadStatus();
+        window.setInterval(loadStatus, 5000);
+    })();
+
+    (function () {
+        const pageLayout = document.getElementById('rlcraftPageLayout');
+        const mainLayout = document.getElementById('rlcraftMainLayout');
+        const sideLayout = document.getElementById('rlcraftSideLayout');
+        const divider = document.getElementById('rlcraftPageDivider');
+        const modal = document.getElementById('rlcraftModpackModal');
+        const modpackPanel = document.getElementById('rlcraftModpackPanel');
+        const backdrop = document.getElementById('rlcraft-modpack-backdrop');
+        const closeButton = document.getElementById('rlcraft-modpack-close-btn');
+        if (!pageLayout || !mainLayout || !sideLayout || !divider) return;
+
+        const splitStorageKey = 'hanplanet.rlcraft.side-split-ratio-v2';
+        const defaultRatio = 0.27;
+        let activeDrag = null;
+
+        function isStackedLayout() {
+            return window.matchMedia('(max-width: 840px), (orientation: portrait)').matches;
+        }
+
+        function readRatio() {
+            try {
+                const ratio = Number(window.localStorage.getItem(splitStorageKey));
+                return Number.isFinite(ratio) ? ratio : defaultRatio;
+            } catch (error) {
+                return defaultRatio;
+            }
+        }
+
+        function storeRatio(ratio) {
+            try {
+                window.localStorage.setItem(splitStorageKey, ratio.toFixed(4));
+            } catch (error) {}
+        }
+
+        function getBounds() {
+            if (isStackedLayout()) return null;
+            const rect = pageLayout.getBoundingClientRect();
+            const dividerWidth = Math.max(14, divider.getBoundingClientRect().width || 0);
+            if (rect.width <= dividerWidth) return null;
+            const minimum = Math.max(0.23, 300 / rect.width);
+            const maximum = Math.min(0.5, (rect.width - dividerWidth - 320) / rect.width);
+            return maximum >= minimum ? { rect: rect, dividerWidth: dividerWidth, minimum: minimum, maximum: maximum } : null;
+        }
+
+        function clampRatio(value, bounds) {
+            return Math.max(bounds.minimum, Math.min(bounds.maximum, Number(value) || defaultRatio));
+        }
+
+        function applyRatio(value, persist) {
+            const bounds = getBounds();
+            if (!bounds) {
+                pageLayout.style.removeProperty('grid-template-columns');
+                return;
+            }
+            const ratio = clampRatio(value, bounds);
+            const sideWidth = Math.max(300, Math.round(bounds.rect.width * ratio));
+            const mainWidth = Math.max(320, Math.round(bounds.rect.width - sideWidth - bounds.dividerWidth));
+            pageLayout.style.gridTemplateColumns = mainWidth + 'px ' + bounds.dividerWidth + 'px ' + sideWidth + 'px';
+            divider.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+            divider.setAttribute('aria-valuemin', String(Math.round(bounds.minimum * 100)));
+            divider.setAttribute('aria-valuemax', String(Math.round(bounds.maximum * 100)));
+            if (persist) storeRatio(ratio);
+        }
+
+        function syncLayout() {
+            if (isStackedLayout()) {
+                pageLayout.style.removeProperty('grid-template-columns');
+                return;
+            }
+            applyRatio(readRatio(), false);
+        }
+
+        function finishDrag() {
+            if (!activeDrag) return;
+            activeDrag = null;
+            divider.classList.remove('is-active');
+            document.documentElement.style.removeProperty('cursor');
+            document.body.classList.remove('rlcraft-page-resizing');
+        }
+
+        divider.addEventListener('pointerdown', function (event) {
+            const bounds = getBounds();
+            if (!bounds) return;
+            event.preventDefault();
+            activeDrag = { pointerId: event.pointerId };
+            divider.classList.add('is-active');
+            document.documentElement.style.cursor = 'col-resize';
+            document.body.classList.add('rlcraft-page-resizing');
+            if (typeof divider.setPointerCapture === 'function') divider.setPointerCapture(event.pointerId);
+        });
+
+        divider.addEventListener('pointermove', function (event) {
+            if (!activeDrag || activeDrag.pointerId !== event.pointerId) return;
+            const bounds = getBounds();
+            if (!bounds) return;
+            const ratio = (bounds.rect.right - event.clientX) / bounds.rect.width;
+            applyRatio(ratio, true);
+        });
+
+        divider.addEventListener('pointerup', finishDrag);
+        divider.addEventListener('pointercancel', finishDrag);
+        divider.addEventListener('lostpointercapture', finishDrag);
+        divider.addEventListener('keydown', function (event) {
+            const bounds = getBounds();
+            if (!bounds) return;
+            const current = Number(divider.getAttribute('aria-valuenow') || Math.round(defaultRatio * 100)) / 100;
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+                event.preventDefault();
+                applyRatio(current + (event.key === 'ArrowRight' ? 0.02 : -0.02), true);
+            } else if (event.key === 'Home') {
+                event.preventDefault();
+                applyRatio(bounds.minimum, true);
+            } else if (event.key === 'End') {
+                event.preventDefault();
+                applyRatio(bounds.maximum, true);
+            }
+        });
+        window.addEventListener('resize', syncLayout);
+        syncLayout();
+
+        if (!modal || !modpackPanel || !backdrop) return;
+        let lastFocusedElement = null;
+
+        function setModalOpen(opened) {
+            modal.hidden = !opened;
+            modpackPanel.setAttribute('aria-expanded', opened ? 'true' : 'false');
+            if (opened) {
+                lastFocusedElement = document.activeElement;
+                if (window.SiteModalStack && typeof window.SiteModalStack.bringToFront === 'function') {
+                    window.SiteModalStack.bringToFront(modal);
+                }
+                const dialog = modal.querySelector('[role="dialog"]');
+                if (dialog) {
+                    dialog.setAttribute('tabindex', '-1');
+                    dialog.focus({ preventScroll: true });
+                }
+                return;
+            }
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                lastFocusedElement.focus({ preventScroll: true });
+            }
+            lastFocusedElement = null;
+        }
+
+        modpackPanel.addEventListener('click', function () { setModalOpen(true); });
+        modpackPanel.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setModalOpen(true);
+        });
+        backdrop.addEventListener('click', function () { setModalOpen(false); });
+        if (closeButton) closeButton.addEventListener('click', function () { setModalOpen(false); });
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && !modal.hidden) {
+                event.preventDefault();
+                setModalOpen(false);
+            }
+        });
+    })();
+
+    (function () {
+        const trigger = document.getElementById('rlcraftServerRestartTrigger');
+        const confirmModal = document.getElementById('rlcraftRestartModal');
+        const confirmBackdrop = document.getElementById('rlcraft-restart-backdrop');
+        const confirmMessage = document.getElementById('rlcraft-restart-message');
+        const cancelButton = document.getElementById('rlcraft-restart-cancel-btn');
+        const confirmButton = document.getElementById('rlcraft-restart-confirm-btn');
+        const progressModal = document.getElementById('rlcraftRestartProgressModal');
+        const progressBackdrop = document.getElementById('rlcraft-restart-progress-backdrop');
+        const progressCloseButton = document.getElementById('rlcraft-restart-progress-close-btn');
+        const progressStatus = document.getElementById('rlcraft-restart-progress-status');
+        const progressMessage = document.getElementById('rlcraft-restart-progress-message');
+        const progressSteps = Array.from(document.querySelectorAll('[data-restart-phase]'));
+        const restartUrl = '{{ rlcraft_restart_url|escapejs }}';
+        const restartStatusUrl = '{{ rlcraft_restart_status_url|escapejs }}';
+        const failedLabel = '{{ rlcraft_restart_failed_label|escapejs }}';
+        const csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+        if (!trigger || !confirmModal || !confirmBackdrop || !confirmMessage || !cancelButton || !confirmButton || !progressModal || !progressBackdrop || !progressCloseButton || !progressStatus || !progressMessage || !restartUrl || !restartStatusUrl) return;
+
+        let confirmLastFocusedElement = null;
+        let progressLastFocusedElement = null;
+        let progressPollTimer = null;
+        let progressPhase = 'idle';
+        const defaultConfirmMessage = confirmMessage.textContent;
+
+        function bringModalToFront(modal) {
+            if (window.SiteModalStack && typeof window.SiteModalStack.bringToFront === 'function') {
+                window.SiteModalStack.bringToFront(modal);
+            }
+        }
+
+        function setConfirmModalOpen(opened) {
+            confirmModal.hidden = !opened;
+            if (opened) {
+                confirmMessage.textContent = defaultConfirmMessage;
+                confirmButton.disabled = false;
+                confirmLastFocusedElement = document.activeElement;
+                bringModalToFront(confirmModal);
+                return;
+            }
+            if (confirmLastFocusedElement && typeof confirmLastFocusedElement.focus === 'function') {
+                confirmLastFocusedElement.focus({ preventScroll: true });
+            }
+            confirmLastFocusedElement = null;
+        }
+
+        function stopProgressPolling() {
+            if (progressPollTimer) {
+                window.clearTimeout(progressPollTimer);
+                progressPollTimer = null;
+            }
+        }
+
+        function setProgressModalOpen(opened) {
+            progressModal.hidden = !opened;
+            if (opened) {
+                progressLastFocusedElement = document.activeElement;
+                bringModalToFront(progressModal);
+                return;
+            }
+            stopProgressPolling();
+            if (progressLastFocusedElement && typeof progressLastFocusedElement.focus === 'function') {
+                progressLastFocusedElement.focus({ preventScroll: true });
+            }
+            progressLastFocusedElement = null;
+        }
+
+        function renderProgress(state) {
+            const allowedPhases = new Set(['queued', 'stopping', 'starting', 'ready', 'failed']);
+            const phase = allowedPhases.has(state && state.phase) ? state.phase : 'queued';
+            const phaseIndex = ['queued', 'stopping', 'starting', 'ready'].indexOf(phase);
+            progressPhase = phase;
+            progressStatus.classList.toggle('is-complete', phase === 'ready');
+            progressStatus.classList.toggle('is-error', phase === 'failed');
+            const activeStep = progressSteps.find(function (step) {
+                return step.dataset.restartPhase === phase;
+            });
+            progressMessage.textContent = phase === 'failed' ? failedLabel : (activeStep || progressSteps[0]).textContent;
+            progressSteps.forEach(function (step, index) {
+                const stepPhase = step.dataset.restartPhase;
+                const stepIndex = ['queued', 'stopping', 'starting', 'ready'].indexOf(stepPhase);
+                step.classList.toggle('is-active', stepPhase === phase);
+                step.classList.toggle('is-complete', phase === 'ready' ? stepPhase !== 'ready' : stepIndex >= 0 && phaseIndex >= 0 && stepIndex < phaseIndex);
+            });
+            progressModal.dataset.restartPhase = phase;
+        }
+
+        function scheduleProgressPoll() {
+            stopProgressPolling();
+            progressPollTimer = window.setTimeout(loadProgress, 1500);
+        }
+
+        async function loadProgress() {
+            try {
+                const response = await fetch(restartStatusUrl + '?t=' + Date.now(), {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+                if (!response.ok) throw new Error('restart status failed');
+                const state = await response.json();
+                renderProgress(state);
+                if (state.active) {
+                    scheduleProgressPoll();
+                } else {
+                    stopProgressPolling();
+                }
+            } catch (error) {
+                progressMessage.textContent = failedLabel;
+                progressStatus.classList.add('is-error');
+                scheduleProgressPoll();
+            }
+        }
+
+        function openProgress(state) {
+            renderProgress(state || { phase: 'queued', active: true });
+            setProgressModalOpen(true);
+            if (state && state.active !== false) scheduleProgressPoll();
+        }
+
+        async function openFromTrigger() {
+            try {
+                const response = await fetch(restartStatusUrl + '?t=' + Date.now(), {
+                    headers: { 'Accept': 'application/json' },
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+                if (response.ok) {
+                    const state = await response.json();
+                    const recent = state.updated_at && (Date.now() / 1000 - Number(state.updated_at) < 120);
+                    if (state.active || (recent && ['ready', 'failed'].includes(state.phase))) {
+                        openProgress(state);
+                        return;
+                    }
+                    setConfirmModalOpen(true);
+                    return;
+                }
+            } catch (error) {}
+            openProgress({ phase: 'starting', active: true });
+        }
+
+        async function restartServer() {
+            confirmButton.disabled = true;
+            try {
+                const response = await fetch(restartUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken,
+                    },
+                    body: '{}',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (!response.ok || !payload.ok) throw new Error('restart request failed');
+                setConfirmModalOpen(false);
+                openProgress(payload.state || { phase: 'queued', active: true });
+            } catch (error) {
+                confirmMessage.textContent = failedLabel;
+                confirmButton.disabled = false;
+                confirmButton.focus({ preventScroll: true });
+            }
+        }
+
+        trigger.addEventListener('click', openFromTrigger);
+        trigger.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            openFromTrigger();
+        });
+        confirmBackdrop.addEventListener('click', function () { setConfirmModalOpen(false); });
+        cancelButton.addEventListener('click', function () { setConfirmModalOpen(false); });
+        confirmButton.addEventListener('click', restartServer);
+        progressBackdrop.addEventListener('click', function () { setProgressModalOpen(false); });
+        progressCloseButton.addEventListener('click', function () { setProgressModalOpen(false); });
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape') return;
+            if (!confirmModal.hidden) {
+                event.preventDefault();
+                setConfirmModalOpen(false);
+            } else if (!progressModal.hidden) {
+                event.preventDefault();
+                setProgressModalOpen(false);
+            }
+        });
+    })();
+
+    (function () {
+        const trigger = document.getElementById('rlcraftConsoleTrigger');
+        const modal = document.getElementById('rlcraftServerLogModal');
+        const backdrop = document.getElementById('rlcraft-server-log-backdrop');
+        const closeButton = document.getElementById('rlcraft-server-log-close-btn');
+        const panel = document.getElementById('rlcraftServerLogPanel');
+        const output = document.getElementById('rlcraftServerLogOutput');
+        const status = document.getElementById('rlcraftServerLogStatus');
+        const commandForm = document.getElementById('rlcraftServerCommandForm');
+        const commandInput = document.getElementById('rlcraftServerCommandInput');
+        const commandButton = document.getElementById('rlcraftServerCommandButton');
+        const logUrl = panel ? panel.dataset.logUrl || '' : '';
+        const commandUrl = commandForm ? commandForm.dataset.commandUrl || '' : '';
+        const labels = {
+            updated: '{{ rlcraft_server_log_updated_label|escapejs }}',
+            failed: '{{ rlcraft_server_log_failed_label|escapejs }}',
+            commandSend: '{{ rlcraft_server_command_send_label|escapejs }}',
+            commandSending: '{{ rlcraft_server_command_sending_label|escapejs }}',
+            commandFailed: '{{ rlcraft_server_command_failed_label|escapejs }}',
+            commandEmpty: '{{ rlcraft_server_command_empty_label|escapejs }}'
+        };
+        if (!trigger || !modal || !backdrop || !panel || !output || !status || !logUrl) return;
+
+        let lastFocusedElement = null;
+        let cursor = null;
+        let logText = '';
+        let hasLoaded = false;
+        let requestInFlight = false;
+        let pollTimer = null;
+        let commandRequestInFlight = false;
+
+        function bringToFront() {
+            if (window.SiteModalStack && typeof window.SiteModalStack.bringToFront === 'function') {
+                window.SiteModalStack.bringToFront(modal);
+            }
+        }
+
+        function appendLog(text, replace) {
+            const nextText = String(text || '');
+            const stickToBottom = !hasLoaded || output.scrollTop + output.clientHeight >= output.scrollHeight - 24;
+            if (replace) {
+                logText = nextText;
+            } else if (nextText) {
+                logText += logText && !logText.endsWith('\n') ? '\n' + nextText : nextText;
+            }
+            if (logText.length > 90000) logText = logText.slice(-80000);
+            output.textContent = logText;
+            if (stickToBottom) output.scrollTop = output.scrollHeight;
+        }
+
+        async function loadLog() {
+            if (requestInFlight) return;
+            requestInFlight = true;
+            try {
+                const params = new URLSearchParams({t: String(Date.now())});
+                if (cursor !== null) params.set('cursor', String(cursor));
+                const response = await fetch(logUrl + '?' + params.toString(), {
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+                if (!response.ok) throw new Error('log request failed');
+                const payload = await response.json();
+                appendLog(typeof payload.text === 'string' ? payload.text : '', !hasLoaded);
+                if (Number.isFinite(payload.cursor)) cursor = payload.cursor;
+                status.textContent = labels.updated;
+                hasLoaded = true;
+            } catch (error) {
+                status.textContent = labels.failed;
+            } finally {
+                requestInFlight = false;
+            }
+        }
+
+        function getCsrfToken() {
+            const tokenInput = document.querySelector('input[name="csrfmiddlewaretoken"]');
+            if (tokenInput && tokenInput.value) return tokenInput.value;
+            const tokenMeta = document.querySelector('meta[name="csrf-token"]');
+            return tokenMeta ? tokenMeta.getAttribute('content') || '' : '';
+        }
+
+        async function sendServerCommand(command, options) {
+            const settings = options || {};
+            if (!commandUrl) return {ok: false, error: 'missing_url'};
+            if (commandRequestInFlight) return {ok: false, error: 'busy'};
+            commandRequestInFlight = true;
+            if (commandButton) {
+                commandButton.disabled = true;
+                commandButton.setAttribute('aria-label', labels.commandSending);
+                commandButton.title = labels.commandSending;
+            }
+            try {
+                const response = await fetch(commandUrl, {
+                    method: 'POST',
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    referrerPolicy: 'same-origin',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({command: command})
+                });
+                const payload = await response.json().catch(function () { return {}; });
+                if (!response.ok || !payload.ok) {
+                    status.textContent = labels.commandFailed;
+                    return {
+                        ok: false,
+                        status: response.status,
+                        error: payload && payload.error ? String(payload.error) : 'request_failed'
+                    };
+                }
+                if (settings.clearInput && commandInput) commandInput.value = '';
+                status.textContent = labels.updated;
+                window.setTimeout(loadLog, 500);
+                return {ok: true};
+            } catch (error) {
+                status.textContent = labels.commandFailed;
+                return {ok: false, error: 'network'};
+            } finally {
+                commandRequestInFlight = false;
+                if (commandButton) {
+                    commandButton.disabled = false;
+                    commandButton.setAttribute('aria-label', labels.commandSend);
+                    commandButton.title = labels.commandSend;
+                }
+                if (settings.refocusInput && commandInput) commandInput.focus();
+            }
+        }
+
+        function schedulePoll() {
+            if (pollTimer) window.clearTimeout(pollTimer);
+            if (!modal.hidden) pollTimer = window.setTimeout(function () {
+                loadLog().finally(schedulePoll);
+            }, 3000);
+        }
+
+        function setOpen(opened) {
+            modal.hidden = !opened;
+            trigger.setAttribute('aria-expanded', opened ? 'true' : 'false');
+            if (opened) {
+                lastFocusedElement = document.activeElement;
+                bringToFront();
+                const dialog = modal.querySelector('[role="dialog"]');
+                if (dialog) {
+                    dialog.setAttribute('tabindex', '-1');
+                    dialog.focus({preventScroll: true});
+                }
+                loadLog().finally(schedulePoll);
+                return;
+            }
+            if (pollTimer) window.clearTimeout(pollTimer);
+            pollTimer = null;
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                lastFocusedElement.focus({preventScroll: true});
+            }
+            lastFocusedElement = null;
+        }
+
+        trigger.addEventListener('click', function () { setOpen(true); });
+        trigger.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            setOpen(true);
+        });
+        backdrop.addEventListener('click', function () { setOpen(false); });
+        if (closeButton) closeButton.addEventListener('click', function () { setOpen(false); });
+        if (commandForm && commandInput && commandButton && commandUrl) {
+            commandForm.addEventListener('submit', function (event) {
+                event.preventDefault();
+                if (commandRequestInFlight) return;
+                const command = commandInput.value.trim();
+                if (!command) {
+                    status.textContent = labels.commandEmpty;
+                    return;
+                }
+                sendServerCommand(command, {clearInput: true, refocusInput: true});
+            });
+        }
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape' || modal.hidden) return;
+            event.preventDefault();
+            setOpen(false);
+        });
+    })();
+</script>
+{% endblock %}

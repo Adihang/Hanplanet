@@ -8,6 +8,8 @@ ingress:
     service: http://nginx:80
   - hostname: mc.hanplanet.com
     service: http://nginx:80
+  - hostname: rlc.hanplanet.com
+    service: http://nginx:80
   - hostname: git.hanplanet.com
     service: http://nginx:80
   - hostname: game.hanplanet.com

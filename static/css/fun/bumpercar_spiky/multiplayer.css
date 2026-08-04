@@ -1364,6 +1364,104 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     letter-spacing: -0.02em;
 }
 
+.multiplayer-raise-speaki-winner-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgb(15 23 42 / 0.42);
+    backdrop-filter: blur(2px);
+}
+
+.multiplayer-raise-speaki-birth-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 11;
+    display: grid;
+    place-items: start center;
+    padding: clamp(32px, 8vh, 76px) 24px 24px;
+    pointer-events: none;
+}
+
+.multiplayer-raise-speaki-birth-notice {
+    display: flex;
+    width: min(420px, 100%);
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    padding: 18px 26px 20px;
+    border: 1px solid rgb(255 255 255 / 0.78);
+    border-radius: 22px;
+    background: rgb(255 255 255 / 0.92);
+    box-shadow: 0 14px 32px rgb(15 23 42 / 0.2);
+    text-align: center;
+}
+
+.multiplayer-raise-speaki-birth-title {
+    margin: 0;
+    color: #7f1d1d;
+    font-size: clamp(25px, 4vw, 34px);
+    font-weight: 1000;
+    letter-spacing: -0.05em;
+    line-height: 1.1;
+}
+
+.multiplayer-raise-speaki-birth-countdown {
+    margin: 0;
+    color: #374151;
+    font-size: clamp(18px, 3vw, 23px);
+    font-weight: 800;
+    letter-spacing: -0.035em;
+    line-height: 1.2;
+}
+
+.multiplayer-raise-speaki-winner-modal {
+    display: flex;
+    width: min(360px, 100%);
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 28px 32px 26px;
+    border: 1px solid rgb(255 255 255 / 0.72);
+    border-radius: 28px;
+    background: rgb(255 255 255 / 0.94);
+    box-shadow: 0 20px 48px rgb(15 23 42 / 0.26);
+    text-align: center;
+}
+
+.multiplayer-raise-speaki-winner-title {
+    margin: 0;
+    color: #7f1d1d;
+    font-size: clamp(30px, 5vw, 42px);
+    font-weight: 1000;
+    letter-spacing: -0.06em;
+    line-height: 1.05;
+}
+
+.multiplayer-raise-speaki-winner-character {
+    width: 116px;
+    height: 116px;
+    object-fit: contain;
+    image-rendering: auto;
+}
+
+.multiplayer-raise-speaki-winner-name {
+    margin: 0;
+    color: #111827;
+    font-size: 26px;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.multiplayer-raise-speaki-winner-countdown {
+    margin: 4px 0 0;
+    color: #4b5563;
+    font-size: 18px;
+    font-weight: 750;
+}
+
 .multiplayer-death-modal {
     position: relative;
     z-index: 1;

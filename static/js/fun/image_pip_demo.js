@@ -174,7 +174,6 @@
                 codeElement.innerHTML = highlightExampleCode(exampleCode);
                 codeElement.dataset.rendered = "1";
             }
-            if (codeCopyButton) codeCopyButton.focus();
         } else if (codeOpenButton) {
             codeOpenButton.focus();
         }

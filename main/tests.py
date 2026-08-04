@@ -131,6 +131,7 @@ from .views import (
     _build_bumpercar_skin_catalog,
     build_game_auth_token,
     build_lang_switch_url,
+    build_prominence_player_head_url,
     extract_minecraft_bedrock_server_version,
     extract_minecraft_server_version,
     get_minecraft_trade_item_options,
@@ -142,6 +143,9 @@ from .views import (
     MINECRAFT_NPC_TRADE_SELLER_HEAD_URL,
     MINECRAFT_SERVER_IMAGE_URL,
     MINECRAFT_WEATHER_ICON_URL,
+    PROMINENCE_CURSEFORGE_URL,
+    PROMINENCE_KOREAN_PATCH_URL,
+    PROMINENCE_PLAYER_HEAD_URL_TEMPLATE,
     WARGAME_META_DESCRIPTION_EN,
     WARGAME_META_DESCRIPTION_KO,
     WARGAME_META_IMAGE_URL,
@@ -1086,6 +1090,24 @@ class TranslateTextViewTests(TestCase):
         self.assertIn(long_text, user_prompt)
         self.assertGreater(len(user_prompt), 500)
 
+    def test_translate_text_preserves_long_translation_without_clamping(self):
+        long_translation = " ".join(["Translated sentence"] * 40)
+        raw_output = f"TRANSLATION: {long_translation}\nEXPLANATION: Long output"
+
+        with mock.patch("main.views.call_ollama", return_value=raw_output):
+            response = self.client.post(
+                reverse("main:translate_text"),
+                data=json.dumps({"text": "긴 문장", "source": "ko", "target": "en"}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["translation"], long_translation)
+        self.assertEqual(payload["explanation"], "Long output")
+        self.assertGreater(len(payload["translation"]), 500)
+        self.assertIn(long_translation, payload["translation_html"])
+
     def test_translate_text_prompt_includes_fixed_failure_output_rule(self):
         with mock.patch("main.views.call_ollama", return_value="Translation failed") as mocked_call:
             response = self.client.post(
@@ -1173,6 +1195,14 @@ class GlobalRateLimitMiddlewareTests(TestCase):
 
         self.assertNotEqual(first.status_code, 429)
         self.assertNotEqual(second.status_code, 429)
+
+    def test_handrive_chunk_upload_path_does_not_consume_site_rate_limit(self):
+        for _ in range(4):
+            response = self.client.post(
+                "/handrive/api/upload",
+                HTTP_ACCEPT="application/json",
+            )
+            self.assertNotEqual(response.status_code, 429)
 
 
 class CanonicalPublicHostMiddlewareTests(TestCase):
@@ -2412,6 +2442,253 @@ class LanguageUrlRoutingTests(TestCase):
         )
         self.assertGreaterEqual(mocked_bedrock_version.call_count, 2)
 
+    @mock.patch("main.views.read_prominence_server_status")
+    def test_rlcraft_home_shows_player_panel_and_curseforge_install_guide(self, mocked_status):
+        mocked_status.return_value = {
+            "serverOnline": True,
+            "onlineCount": 1,
+            "maxPlayers": 20,
+            "players": [
+                {"name": "Jheen", "online": True},
+                {"name": "Adihang", "online": False},
+            ],
+        }
+
+        response = self.client.get("/", HTTP_HOST="rlc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode("utf-8")
+        self.assertContains(response, "rlcraft-player-panel", html=False)
+        self.assertContains(response, 'id="rlcraftPlayerList"', html=False)
+        self.assertContains(response, 'id="rlcraftPlayerPanelToggle"', html=False)
+        self.assertContains(response, 'id="rlcraftPageDivider"', html=False)
+        self.assertContains(response, 'role="separator"', html=False)
+        self.assertContains(response, '<p class="rlcraft-server-subtitle">Prominence II: Hasturian Era v3.9.27</p>', html=False)
+        self.assertNotContains(response, "RPG 성장과 탐험을 위한", html=False)
+        self.assertLess(content.index("rlcraft-player-panel"), content.index("rlcraft-modpack-panel"))
+        self.assertContains(response, 'id="rlcraftModpackPanel"', html=False)
+        self.assertContains(response, 'role="button"', html=False)
+        self.assertContains(response, 'id="rlcraftModpackInstallTrigger"', html=False)
+        self.assertContains(response, 'id="rlcraftModpackModal"', html=False)
+        self.assertContains(response, 'id="rlcraftModpackModal" class="handrive-help-modal rlcraft-modpack-modal" hidden', html=False)
+        self.assertNotContains(response, 'class="rlcraft-side-content"', html=False)
+        self.assertContains(response, PROMINENCE_CURSEFORGE_URL, html=False)
+        self.assertContains(response, PROMINENCE_KOREAN_PATCH_URL, html=False)
+        self.assertContains(response, "CurseForge에서 설치", html=False)
+        self.assertContains(response, "한국어 패치 안내", html=False)
+        self.assertNotContains(response, "Hanplanet_Prominence_II_v3.9.27_ko.zip", html=False)
+        self.assertContains(response, "CurseForge의 공식 Prominence II: Hasturian Era 페이지", html=False)
+        self.assertContains(response, "const statusUrl = '/rlcraft", html=False)
+
+    def test_prominence_player_head_url_uses_java_uuid(self):
+        self.assertEqual(
+            build_prominence_player_head_url("8e1c9ff8-61cb-4b3c-a901-26b2c1d16506"),
+            PROMINENCE_PLAYER_HEAD_URL_TEMPLATE.format(uuid="8e1c9ff8-61cb-4b3c-a901-26b2c1d16506"),
+        )
+        self.assertEqual(build_prominence_player_head_url("00000000-0000-0000-0000-000000000000"), "")
+
+    def test_rlcraft_restart_control_is_visible_only_to_superuser(self):
+        regular = get_user_model().objects.create_user(
+            username="rlcraft_restart_regular",
+            password="pw123456",
+        )
+        admin = get_user_model().objects.create_superuser(
+            username="rlcraft_restart_admin",
+            password="pw123456",
+            email="rlcraft-restart-admin@example.com",
+        )
+
+        self.client.force_login(regular)
+        response = self.client.get("/", HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'id="rlcraftServerRestartTrigger"', html=False)
+        self.assertNotContains(response, 'id="rlcraftConsoleTrigger"', html=False)
+        self.assertNotContains(response, 'id="rlcraftServerLogModal"', html=False)
+        self.assertNotContains(response, 'id="rlcraftRestartModal"', html=False)
+        self.assertContains(response, 'id="minecraftPlayerDetailModal"', html=False)
+
+        self.client.force_login(admin)
+        response = self.client.get("/", HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="rlcraftServerRestartTrigger"', html=False)
+        self.assertContains(response, 'id="rlcraftConsoleTrigger"', html=False)
+        self.assertContains(response, 'id="rlcraftServerLogModal"', html=False)
+        self.assertContains(response, 'id="rlcraftServerLogPanel"', html=False)
+        self.assertContains(response, 'id="rlcraftServerCommandForm"', html=False)
+        self.assertContains(response, 'class="minecraft-server-command-input"', html=False)
+        self.assertContains(response, 'id="rlcraftServerCommandButton"', html=False)
+        content = response.content.decode("utf-8")
+        self.assertLess(content.index('id="rlcraftServerLogOutput"'), content.index('id="rlcraftServerLogStatus"'))
+        self.assertContains(response, r"const commandUrl = '/rlcraft\u002Dserver\u002Dcommand.json';", html=False)
+        self.assertContains(response, "'<option value=\"\"></option>'", html=False)
+        self.assertContains(response, 'data-rlcraft-command="gamemode"', html=False)
+        self.assertContains(response, 'id="rlcraftRestartModal"', html=False)
+        self.assertContains(response, 'id="rlcraftRestartProgressModal"', html=False)
+        self.assertContains(response, 'id="rlcraft-restart-progress-status"', html=False)
+        self.assertNotContains(response, 'id="rlcraft-restart-progress-note"', html=False)
+        self.assertContains(response, "const restartStatusUrl = '/api/rlcraft/restart/status';", html=False)
+
+    def test_rlcraft_server_log_json_is_superuser_only_and_reads_prominence_log(self):
+        url = reverse("main:rlcraft_server_log_json")
+        with TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "latest.log"
+            log_path.write_text(
+                "[03:00:00] [Server thread/INFO]: Prominence booted\n"
+                "[03:00:01] [Server thread/INFO]: Fabric command output\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch("main.views.PROMINENCE_CONSOLE_OUTPUT_PATH", log_path):
+                response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                regular = get_user_model().objects.create_user(username="rlcraft_console_regular", password="pw123456")
+                self.client.force_login(regular)
+                response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                admin = get_user_model().objects.create_superuser(
+                    username="rlcraft_console_admin",
+                    email="rlcraft-console-admin@example.com",
+                    password="pw123456",
+                )
+                self.client.force_login(admin)
+                response = self.client.get(url, HTTP_HOST="www.hanplanet.com")
+                self.assertEqual(response.status_code, 404)
+
+                response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+                self.assertIn("Prominence booted", payload["text"])
+                self.assertIn("Fabric command output", payload["text"])
+
+    def test_rlcraft_server_command_json_is_superuser_only(self):
+        url = reverse("main:rlcraft_server_command_json")
+        response = self.client.post(
+            url,
+            data=json.dumps({"command": "gamemode creative Adihang"}),
+            content_type="application/json",
+            HTTP_HOST="rlc.hanplanet.com",
+        )
+        self.assertEqual(response.status_code, 404)
+
+        regular = get_user_model().objects.create_user(username="rlcraft_command_regular", password="pw123456")
+        self.client.force_login(regular)
+        response = self.client.post(
+            url,
+            data=json.dumps({"command": "gamemode creative Adihang"}),
+            content_type="application/json",
+            HTTP_HOST="rlc.hanplanet.com",
+        )
+        self.assertEqual(response.status_code, 404)
+
+        admin = get_user_model().objects.create_superuser(
+            username="rlcraft_command_admin",
+            email="rlcraft-command-admin@example.com",
+            password="pw123456",
+        )
+        self.client.force_login(admin)
+        with mock.patch("main.views.write_prominence_console_command") as mocked_write:
+            response = self.client.post(
+                url,
+                data=json.dumps({"command": "/gamemode creative Adihang"}),
+                content_type="application/json",
+                HTTP_HOST="rlc.hanplanet.com",
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True})
+        mocked_write.assert_called_once_with("gamemode creative Adihang")
+
+    @mock.patch("main.views.request_prominence_server_restart", return_value="queued")
+    def test_rlcraft_restart_server_requires_superuser_and_rlcraft_host(self, mocked_restart):
+        url = reverse("main:rlcraft_restart_server")
+        regular = get_user_model().objects.create_user(
+            username="rlcraft_restart_api_regular",
+            password="pw123456",
+        )
+        staff = get_user_model().objects.create_user(
+            username="rlcraft_restart_api_staff",
+            password="pw123456",
+            is_staff=True,
+        )
+        admin = get_user_model().objects.create_superuser(
+            username="rlcraft_restart_api_admin",
+            password="pw123456",
+            email="rlcraft-restart-api-admin@example.com",
+        )
+
+        response = self.client.post(url, HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        for user in (regular, staff):
+            self.client.force_login(user)
+            response = self.client.post(url, HTTP_HOST="rlc.hanplanet.com")
+            self.assertEqual(response.status_code, 404)
+
+        self.client.force_login(admin)
+        response = self.client.post(url, HTTP_HOST="www.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.post(url, HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["ok"], True)
+        self.assertEqual(response.json()["mode"], "queued")
+        mocked_restart.assert_called_once_with()
+
+    @mock.patch("main.views.prominence_restart_is_active", return_value=True)
+    @mock.patch(
+        "main.views.read_prominence_restart_state",
+        return_value={"phase": "starting", "updated_at": 123.0},
+    )
+    def test_rlcraft_restart_status_is_superuser_only(self, mocked_state, mocked_active):
+        url = reverse("main:rlcraft_restart_status_json")
+        regular = get_user_model().objects.create_user(
+            username="rlcraft_restart_status_regular",
+            password="pw123456",
+        )
+        admin = get_user_model().objects.create_superuser(
+            username="rlcraft_restart_status_admin",
+            password="pw123456",
+            email="rlcraft-restart-status-admin@example.com",
+        )
+
+        response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        self.client.force_login(regular)
+        response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        self.client.force_login(admin)
+        response = self.client.get(url, HTTP_HOST="www.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {
+            "ok": True,
+            "active": True,
+            "phase": "starting",
+            "updated_at": 123.0,
+        })
+
+    @mock.patch("main.views.read_prominence_server_status")
+    def test_rlcraft_status_json_is_limited_to_rlcraft_host(self, mocked_status):
+        mocked_status.return_value = {
+            "serverOnline": True,
+            "onlineCount": 2,
+            "maxPlayers": 20,
+            "players": [{"name": "Jheen", "online": True}],
+        }
+
+        url = reverse("main:rlcraft_status_json")
+        response = self.client.get(url, HTTP_HOST="rlc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["onlineCount"], 2)
+
+        response = self.client.get(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
     def test_sub_minecraft_card_uses_server_image_metadata(self):
         response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "ko"}))
         english_response = self.client.get(reverse("main:sub_lang", kwargs={"ui_lang": "en"}))
@@ -2490,7 +2767,7 @@ class LanguageUrlRoutingTests(TestCase):
         response = self.client.get("/", HTTP_HOST="mc.hanplanet.com")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.context["links_panel_title"], "플러그인")
+        self.assertEqual(response.context["links_panel_title"], "서버용 모드팩 설치")
         self.assertEqual(response.context["server_panel_title"], "지도")
         self.assertEqual(response.context["server_version"], "26.3")
         self.assertEqual(response.context["bedrock_server_version"], "26.30")
@@ -2542,6 +2819,10 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "function isMinecraftNight(ticks)", html=False)
         self.assertContains(response, "normalizedWeather === 'clear' && isMinecraftNight(ticks)", html=False)
         self.assertContains(response, "setWeatherIcon(weather, currentTicks);", html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('time set ' + ticks", html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('weather ' + weather", html=False)
+        self.assertNotContains(response, "sendMinecraftServerCommand('minecraft:time set ' + ticks", html=False)
+        self.assertNotContains(response, "sendMinecraftServerCommand('minecraft:weather ' + weather", html=False)
         self.assertContains(response, 'worldState.paused ? 0', html=False)
         self.assertContains(response, 'paused: Boolean(world.paused)', html=False)
         self.assertContains(response, 'window.setInterval(loadStatus, 5000);', html=False)
@@ -2889,7 +3170,16 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'a[data-auth-modal="login"]', html=False)
         self.assertContains(response, "setupAccountLinkModal();", html=False)
         self.assertContains(response, "method: 'DELETE'", html=False)
-        self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-links-title">플러그인</h2>', html=False)
+        self.assertContains(response, 'class="minecraft-panel-title minecraft-plugin-install-trigger"', html=False)
+        self.assertContains(response, 'id="minecraftPluginInstallTrigger"', html=False)
+        self.assertContains(response, 'id="minecraftPluginInstallTrigger"', html=False)
+        self.assertContains(response, '>서버용 모드팩 설치</button>', html=False)
+        self.assertContains(response, 'id="minecraftPluginListLabel"', html=False)
+        self.assertContains(response, '<button class="minecraft-plugin-list-label" id="minecraftPluginListLabel"', html=False)
+        self.assertContains(response, '>플러그인 목록</button>', html=False)
+        self.assertContains(response, 'id="minecraftModInstallModal"', html=False)
+        self.assertContains(response, "포함 모드: Fabric API, Sodium, Iris, Simple Voice Chat, Voxy, VoxyServer, Punchy!", html=False)
+        self.assertNotContains(response, 'minecraft-modpack-panel', html=False)
         self.assertContains(response, '<span class="minecraft-plugin-name">BlueMap</span>', html=False)
         self.assertContains(response, '<span class="minecraft-plugin-version">5.22</span>', html=False)
         self.assertNotContains(response, "Sub로 돌아가기", html=False)
@@ -3000,7 +3290,11 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, '.minecraft-player-item.is-online[role="button"] {', html=False)
         self.assertContains(response, 'translate: 0 0 !important;', html=False)
         self.assertContains(response, 'id="minecraftPlayerDetailModal"', html=False)
-        self.assertContains(response, 'class="handrive-help-modal minecraft-player-detail-modal"', html=False)
+        self.assertContains(
+            response,
+            'class="handrive-help-modal minecraft-player-detail-modal rlcraft-player-detail-modal"',
+            html=False,
+        )
         self.assertContains(response, 'id="minecraftPlayerDetailBody"', html=False)
         self.assertIn('width: 560px;', player_detail_dialog_css_block)
         self.assertIn('max-width: calc(100vw - 20px);', player_detail_dialog_css_block)
@@ -3026,7 +3320,14 @@ class LanguageUrlRoutingTests(TestCase):
                 f'data-handrive-help-modal-resize-handle="{resize_direction}"',
                 server_log_modal_block,
             )
-        self.assertContains(response, '<h2 class="minecraft-panel-title" id="minecraft-server-log-title">서버 콘솔</h2>', html=False)
+        self.assertContains(response, 'class="minecraft-panel-title minecraft-server-restart-trigger"', html=False)
+        self.assertContains(response, 'id="minecraftServerRestartTrigger"', html=False)
+        self.assertContains(response, 'aria-controls="minecraftRestartModal"', html=False)
+        self.assertContains(response, 'id="minecraftRestartModal"', html=False)
+        self.assertContains(response, 'id="minecraftRestartProgressModal"', html=False)
+        self.assertContains(response, 'const restartUrl = \'/api/minecraft/restart\';', html=False)
+        self.assertContains(response, 'const restartStatusUrl = \'/api/minecraft/restart/status\';', html=False)
+        self.assertContains(response, "openProgress({ phase: 'starting', active: true });", html=False)
         self.assertContains(response, 'class="minecraft-server-log-title-row"', html=False)
         self.assertContains(response, 'id="minecraftServerHelpButton"', html=False)
         self.assertContains(response, 'aria-controls="minecraft-server-help-modal"', html=False)
@@ -3104,8 +3405,8 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'setupPlayerDetailModal();', html=False)
         self.assertContains(response, 'setupTimePicker();', html=False)
         self.assertContains(response, 'setupWeatherMenu();', html=False)
-        self.assertContains(response, "sendMinecraftServerCommand('minecraft:time set ' + ticks", html=False)
-        self.assertContains(response, "sendMinecraftServerCommand('minecraft:weather ' + weather", html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('time set ' + ticks", html=False)
+        self.assertContains(response, "sendMinecraftServerCommand('weather ' + weather", html=False)
         self.assertContains(response, "renderPlayerEditFormWithUnit('health'", html=False)
         self.assertContains(response, "renderPlayerEditFormWithUnit('food'", html=False)
         self.assertContains(response, "renderPlayerLevelExpForm(String(level), formatPlayerNumber(xpPercent, 0))", html=False)
@@ -3172,7 +3473,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, "border-radius: 4px;\n        background: transparent;", html=False)
         self.assertContains(response, "playerDetailBodyEl.addEventListener('input', handleInventoryItemInput);", html=False)
         self.assertContains(response, "playerDetailBodyEl.addEventListener('keydown', handleInventoryItemKeydown);", html=False)
-        self.assertContains(response, "latestItemOptions = normalizeMinecraftItemOptions(status && status.items);", html=False)
+        self.assertContains(response, "const statusItems = status && Array.isArray(status.items) ? status.items : null;", html=False)
+        self.assertContains(response, "if (statusItems && statusItems.length) {", html=False)
+        self.assertContains(response, "latestItemOptions = normalizeMinecraftItemOptions(statusItems);", html=False)
         self.assertContains(response, "'minecraft-inventory-slot'", html=False)
         self.assertContains(response, "const minecraftItemIconManifestUrl = '/static/media/icons/minecraft/items/manifest.json", html=False)
         self.assertContains(response, "const minecraftItemIconCacheVersion = (function ()", html=False)
@@ -3233,6 +3536,54 @@ class LanguageUrlRoutingTests(TestCase):
         mocked_plugins.assert_called_once_with()
         mocked_status.assert_called()
         mocked_bedrock_version.assert_called_once_with()
+
+    def test_minecraft_restart_controls_are_superuser_only(self):
+        url = reverse("main:minecraft_restart_server")
+        status_url = reverse("main:minecraft_restart_status_json")
+        response = self.client.post(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        regular = get_user_model().objects.create_user(
+            username="minecraft_restart_regular",
+            password="pw123456",
+        )
+        self.client.force_login(regular)
+        response = self.client.post(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+
+        admin = get_user_model().objects.create_superuser(
+            username="minecraft_restart_admin",
+            email="minecraft-restart-admin@example.com",
+            password="pw123456",
+        )
+        UserProfile.objects.update_or_create(
+            user=admin,
+            defaults={"session_token": "minecraft-restart-admin-session"},
+        )
+        self.client.force_login(admin)
+        session = self.client.session
+        session["_hp_session_token"] = "minecraft-restart-admin-session"
+        session.save()
+
+        response = self.client.post(url, HTTP_HOST="www.hanplanet.com")
+        self.assertEqual(response.status_code, 404)
+        with mock.patch("main.views.request_minecraft_server_restart", return_value="queued"), mock.patch(
+            "main.views.read_minecraft_restart_state",
+            return_value={"phase": "queued", "updated_at": 123.0},
+        ), mock.patch("main.views.minecraft_restart_is_active", return_value=False):
+            response = self.client.post(url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json()["ok"], True)
+        self.assertEqual(response.json()["mode"], "queued")
+
+        with mock.patch(
+            "main.views.read_minecraft_restart_state",
+            return_value={"phase": "starting", "updated_at": 123.0},
+        ), mock.patch("main.views.minecraft_restart_is_active", return_value=True):
+            response = self.client.get(status_url, HTTP_HOST="mc.hanplanet.com")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["active"], True)
+        self.assertEqual(response.json()["phase"], "starting")
 
     @mock.patch("main.views.read_minecraft_server_status")
     def test_minecraft_status_json_hides_player_details_for_non_admins(self, mocked_status):
@@ -3354,6 +3705,13 @@ class LanguageUrlRoutingTests(TestCase):
                 "online": True,
                 "currentAccount": True,
                 "headUrl": "/player-heads/00000000-0000-0000-0000-000000000001.png?v=123",
+                "uuid": "00000000-0000-0000-0000-000000000001",
+                "detail": {
+                    "health": 20,
+                    "food": 20,
+                    "level": 7,
+                    "inventory": [{"slot": 0, "type": "diamond", "amount": 1}],
+                },
             },
         )
 
@@ -3380,6 +3738,45 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(admin_player["uuid"], "00000000-0000-0000-0000-000000000001")
         self.assertEqual(admin_player["headUrl"], "/player-heads/00000000-0000-0000-0000-000000000001.png?v=123")
         self.assertEqual(admin_player["detail"]["inventory"][0]["type"], "diamond")
+
+    @mock.patch("main.views.read_minecraft_server_status")
+    def test_minecraft_status_json_exposes_current_users_own_inventory(self, mocked_status):
+        mocked_status.return_value = {
+            "serverOnline": True,
+            "players": [
+                {
+                    "name": "BE_LegacyBedrock",
+                    "online": True,
+                    "uuid": "00000000-0000-0000-0000-000000000041",
+                    "detail": {
+                        "inventory": [{"slot": 0, "type": "diamond", "amount": 3}],
+                    },
+                },
+            ],
+        }
+        user = get_user_model().objects.create_user(
+            username="minecraft_bedrock_status_owner",
+            email="minecraft-bedrock-status@example.com",
+            password="pw123456",
+        )
+        MinecraftAccountLink.objects.create(
+            user=user,
+            minecraft_uuid="00000000-0000-0000-0000-000000000041",
+            minecraft_name="BE_LegacyBedrock",
+            edition=MinecraftAccountLink.EDITION_BEDROCK,
+        )
+        self.client.force_login(user)
+        UserProfile.objects.update_or_create(user=user, defaults={"session_token": "minecraft-bedrock-status-session"})
+        session = self.client.session
+        session["_hp_session_token"] = "minecraft-bedrock-status-session"
+        session.save()
+
+        response = self.client.get(reverse("main:minecraft_status_json"), HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        player = response.json()["players"][0]
+        self.assertTrue(player["currentAccount"])
+        self.assertEqual(player["detail"]["inventory"][0]["amount"], 3)
 
     def test_minecraft_player_head_png_is_minecraft_host_only(self):
         player_uuid = uuid_lib.UUID("00000000-0000-0000-0000-000000000001")
@@ -3605,6 +4002,11 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'window.SiteTooltip.show(tradeSellItemTriggerEl)', html=False)
         self.assertContains(response, "function setSelectedTradeSellItem(slot, item)", html=False)
         self.assertContains(response, "function positionTradeSellInventoryPicker()", html=False)
+        self.assertContains(response, ".minecraft-inventory-item-menu {\n        position: absolute;", html=False)
+        self.assertContains(response, ".minecraft-player-inventory-panel {\n        display: grid;", html=False)
+        self.assertContains(response, ".minecraft-inventory-slot {\n        position: relative;", html=False)
+        self.assertContains(response, ".minecraft-side-layout > .minecraft-trade-panel.is-create-view", html=False)
+        self.assertContains(response, "tradePanelEl.style.setProperty('--minecraft-trade-panel-view-height'", html=False)
         page_source = response.content.decode()
         self.assertIn("const minecraftInventoryDisplaySlots = [", page_source)
         self.assertLess(
@@ -3637,6 +4039,7 @@ class LanguageUrlRoutingTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, ".minecraft-trade-item.is-completed", html=False)
+        self.assertContains(response, ".minecraft-trade-item.is-completed > .minecraft-trade-detail > :not(.minecraft-trade-actions)", html=False)
         self.assertContains(response, "const isCompleted = listing.status === 'completed';", html=False)
         self.assertContains(response, "const canToggle = !isCompleted || Boolean(listing.viewerIsSeller);", html=False)
         self.assertContains(response, "tradeSettlePartial: '거래 중단'", html=False)
@@ -3771,7 +4174,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.json()["deletedListingId"], listing.id)
         self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
         self.assertFalse(MinecraftTradeFill.objects.filter(listing_id=listing.id).exists())
-        mocked_send.assert_called_once_with("minecraftstatus trade npc-exchange NpcBuyerMC emerald 5 diamond 3 ko")
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade npc-exchange NpcBuyerMC emerald 5 diamond 3 ko 7JeQ66mU656E65Oc 64uk7J207JWE66qs65Oc"
+        )
         mocked_status.assert_called()
 
     def test_minecraft_trade_admin_can_close_npc_listing_without_console_command(self):
@@ -3867,8 +4272,33 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.remaining_price_amount, 5)
         self.assertEqual(listing.status, MinecraftTradeListing.STATUS_OPEN)
         self.assertEqual(listing.sell_item_data, {"type": "diamond", "amount": 3, "escrowId": str(listing.id)})
-        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 0 3 emerald 5 ko")
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade reserve-escrow 1 SellerMC 0 3 emerald 5 ko 64uk7J207JWE66qs65Oc 7JeQ66mU656E65Oc"
+        )
+
+    @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BE_Adihang", "online": True}]})
+    @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK reserve")
+    def test_minecraft_trade_does_not_merge_java_and_bedrock_names(self, mocked_send, mocked_status):
+        self._login_minecraft_trade_user(self.client, "minecraft_trade_bedrock_user", "Adihang")
+        url = reverse("main:minecraft_trade_create_json")
+
+        response = self.client.post(
+            url,
+            data=json.dumps({
+                "sellItem": "diamond",
+                "sellSlot": "0",
+                "sellAmount": 1,
+                "priceItem": "emerald",
+                "priceAmount": 1,
+            }),
+            content_type="application/json",
+            HTTP_HOST="mc.hanplanet.com",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["error"], "minecraft_account_offline")
         mocked_status.assert_called()
+        mocked_send.assert_not_called()
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "SellerMC", "online": True}]})
     @mock.patch("main.views.write_minecraft_console_command")
@@ -3886,7 +4316,7 @@ class LanguageUrlRoutingTests(TestCase):
                 "maxDamage": 1561,
             }
             encoded_item = base64.urlsafe_b64encode(json.dumps(item_data).encode("utf-8")).decode("ascii").rstrip("=")
-            return f"HANPLANET_TRADE_ITEM reserve-escrow {listing_id} {encoded_item}\nHANPLANET_TRADE_OK reserve-escrow"
+            return f"HANPLANET_TRADE_ITEM reserve-escrow {listing_id} {encoded_item}HANPLANET_TRADE_OK reserve-escrow"
 
         mocked_send.side_effect = reserve_response
         self._login_minecraft_trade_user(self.client, "minecraft_trade_metadata_seller", "SellerMC")
@@ -3911,7 +4341,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.sell_item_data["enchantments"], [{"key": "sharpness", "level": 5}])
         self.assertEqual(listing.sell_item_data["damage"], 81)
         self.assertEqual(response.json()["listing"]["sellItem"]["maxDamage"], 1561)
-        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 12 1 emerald 5 ko")
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade reserve-escrow 1 SellerMC 12 1 emerald 5 ko 64uk7J207JWE66qs65OcIOqygA 7JeQ66mU656E65Oc"
+        )
         mocked_status.assert_called()
 
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK reserve-escrow")
@@ -3943,7 +4375,9 @@ class LanguageUrlRoutingTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 7 3 emerald 5 ko")
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade reserve-escrow 1 SellerMC 7 3 emerald 5 ko 64uk7J207JWE66qs65Oc 7JeQ66mU656E65Oc"
+        )
 
     def test_minecraft_trade_create_identifies_invalid_form_field(self):
         self._login_minecraft_trade_user(self.client, "minecraft_trade_invalid_form", "SellerMC")
@@ -3986,7 +4420,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["error"], "insufficient_item")
         self.assertFalse(MinecraftTradeListing.objects.exists())
-        mocked_send.assert_called_once_with("minecraftstatus trade reserve-escrow 1 SellerMC 0 64 emerald 5 ko")
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade reserve-escrow 1 SellerMC 0 64 emerald 5 ko 64uk7J207JWE66qs65Oc 7JeQ66mU656E65Oc"
+        )
         mocked_status.assert_called()
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
@@ -4075,7 +4511,9 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(listing.status, MinecraftTradeListing.STATUS_COMPLETED)
         self.assertEqual(listing.buyer, buyer)
         mocked_send.assert_called_once_with(
-            "minecraftstatus trade exchange-escrow 1 BuyerMC emerald 5 1 SellerMC ko ko"
+            "minecraftstatus trade exchange-escrow 1 BuyerMC emerald 5 1 SellerMC ko ko "
+            "7JeQ66mU656E65Oc 64uk7J207JWE66qs65OcIOqygA "
+            "64uk7J207JWE66qs65OcIOqygA 7JeQ66mU656E65Oc"
         )
         mocked_status.assert_called()
 
@@ -4123,6 +4561,35 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertEqual(response.json()["deletedListingId"], listing.id)
         self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
         mocked_send.assert_called_once_with("minecraftstatus trade payout SellerMC emerald 5 ko")
+
+    @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK payout-escrow")
+    def test_minecraft_trade_claim_pays_out_fabric_escrow(self, mocked_send):
+        seller = self._login_minecraft_trade_user(self.client, "minecraft_trade_fabric_claim_seller", "SellerMC")
+        buyer = get_user_model().objects.create_user(username="minecraft_trade_fabric_claim_buyer", password="pw123456")
+        listing = MinecraftTradeListing.objects.create(
+            seller=seller,
+            seller_minecraft_name="SellerMC",
+            buyer=buyer,
+            buyer_minecraft_name="BuyerMC",
+            sell_item="diamond",
+            sell_amount=3,
+            price_item="emerald",
+            price_amount=5,
+            sell_item_data={"type": "diamond", "amount": 3, "escrowId": "1"},
+            status=MinecraftTradeListing.STATUS_COMPLETED,
+            completed_at=timezone.now(),
+            unclaimed_price_amount=5,
+        )
+        url = reverse("main:minecraft_trade_claim_json", kwargs={"listing_id": listing.id})
+
+        response = self.client.post(url, data="{}", content_type="application/json", HTTP_HOST="mc.hanplanet.com")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deletedListingId"], listing.id)
+        self.assertFalse(MinecraftTradeListing.objects.filter(pk=listing.id).exists())
+        mocked_send.assert_called_once_with(
+            "minecraftstatus trade payout-escrow 1 SellerMC emerald 5 ko 7JeQ66mU656E65Oc"
+        )
 
     @mock.patch("main.views.read_minecraft_server_status", return_value={"players": [{"name": "BuyerMC", "online": True}]})
     @mock.patch("main.views.write_minecraft_console_command", return_value="HANPLANET_TRADE_OK exchange")
@@ -6488,6 +6955,68 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("font-style: normal;", sql_comment_css)
         self.assertNotIn("font-style: italic;", sql_comment_css)
 
+    def test_code_editor_placeholder_uses_cursor_metrics(self):
+        handrive_css = (
+            Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css"
+        ).read_text(encoding="utf-8")
+        placeholder_start = handrive_css.index("body .handrive-code-editor .ace_placeholder {")
+        placeholder_end = handrive_css.index("}", placeholder_start)
+        placeholder_css = handrive_css[placeholder_start:placeholder_end]
+
+        self.assertIn("line-height: inherit;", placeholder_css)
+        self.assertIn("margin: 0;", placeholder_css)
+        self.assertIn("transform: none;", placeholder_css)
+        self.assertIn("transform-origin: left top;", placeholder_css)
+
+    def test_code_editor_ime_input_resets_form_styles_and_preserves_cursor_metrics(self):
+        base_dir = Path(settings.BASE_DIR)
+        editor_js = (base_dir / "static/js/handrive/code_editor.js").read_text(encoding="utf-8")
+        handrive_css = (base_dir / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        self.assertNotIn("syncCompositionInputPadding", editor_js)
+        self.assertNotIn("hasWideCompositionCharacter", editor_js)
+
+        composition_start = handrive_css.index(
+            "body .handrive-code-editor .ace_text-input.ace_composition {"
+        )
+        composition_end = handrive_css.index("}", composition_start)
+        composition_css = handrive_css[composition_start:composition_end]
+        for declaration in (
+            "box-sizing: border-box;",
+            "border: 0;",
+            "border-radius: 0;",
+            "outline: 0;",
+            "box-shadow: none;",
+            "background: transparent;",
+            "height: var(--handrive-code-editor-composition-line-height);",
+            "line-height: var(--handrive-code-editor-composition-line-height);",
+            "max-height: var(--handrive-code-editor-composition-line-height);",
+            "margin: 0;",
+            "padding: 0;",
+        ):
+            self.assertIn(declaration, composition_css)
+
+        cjk_start = handrive_css.index("body .handrive-code-editor .ace_cjk {")
+        cjk_end = handrive_css.index("}", cjk_start)
+        cjk_css = handrive_css[cjk_start:cjk_end]
+        self.assertIn("text-align: left;", cjk_css)
+        self.assertNotIn("width: max-content !important;", cjk_css)
+
+        shadow_start = handrive_css.index(
+            "body .handrive-code-editor.is-horizontally-scrolled .ace_gutter.ace_gutter-left::after {"
+        )
+        shadow_end = handrive_css.index("}", shadow_start)
+        shadow_css = handrive_css[shadow_start:shadow_end]
+        self.assertIn("width: 4px;", shadow_css)
+        self.assertIn(
+            "color-mix(in srgb, var(--handrive-text) 7%, transparent),",
+            shadow_css,
+        )
+        self.assertIn(
+            "color-mix(in srgb, var(--handrive-text) 3%, transparent) 45%,",
+            shadow_css,
+        )
+
     def test_rename_remaps_and_refreshes_open_preview(self):
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
         submit_rename_start = page_js.index("async function submitRename()")
@@ -6850,6 +7379,8 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("function getGuestDemoSpotlightTargets(step, fallbackTarget)", page_js)
         self.assertIn("function updateGuestDemoSpotlightFrames(step, target, targetPad)", page_js)
         self.assertIn("updateGuestDemoSpotlightFrames(step, target, 6);", page_js)
+        self.assertIn("target.dataset.handriveGuestDemoModalTarget = visibleElements.some(function (element)", page_js)
+        self.assertIn('target.dataset.handriveGuestDemoModalTarget === "1"', page_js)
         self.assertIn('spotlight.classList.toggle("is-multi-target", hasMultipleTargets);', page_js)
         self.assertIn("guestDemoTourNav.appendChild(guestDemoTourKicker);", page_js)
         self.assertNotIn("guestDemoTourTip.appendChild(guestDemoTourKicker);", page_js)
@@ -7557,6 +8088,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("setShareLinkGroupExpanded(false, function () {", url_share_js)
         self.assertIn("url_share_target_remove_label", url_share_js)
         self.assertIn("url_share_copy_download_button", url_share_js)
+        self.assertNotIn("shareInput.select();\n                    return;", url_share_js)
         self.assertIn("window.HandriveUrlShareModal.create({", page_js)
         self.assertNotIn("function createHandriveUrlShareModal()", page_js)
         self.assertLess(
@@ -7577,6 +8109,8 @@ class HandriveStyleSourceTests(TestCase):
         )
         self.assertIn('id="handrive-url-share-enabled-toggle"', url_share_template)
         self.assertIn('class="handrive-url-share-switch-knob" aria-hidden="true"', url_share_template)
+        self.assertIn('shareEnabledToggle.classList.toggle("is-read-only", readOnly);', url_share_js)
+        self.assertIn('shareEnabledToggle.classList.remove("is-read-only");', url_share_js)
         self.assertLess(
             url_share_template.index("{{ handrive_text.url_share_edit_label }}</span>"),
             url_share_template.index('id="handrive-url-share-edit-checkbox"'),
@@ -7610,6 +8144,8 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn(".handrive-url-share-switch-knob::after {\n    content: \"\";", handrive_css)
         self.assertIn(".handrive-url-share-enabled-switch:has(input:checked) .handrive-url-share-switch-knob,", handrive_css)
         self.assertIn(".handrive-shared-toggle:has(input:checked) .handrive-url-share-switch-knob::after", handrive_css)
+        self.assertIn(".handrive-url-share-enabled-switch.is-read-only .handrive-url-share-switch-knob {", handrive_css)
+        self.assertIn(".handrive-url-share-enabled-switch.is-read-only:has(input:disabled) {", handrive_css)
         self.assertIn(".handrive-url-share-edit-switch {\n    --handrive-url-share-switch-width: 20px;", handrive_css)
         self.assertIn('class="handrive-url-share-enabled-switch"', url_share_template)
         self.assertIn('class="handrive-url-share-edit-switch"', url_share_template)
@@ -9193,6 +9729,62 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('"--color-hover-bg"', mermaid_js)
         self.assertIn("edgeLabelBackground: surfaceMuted", mermaid_js)
 
+    def test_handrive_downloads_use_the_shared_ten_megabyte_rate(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        from main.handrive_views import (
+            DOCS_DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND,
+            DOCS_TRANSFER_RATE_BYTES_PER_SECOND,
+            build_handrive_rate_limited_file_response,
+        )
+
+        self.assertEqual(settings.HANDRIVE_TRANSFER_RATE_BYTES_PER_SECOND, 10 * 1000 * 1000)
+        self.assertEqual(DOCS_TRANSFER_RATE_BYTES_PER_SECOND, settings.HANDRIVE_TRANSFER_RATE_BYTES_PER_SECOND)
+        self.assertEqual(DOCS_DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND, DOCS_TRANSFER_RATE_BYTES_PER_SECOND)
+        self.assertIn("root.dataset.handriveTransferRateBytesPerSecond", page_js)
+        body = b"x" * (64 * 1024 + 1)
+        with mock.patch("main.handrive_views.time.sleep") as sleep_mock:
+            response = build_handrive_rate_limited_file_response(
+                io.BytesIO(body),
+                file_size=len(body),
+                content_type="application/octet-stream",
+                filename="sample.bin",
+                as_attachment=True,
+            )
+            self.assertEqual(b"".join(response.streaming_content), body)
+
+        self.assertGreaterEqual(sleep_mock.call_count, 1)
+        self.assertEqual(response["Content-Length"], str(len(body)))
+        self.assertEqual(response["X-Accel-Buffering"], "no")
+
+    def test_handrive_list_delete_shortcut_accepts_forward_delete_key_variants(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        self.assertIn('const isDeleteKey = key === "Delete"', page_js)
+        self.assertIn('|| key === "Del"', page_js)
+        self.assertIn('|| event.code === "Delete"', page_js)
+        self.assertIn("|| event.keyCode === 46", page_js)
+        self.assertIn("deleteEntries(selectedEntries.length > 1 ? selectedEntries : selectedEntries[0])", page_js)
+
+    def test_portfolio_project_detail_loads_mermaid_renderer(self):
+        owner = get_user_model().objects.create_user(username="mermaid_project_owner", password="pw123456")
+        PortfolioProject.objects.create(
+            user=owner,
+            number=10,
+            title="Mermaid project",
+            content="```mermaid\ngraph TD\nA-->B\n```",
+            create_date=date.today(),
+        )
+
+        response = self.client.get(
+            reverse(
+                "main:ProjectDetail_user_lang",
+                kwargs={"ui_lang": "ko", "user_id": owner.username, "project_number": 10},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "js/common/markdown_mermaid.js", html=False)
+        self.assertContains(response, 'data-handrive-mermaid-diagram="1"', html=False)
+
     def test_portfolio_print_renders_mermaid_before_serializing_print_html(self):
         base_dir = Path(settings.BASE_DIR)
         site_js = (base_dir / "static/js/common/site.js").read_text(encoding="utf-8")
@@ -9218,6 +9810,11 @@ class HandriveStyleSourceTests(TestCase):
             project_print_block.index("return '<section class=\"print-project\">' + contentNode.outerHTML + '</section>';"),
         )
         self.assertIn("const summaryHtml = await Promise.resolve(options.buildSummaryPrintHtml());", print_runtime_js)
+        self.assertIn("data-portfolio-owner-username", (base_dir / "templates/base.html").read_text(encoding="utf-8"))
+        self.assertIn("portfolioOwnerUsername: portfolioOwnerUsername,", site_js)
+        self.assertIn("buildPortfolioPrintDocumentTitle", print_runtime_js)
+        self.assertIn("<username>_Portfolio.pdf", print_runtime_js)
+        self.assertIn("replace(/[\\\\/:*?\"<>|]+/g, '_')", print_runtime_js)
 
     def test_markdown_inline_code_selects_all_on_double_click_drag_only_for_inline_code(self):
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -9280,6 +9877,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("width: fit-content;", copy_wrap_css)
         self.assertIn("max-width: 100%;", copy_wrap_css)
         self.assertIn("box-sizing: border-box;", copy_wrap_css)
+        self.assertIn("border-radius: 3px;", copy_wrap_css)
         single_line_wrap_start = handrive_css.index(
             ".ui-markdown pre.handrive-markdown-code-copy-wrap.is-single-line-code,"
         )
@@ -11744,6 +12342,54 @@ class SiteZIndexLayerTests(TestCase):
         self.assertIn('close_button_class="root-auth-modal-close site-modal-close"', root_logout_template)
         self.assertNotIn('<div class="root-auth-modal"', root_logout_template)
         self.assertIn('include "popup/handrive/_confirm_modal.html"', handrive_logout_template)
+
+    def test_modal_open_does_not_force_focus_to_action_buttons(self):
+        base_dir = Path(settings.BASE_DIR)
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+
+        demo_modal_start = page_js.index("function setDemoSaveModalOpen(opened)")
+        demo_modal_end = page_js.index("function openDemoSaveModal", demo_modal_start)
+        demo_modal_block = page_js[demo_modal_start:demo_modal_end]
+        self.assertNotIn("focusTarget.focus", demo_modal_block)
+
+        confirm_start = page_js.index("function requestConfirmDialog(options)")
+        confirm_end = page_js.index("function createHandriveCommitMessageDialog", confirm_start)
+        self.assertNotIn("confirmConfirmButton.focus();", page_js[confirm_start:confirm_end])
+
+        unsaved_start = page_js.index("function requestUnsavedLeaveDecision()")
+        unsaved_end = page_js.index("function submitSaveThenLeave", unsaved_start)
+        self.assertNotIn("unsavedCancelButton.focus();", page_js[unsaved_start:unsaved_end])
+
+        git_start = page_js.index("function requestGitUnsavedNavigation()")
+        git_end = page_js.index("function isPathInCurrentGitBranch", git_start)
+        self.assertNotIn("gitUnsavedCommitButton.focus();", page_js[git_start:git_end])
+
+        for relative_path, focus_token in (
+            ("static/js/common/account_widget.js", "logoutCancelButton.focus();"),
+            ("static/js/pages/none/root_search.js", "logoutCancelButton.focus();"),
+            ("static/js/common/account_github_widget.js", "cancelButton.focus();"),
+            ("static/js/common/account_google_widget.js", "cancelButton.focus();"),
+        ):
+            source = (base_dir / relative_path).read_text(encoding="utf-8")
+            self.assertNotIn(focus_token, source)
+
+        url_share_js = (base_dir / "static/js/handrive/url_share_modal.js").read_text(encoding="utf-8")
+        url_open_start = url_share_js.index("function open(options)")
+        url_open_end = url_share_js.index("shareCheckbox.addEventListener", url_open_start)
+        self.assertNotIn(".focus();", url_share_js[url_open_start:url_open_end])
+
+        for relative_path in (
+            "static/js/fun/image_color_picker.js",
+            "static/js/fun/video_to_gif.js",
+        ):
+            source = (base_dir / relative_path).read_text(encoding="utf-8")
+            self.assertNotIn("if (open && sourceLocalButton)", source)
+            self.assertNotIn("if (open && handriveCloseButton)", source)
+
+        image_pip_js = (base_dir / "static/js/fun/image_pip_demo.js").read_text(encoding="utf-8")
+        code_modal_start = image_pip_js.index("function setCodeModalOpen(open)")
+        code_modal_end = image_pip_js.index("function closePipSession", code_modal_start)
+        self.assertNotIn("codeCopyButton.focus()", image_pip_js[code_modal_start:code_modal_end])
 
     def test_remaining_shared_modals_use_common_header_and_close_rules(self):
         base_dir = Path(settings.BASE_DIR)
@@ -14897,6 +15543,64 @@ class HanplanetMultiplayerPageTests(TestCase):
                 self.assertIn("if (selfDeathActive && !wasSelfDeathActive) {", client_js)
                 self.assertNotIn("deathWasCausedByDefeat", client_js)
                 self.assertNotIn("selfDeathWasCausedByDefeat", client_js)
+
+    def test_multiplayer_camera_lead_scales_with_speed_and_stays_in_world_bounds(self):
+        base_dir = Path(settings.BASE_DIR)
+        for client_name in ("bumpercar_spiky", "raise_speaki"):
+            with self.subTest(client=client_name):
+                client_js = (base_dir / f"static/js/fun/{client_name}/multiplayer.js").read_text(encoding="utf-8")
+                self.assertIn("const cameraLeadMaxRatioX = 0.28;", client_js)
+                self.assertIn("const cameraLeadMaxRatioY = 0.3;", client_js)
+                self.assertIn("const cameraLeadSmoothingPerSecond = 5.5;", client_js)
+                self.assertIn("const getCameraLeadSpeedRatio = function", client_js)
+                self.assertIn("movementSpeed / maxCameraSpeed", client_js)
+                self.assertIn("cameraLeadSmoothedRatio += (cameraLeadTargetRatio - cameraLeadSmoothedRatio) * cameraLeadBlend;", client_js)
+                self.assertNotIn("cameraLeadSpeedThreshold", client_js)
+                self.assertIn("const minCameraCenterX = Math.min(worldSize / 2, viewportWorldWidth / 2);", client_js)
+                self.assertIn("const maxCameraCenterX = Math.max(worldSize / 2, worldSize - viewportWorldWidth / 2);", client_js)
+                self.assertIn("desiredCenterX = Math.max(minCameraCenterX, Math.min(maxCameraCenterX, desiredCenterX));", client_js)
+                self.assertIn("desiredCenterY = Math.max(minCameraCenterY, Math.min(maxCameraCenterY, desiredCenterY));", client_js)
+                self.assertIn("cameraX = Math.max(0, Math.min(maxCameraX, cameraX));", client_js)
+                self.assertIn("cameraY = Math.max(0, Math.min(maxCameraY, cameraY));", client_js)
+                self.assertIn("window.render_game_to_text = function ()", client_js)
+                self.assertIn("leadSpeedRatio", client_js)
+                self.assertIn("targetLeadSpeedRatio", client_js)
+
+    def test_raise_speaki_level_ten_winner_round_and_weighted_ai_targets(self):
+        base_dir = Path(settings.BASE_DIR)
+        world_source = (base_dir / "bumpercar-spiky-server/world/raiseSpeakiWorld.js").read_text(encoding="utf-8")
+        loop_source = (base_dir / "bumpercar-spiky-server/game/raiseSpeakiLoop.js").read_text(encoding="utf-8")
+        client_source = (base_dir / "static/js/fun/raise_speaki/multiplayer.js").read_text(encoding="utf-8")
+        template_source = (base_dir / "templates/fun/Hanplanet_Multiplayer.html").read_text(encoding="utf-8")
+        winner_template = (base_dir / "templates/popup/fun/multiplayer_raise_speaki_winner_modal.html").read_text(encoding="utf-8")
+        i18n_template = (base_dir / "templates/partials/ui_i18n.html").read_text(encoding="utf-8")
+
+        self.assertIn("const RAISE_SPEAKI_WIN_CONFIRMATION_DURATION_MS = 10000", world_source)
+        self.assertIn("const NEUTRAL_PUMPKIN_COUNT = 4", world_source)
+        self.assertIn("const canTargetPumpkins = !isPumpkinSkinPlayer(player)", world_source)
+        self.assertIn("const hasCloserNonPumpkinTarget", world_source)
+        self.assertIn("const RAISE_SPEAKI_WINNER_DISPLAY_DURATION_MS = 5000", world_source)
+        self.assertIn("beginRaiseSpeakiWinnerCountdown", world_source)
+        self.assertIn("advanceRaiseSpeakiWinnerRound", world_source)
+        self.assertIn("freezeRaiseSpeakiRound", world_source)
+        self.assertIn("resetRaiseSpeakiRound", world_source)
+        self.assertIn("getRaiseSpeakiDummyTargetWeight", world_source)
+        self.assertIn("targetLevel / Math.max(RAISE_SPEAKI_TARGET_DISTANCE_FLOOR, distance)", world_source)
+        self.assertIn("retargetRaiseSpeakiDummyAfterDashHit", world_source)
+        self.assertIn("raiseSpeakiWinnerPhase", loop_source)
+        self.assertIn("raiseSpeakiWinnerCountdownSeconds", loop_source)
+        self.assertIn("raiseSpeakiWinner", loop_source)
+        self.assertIn("data-game-raise-speaki-birth-overlay", winner_template)
+        self.assertIn("스피키가 탄생 했습니다.", i18n_template)
+        self.assertIn("{count}초 후 스피키 승리", i18n_template)
+        self.assertIn("data-game-raise-speaki-winner-overlay", winner_template)
+        self.assertIn("제가 진짜 스피키에요!", i18n_template)
+        self.assertIn("raise_speaki_winner_restart", template_source)
+        self.assertIn("setRaiseSpeakiWinnerOverlayState", client_source)
+        self.assertIn("raiseSpeakiBirthCountdownLabel", client_source)
+        self.assertIn("updateRaiseSpeakiWinnerStateFromPlayer", client_source)
+        self.assertIn("raiseSpeakiWinnerPhase === 'result'", client_source)
+        self.assertIn("roundWinner", client_source)
 
     def test_multiplayer_escape_resume_and_skin_reconnect_controls(self):
         base_dir = Path(settings.BASE_DIR)

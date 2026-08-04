@@ -55,6 +55,7 @@
         grid-column: 1;
         grid-row: 1;
         display: grid;
+        grid-template-rows: minmax(0, 1fr);
         grid-template-columns: 1fr;
         gap: 12px;
         align-content: stretch;
@@ -254,6 +255,130 @@
         line-height: 1.2;
     }
 
+    .minecraft-plugin-install-trigger {
+        display: inline-flex;
+        align-items: center;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--handrive-text-stronger);
+        font-family: inherit;
+        font-size: 18px;
+        font-weight: var(--site-weight-title-strong);
+        line-height: 1.2;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .minecraft-plugin-install-trigger:hover,
+    .minecraft-plugin-install-trigger:focus-visible {
+        color: var(--handrive-text-strong);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        outline: none;
+    }
+
+    .minecraft-plugin-panel-actions {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        min-width: 0;
+        margin-left: auto;
+    }
+
+    .minecraft-plugin-list-label {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--handrive-text-muted);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+
+    .minecraft-plugin-list-label:hover,
+    .minecraft-plugin-list-label:focus-visible {
+        color: var(--handrive-text-stronger);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        outline: none;
+    }
+
+    .minecraft-plugin-panel-actions .minecraft-panel-collapse-trigger {
+        margin-left: 0;
+    }
+
+    .minecraft-mod-install-dialog {
+        width: min(720px, calc(100vw - 20px));
+        max-width: calc(100vw - 20px);
+        max-height: calc(100dvh - 20px);
+    }
+
+    .minecraft-mod-install-body {
+        display: grid;
+        gap: 10px;
+        min-height: 0;
+        overflow: auto;
+    }
+
+    .minecraft-mod-install-dialog.site-modal-dialog > .minecraft-mod-install-body {
+        padding-top: 1px !important;
+    }
+
+    .minecraft-mod-install-body p,
+    .minecraft-mod-install-body ol {
+        margin: 0;
+    }
+
+    .minecraft-mod-install-description,
+    .minecraft-mod-install-hint,
+    .minecraft-mod-install-paths,
+    .minecraft-mod-install-mods {
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        line-height: 1.45;
+    }
+
+    .minecraft-mod-install-steps {
+        display: grid;
+        gap: 6px;
+        padding-left: 20px;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        line-height: 1.45;
+    }
+
+    .minecraft-mod-install-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .minecraft-mod-install-actions .ui-btn {
+        justify-content: center;
+        min-width: 0;
+        text-align: center;
+    }
+
+    .minecraft-mod-install-paths {
+        white-space: pre-line;
+        overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 560px) {
+        .minecraft-mod-install-actions {
+            grid-template-columns: 1fr;
+        }
+    }
+
     .minecraft-account-link-trigger {
         display: inline-flex;
         align-items: center;
@@ -332,6 +457,7 @@
         color: var(--handrive-text-strong);
         background: var(--handrive-hover);
     }
+
     {% endif %}
 
     .minecraft-server-clock {
@@ -1235,6 +1361,12 @@
     }
 
     .minecraft-trade-item.is-completed {
+        opacity: 1;
+    }
+
+    .minecraft-trade-item.is-completed > .minecraft-trade-item-head,
+    .minecraft-trade-item.is-completed > .minecraft-trade-summary,
+    .minecraft-trade-item.is-completed > .minecraft-trade-detail > :not(.minecraft-trade-actions) {
         opacity: 0.62;
     }
 
@@ -1615,7 +1747,6 @@
         color: #2f9d58;
     }
 
-    {% if minecraft_admin_log_enabled %}
     .minecraft-player-item.is-online[role="button"] {
         cursor: pointer;
         translate: 0 0 !important;
@@ -2304,7 +2435,6 @@
         .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="boots"] { grid-column: 4; }
         .minecraft-player-inventory-panel .minecraft-equipment-grid .minecraft-inventory-slot[data-inventory-slot="offhand"] { grid-column: 5; }
     }
-    {% endif %}
 
     .minecraft-status-empty {
         margin: 0;
@@ -2581,6 +2711,107 @@
         height: 20px;
     }
 
+    .minecraft-server-restart-trigger {
+        padding: 0;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .minecraft-server-restart-trigger:hover,
+    .minecraft-server-restart-trigger:focus-visible {
+        color: var(--handrive-text-strong);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+        outline: none;
+    }
+
+    .minecraft-restart-progress-dialog {
+        width: min(440px, calc(100vw - 24px));
+    }
+
+    .minecraft-restart-progress-body {
+        display: grid;
+        gap: 16px;
+        padding: 4px 14px 14px;
+    }
+
+    .minecraft-restart-progress-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 38px;
+        color: var(--handrive-text-stronger);
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    .minecraft-restart-progress-status .site-loading-spinner {
+        flex: 0 0 auto;
+        width: 24px;
+        height: 24px;
+        border-width: 2px;
+    }
+
+    .minecraft-restart-progress-status.is-complete .site-loading-spinner,
+    .minecraft-restart-progress-status.is-error .site-loading-spinner {
+        display: none;
+    }
+
+    .minecraft-restart-progress-steps {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        color: var(--handrive-text-muted);
+        font-size: 13px;
+        list-style: none;
+    }
+
+    .minecraft-restart-progress-step {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 24px;
+    }
+
+    .minecraft-restart-progress-step::before {
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 18px;
+        height: 18px;
+        border: 1px solid var(--handrive-border-soft);
+        border-radius: 50%;
+        content: "";
+        box-sizing: border-box;
+    }
+
+    .minecraft-restart-progress-step.is-active {
+        color: var(--handrive-text-stronger);
+        font-weight: var(--site-weight-title-strong);
+    }
+
+    .minecraft-restart-progress-step.is-active::before {
+        border-color: var(--theme-accent-strong, #2563eb);
+        box-shadow: inset 0 0 0 4px var(--shared-card-bg), inset 0 0 0 7px var(--theme-accent-strong, #2563eb);
+    }
+
+    .minecraft-restart-progress-step.is-complete::before {
+        border-color: var(--theme-accent-strong, #2563eb);
+        background: var(--theme-accent-strong, #2563eb);
+        box-shadow: inset 0 0 0 4px var(--shared-card-bg);
+    }
+
+    .minecraft-restart-progress-note {
+        margin: 0;
+        color: var(--handrive-text-muted);
+        font-size: 12px;
+        line-height: 1.45;
+    }
+
     @media (max-width: 840px), (orientation: portrait) {
         .minecraft-page-layout {
             grid-template-columns: 1fr;
@@ -2662,6 +2893,10 @@
 
         .minecraft-side-layout > .minecraft-trade-panel {
             width: 100%;
+        }
+
+        .minecraft-side-layout > .minecraft-trade-panel.is-create-view {
+            min-height: min(var(--minecraft-trade-panel-view-height, 0px), var(--minecraft-panel-max-height, 200cqw));
         }
 
         .minecraft-player-list {
@@ -3001,10 +3236,19 @@
                 </div>
             </section>
 
-            <section class="minecraft-panel minecraft-plugin-panel is-collapsed" aria-labelledby="minecraft-links-title">
+            <section class="minecraft-panel minecraft-plugin-panel is-collapsed" aria-labelledby="minecraftPluginInstallTrigger">
                 <div class="minecraft-status-header" data-minecraft-panel-header>
-                    <h2 class="minecraft-panel-title" id="minecraft-links-title">{{ links_panel_title }}</h2>
-                    <button class="minecraft-panel-collapse-trigger" id="minecraftPluginPanelToggle" type="button" aria-expanded="false" aria-controls="minecraftPluginPanelContent" aria-label="{{ links_panel_title }}" title="{{ links_panel_title }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
+                    <button
+                        class="minecraft-panel-title minecraft-plugin-install-trigger"
+                        id="minecraftPluginInstallTrigger"
+                        type="button"
+                        aria-controls="minecraftModInstallModal"
+                        aria-expanded="false"
+                    >{{ links_panel_title }}</button>
+                    <div class="minecraft-plugin-panel-actions">
+                        <button class="minecraft-plugin-list-label" id="minecraftPluginListLabel" type="button" aria-expanded="false" aria-controls="minecraftPluginPanelContent">{{ minecraft_plugin_list_label }}</button>
+                        <button class="minecraft-panel-collapse-trigger" id="minecraftPluginPanelToggle" type="button" aria-expanded="false" aria-controls="minecraftPluginPanelContent" aria-label="{{ minecraft_plugin_list_label }}" title="{{ minecraft_plugin_list_label }}"><svg class="minecraft-panel-collapse-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m4 7 6 6 6-6"></path></svg></button>
+                    </div>
                 </div>
                 <div class="minecraft-panel-collapsible-content" id="minecraftPluginPanelContent" hidden>
                     {% if server_plugins %}
@@ -3031,8 +3275,10 @@
 {% include "partials/site_footer_links.html" %}
 
 {% include "popup/minecraft/account_link_modal.html" %}
+{% include "popup/minecraft/mod_install_modal.html" %}
 {% if minecraft_admin_log_enabled %}
 {% include "popup/minecraft/server_log_modal.html" %}
+{% include "popup/minecraft/server_restart_modals.html" %}
 {% include "popup/minecraft/player_detail_modal.html" %}
 {% include "popup/handrive/_help_modal.html" with modal_id="minecraft-server-help-modal" backdrop_id="minecraft-server-help-backdrop" close_button_id="minecraft-server-help-close-btn" close_click_target_id="minecraft-server-help-backdrop" aria_label=minecraft_command_help_title article_html=minecraft_command_help_html %}
 {% endif %}
@@ -3079,6 +3325,10 @@
         const accountLinkCopyEl = document.getElementById('minecraftAccountLinkCopy');
         const accountLinkListEl = document.getElementById('minecraftAccountLinkList');
         const accountLinkEmptyEl = document.getElementById('minecraftAccountLinkEmpty');
+        const minecraftPluginInstallTriggerEl = document.getElementById('minecraftPluginInstallTrigger');
+        const minecraftModInstallModalEl = document.getElementById('minecraftModInstallModal');
+        const minecraftModInstallBackdropEl = document.getElementById('minecraft-mod-install-backdrop');
+        const minecraftModInstallCloseEl = document.getElementById('minecraft-mod-install-close-btn');
         const addressCopyEl = document.getElementById('minecraftAddressCopy');
         const addressTextEl = document.getElementById('minecraftServerAddress');
         const addressCopyEls = Array.from(document.querySelectorAll('.minecraft-address-copy, .minecraft-account-link-copy'));
@@ -4387,9 +4637,15 @@
         }
 
         function getTradeSellPickerPlayer() {
-            const linkedNameKeys = linkedMinecraftNames.length
-                ? new Set(linkedMinecraftNames.map(normalizeMinecraftPlayerName).filter(Boolean))
-                : currentAccountNames;
+            const linkedNameKeys = new Set();
+            const linkedNames = linkedMinecraftNames.length
+                ? linkedMinecraftNames
+                : Array.from(currentAccountNames);
+            linkedNames.forEach(function (name) {
+                const normalizedName = normalizeMinecraftPlayerName(name);
+                if (!normalizedName) return;
+                linkedNameKeys.add(normalizedName);
+            });
             for (const [name, player] of latestPlayersByName.entries()) {
                 if (!linkedNameKeys.has(name) || !player || !player.online || !player.detail) continue;
                 return player;
@@ -5206,7 +5462,10 @@
             updateServerVersion(status);
             updateServerClock(status);
             latestWorldOptions = normalizeMinecraftWorldOptions(status && status.worlds, '');
-            latestItemOptions = normalizeMinecraftItemOptions(status && status.items);
+            const statusItems = status && Array.isArray(status.items) ? status.items : null;
+            if (statusItems && statusItems.length) {
+                latestItemOptions = normalizeMinecraftItemOptions(statusItems);
+            }
             const players = (Array.isArray(status.players) ? status.players : []).slice().sort((leftPlayer, rightPlayer) => {
                 const leftOnline = Boolean(leftPlayer.online);
                 const rightOnline = Boolean(rightPlayer.online);
@@ -5820,6 +6079,18 @@
 
         function setMinecraftTradeView(view) {
             const isCreateView = view === 'create';
+            if (tradePanelEl) {
+                if (isCreateView && isMinecraftStackedLayout()) {
+                    const currentHeight = tradePanelEl.getBoundingClientRect().height;
+                    if (currentHeight > 0) {
+                        tradePanelEl.style.setProperty('--minecraft-trade-panel-view-height', Math.ceil(currentHeight) + 'px');
+                    }
+                    tradePanelEl.classList.add('is-create-view');
+                } else {
+                    tradePanelEl.classList.remove('is-create-view');
+                    tradePanelEl.style.removeProperty('--minecraft-trade-panel-view-height');
+                }
+            }
             if (tradeListViewEl) tradeListViewEl.hidden = isCreateView;
             if (tradeCreateViewEl) tradeCreateViewEl.hidden = !isCreateView;
             if (!isCreateView) setTradeSellInventoryPickerOpen(false);
@@ -6094,20 +6365,70 @@
             const contentId = toggle.getAttribute('aria-controls');
             const content = contentId ? document.getElementById(contentId) : null;
             const isCollapsed = Boolean(collapsed);
-            toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
             if (panel) panel.classList.toggle('is-collapsed', isCollapsed);
             if (content) content.hidden = isCollapsed;
+            if (panel) {
+                panel.querySelectorAll('[aria-controls]').forEach(function (control) {
+                    if (control.getAttribute('aria-controls') === contentId) {
+                        control.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+                    }
+                });
+            } else {
+                toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            }
         }
 
         function setupMinecraftPanelCollapse() {
             document.querySelectorAll('[data-minecraft-panel-header]').forEach((header) => {
-                const toggle = header.querySelector('.minecraft-panel-collapse-trigger[aria-controls]');
-                if (!toggle) return;
-                toggle.addEventListener('click', function (event) {
-                    event.stopPropagation();
-                    setMinecraftPanelCollapsed(toggle, toggle.getAttribute('aria-expanded') === 'true');
-                    window.requestAnimationFrame(syncMinecraftLayoutSplitters);
+                const toggles = header.querySelectorAll('.minecraft-panel-collapse-trigger[aria-controls], .minecraft-plugin-list-label[aria-controls]');
+                toggles.forEach(function (toggle) {
+                    toggle.addEventListener('click', function (event) {
+                        event.stopPropagation();
+                        setMinecraftPanelCollapsed(toggle, toggle.getAttribute('aria-expanded') === 'true');
+                        window.requestAnimationFrame(syncMinecraftLayoutSplitters);
+                    });
                 });
+            });
+        }
+
+        function setupMinecraftModInstallModal() {
+            if (!minecraftPluginInstallTriggerEl || !minecraftModInstallModalEl || !minecraftModInstallBackdropEl) return;
+            let lastFocusedElement = null;
+
+            function setMinecraftModInstallModalOpen(opened) {
+                minecraftModInstallModalEl.hidden = !opened;
+                minecraftPluginInstallTriggerEl.setAttribute('aria-expanded', opened ? 'true' : 'false');
+                if (opened) {
+                    lastFocusedElement = document.activeElement;
+                    const dialog = minecraftModInstallModalEl.querySelector('[role="dialog"]');
+                    if (dialog) {
+                        dialog.setAttribute('tabindex', '-1');
+                        dialog.focus({ preventScroll: true });
+                    }
+                    return;
+                }
+                if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                    lastFocusedElement.focus({ preventScroll: true });
+                }
+                lastFocusedElement = null;
+            }
+
+            minecraftPluginInstallTriggerEl.addEventListener('click', function (event) {
+                event.preventDefault();
+                setMinecraftModInstallModalOpen(true);
+            });
+            minecraftModInstallBackdropEl.addEventListener('click', function () {
+                setMinecraftModInstallModalOpen(false);
+            });
+            if (minecraftModInstallCloseEl) {
+                minecraftModInstallCloseEl.addEventListener('click', function () {
+                    setMinecraftModInstallModalOpen(false);
+                });
+            }
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape' || minecraftModInstallModalEl.hidden) return;
+                event.preventDefault();
+                setMinecraftModInstallModalOpen(false);
             });
         }
 
@@ -6458,7 +6779,7 @@
             });
             minecraftTimeApplyEl.addEventListener('click', async function () {
                 const ticks = timePartsToMinecraftTicks(selectedTimeHour, selectedTimeMinute);
-                const result = await sendMinecraftServerCommand('minecraft:time set ' + ticks, { updateStatus: false });
+                const result = await sendMinecraftServerCommand('time set ' + ticks, { updateStatus: false });
                 if (!result || !result.ok) return;
                 if (worldState) {
                     worldState.timeTicks = ticks;
@@ -6491,7 +6812,7 @@
                 const button = event.target.closest('[data-weather-command]');
                 if (!button) return;
                 const weather = button.dataset.weatherCommand;
-                const result = await sendMinecraftServerCommand('minecraft:weather ' + weather, { updateStatus: false });
+                const result = await sendMinecraftServerCommand('weather ' + weather, { updateStatus: false });
                 if (!result || !result.ok) return;
                 if (worldState) {
                     worldState.weather = weather;
@@ -6571,6 +6892,192 @@
             });
         }
 
+        function setupMinecraftServerRestartModal() {
+            const trigger = document.getElementById('minecraftServerRestartTrigger');
+            const confirmModal = document.getElementById('minecraftRestartModal');
+            const confirmBackdrop = document.getElementById('minecraft-restart-backdrop');
+            const confirmMessage = document.getElementById('minecraft-restart-message');
+            const cancelButton = document.getElementById('minecraft-restart-cancel-btn');
+            const confirmButton = document.getElementById('minecraft-restart-confirm-btn');
+            const progressModal = document.getElementById('minecraftRestartProgressModal');
+            const progressBackdrop = document.getElementById('minecraft-restart-progress-backdrop');
+            const progressCloseButton = document.getElementById('minecraft-restart-progress-close-btn');
+            const progressStatus = document.getElementById('minecraft-restart-progress-status');
+            const progressMessage = document.getElementById('minecraft-restart-progress-message');
+            const progressNote = document.getElementById('minecraft-restart-progress-note');
+            const progressSteps = Array.from(document.querySelectorAll('[data-minecraft-restart-phase]'));
+            const restartUrl = '{{ minecraft_restart_url|escapejs }}';
+            const restartStatusUrl = '{{ minecraft_restart_status_url|escapejs }}';
+            const failedLabel = '{{ minecraft_restart_failed_label|escapejs }}';
+            const defaultConfirmMessage = confirmMessage ? confirmMessage.textContent : '';
+            const csrfToken = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+            if (!trigger || !confirmModal || !confirmBackdrop || !confirmMessage || !cancelButton || !confirmButton || !progressModal || !progressBackdrop || !progressCloseButton || !progressStatus || !progressMessage || !restartUrl || !restartStatusUrl) return;
+
+            let confirmLastFocusedElement = null;
+            let progressLastFocusedElement = null;
+            let progressPollTimer = null;
+
+            function bringModalToFront(modal) {
+                if (window.SiteModalStack && typeof window.SiteModalStack.bringToFront === 'function') {
+                    window.SiteModalStack.bringToFront(modal);
+                }
+            }
+
+            function setConfirmModalOpen(opened) {
+                confirmModal.hidden = !opened;
+                if (opened) {
+                    confirmMessage.textContent = defaultConfirmMessage;
+                    confirmButton.disabled = false;
+                    confirmLastFocusedElement = document.activeElement;
+                    bringModalToFront(confirmModal);
+                    return;
+                }
+                if (confirmLastFocusedElement && typeof confirmLastFocusedElement.focus === 'function') {
+                    confirmLastFocusedElement.focus({ preventScroll: true });
+                }
+                confirmLastFocusedElement = null;
+            }
+
+            function stopProgressPolling() {
+                if (progressPollTimer) {
+                    window.clearTimeout(progressPollTimer);
+                    progressPollTimer = null;
+                }
+            }
+
+            function setProgressModalOpen(opened) {
+                progressModal.hidden = !opened;
+                if (opened) {
+                    progressLastFocusedElement = document.activeElement;
+                    bringModalToFront(progressModal);
+                    return;
+                }
+                stopProgressPolling();
+                if (progressLastFocusedElement && typeof progressLastFocusedElement.focus === 'function') {
+                    progressLastFocusedElement.focus({ preventScroll: true });
+                }
+                progressLastFocusedElement = null;
+            }
+
+            function renderProgress(state) {
+                const allowedPhases = new Set(['queued', 'stopping', 'starting', 'ready', 'failed']);
+                const phase = allowedPhases.has(state && state.phase) ? state.phase : 'queued';
+                const phaseIndex = ['queued', 'stopping', 'starting', 'ready'].indexOf(phase);
+                const activeStep = progressSteps.find(function (step) {
+                    return step.dataset.minecraftRestartPhase === phase;
+                });
+                progressStatus.classList.toggle('is-complete', phase === 'ready');
+                progressStatus.classList.toggle('is-error', phase === 'failed');
+                progressMessage.textContent = phase === 'failed' ? failedLabel : (activeStep || progressSteps[0]).textContent;
+                progressNote.textContent = phase === 'failed' ? failedLabel : (phase === 'ready' ? '' : defaultConfirmMessage);
+                progressSteps.forEach(function (step, index) {
+                    const stepPhase = step.dataset.minecraftRestartPhase;
+                    const stepIndex = ['queued', 'stopping', 'starting', 'ready'].indexOf(stepPhase);
+                    step.classList.toggle('is-active', stepPhase === phase);
+                    step.classList.toggle('is-complete', phase === 'ready' ? stepPhase !== 'ready' : stepIndex >= 0 && phaseIndex >= 0 && stepIndex < phaseIndex);
+                });
+                progressModal.dataset.restartPhase = phase;
+            }
+
+            function scheduleProgressPoll() {
+                stopProgressPolling();
+                progressPollTimer = window.setTimeout(loadProgress, 1500);
+            }
+
+            async function loadProgress() {
+                try {
+                    const response = await fetch(restartStatusUrl + '?t=' + Date.now(), {
+                        headers: { 'Accept': 'application/json' },
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                    });
+                    if (!response.ok) throw new Error('restart status failed');
+                    const state = await response.json();
+                    renderProgress(state);
+                    if (state.active) scheduleProgressPoll();
+                    else stopProgressPolling();
+                } catch (error) {
+                    progressMessage.textContent = failedLabel;
+                    progressStatus.classList.add('is-error');
+                    scheduleProgressPoll();
+                }
+            }
+
+            function openProgress(state) {
+                renderProgress(state || { phase: 'queued', active: true });
+                setProgressModalOpen(true);
+                if (state && state.active !== false) scheduleProgressPoll();
+            }
+
+            async function openFromTrigger() {
+                try {
+                    const response = await fetch(restartStatusUrl + '?t=' + Date.now(), {
+                        headers: { 'Accept': 'application/json' },
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                    });
+                    if (response.ok) {
+                        const state = await response.json();
+                        const recent = state.updated_at && (Date.now() / 1000 - Number(state.updated_at) < 120);
+                        if (state.active || (recent && ['ready', 'failed'].includes(state.phase))) {
+                            openProgress(state);
+                            return;
+                        }
+                        setConfirmModalOpen(true);
+                        return;
+                    }
+                } catch (error) {}
+                openProgress({ phase: 'starting', active: true });
+            }
+
+            async function restartServer() {
+                confirmButton.disabled = true;
+                try {
+                    const response = await fetch(restartUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': csrfToken,
+                        },
+                        body: '{}',
+                        credentials: 'same-origin',
+                        cache: 'no-store',
+                    });
+                    const payload = await response.json().catch(function () { return {}; });
+                    if (!response.ok || !payload.ok) throw new Error('restart request failed');
+                    setConfirmModalOpen(false);
+                    openProgress(payload.state || { phase: 'queued', active: true });
+                } catch (error) {
+                    confirmMessage.textContent = failedLabel;
+                    confirmButton.disabled = false;
+                    confirmButton.focus({ preventScroll: true });
+                }
+            }
+
+            trigger.addEventListener('click', openFromTrigger);
+            trigger.addEventListener('keydown', function (event) {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                openFromTrigger();
+            });
+            confirmBackdrop.addEventListener('click', function () { setConfirmModalOpen(false); });
+            cancelButton.addEventListener('click', function () { setConfirmModalOpen(false); });
+            confirmButton.addEventListener('click', restartServer);
+            progressBackdrop.addEventListener('click', function () { setProgressModalOpen(false); });
+            progressCloseButton.addEventListener('click', function () { setProgressModalOpen(false); });
+            document.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape') return;
+                if (!confirmModal.hidden) {
+                    event.preventDefault();
+                    setConfirmModalOpen(false);
+                } else if (!progressModal.hidden) {
+                    event.preventDefault();
+                    setProgressModalOpen(false);
+                }
+            });
+        }
+
         function setupServerHelpModal() {
             if (!serverHelpButtonEl || !serverHelpModalEl || !serverHelpBackdropEl) return;
             let lastFocusedElement = null;
@@ -6632,6 +7139,7 @@
         setupMinecraftPanelCollapse();
         setupMinecraftLayoutSplitters();
         setupMinecraftPanelHeightLimits();
+        setupMinecraftModInstallModal();
         setupMinecraftTradePanel();
         setupMinecraftItemComboboxDismissal();
         setupPlayerDetailModal();
@@ -6639,6 +7147,7 @@
         setupWeatherMenu();
         setupClockPopoverDismissal();
         setupServerLogModal();
+        setupMinecraftServerRestartModal();
         setupServerHelpModal();
         setupServerCommandForm();
         if (listEl) {

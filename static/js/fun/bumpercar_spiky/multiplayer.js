@@ -191,11 +191,9 @@
     const viewZoom = 4.266666666666667;
     const smallPlayerSpriteThresholdPx = 26;
     const renderOverscan = 2;
-    const cameraDeadZoneRatioX = 0.16;
-    const cameraDeadZoneRatioY = 0.2;
-    const cameraLeadRatioX = 0.12;
-    const cameraLeadRatioY = 0.14;
-    const cameraLeadSpeedThreshold = 18;
+    const cameraLeadMaxRatioX = 0.28;
+    const cameraLeadMaxRatioY = 0.3;
+    const cameraLeadSmoothingPerSecond = 5.5;
     const remoteRenderDelaySeconds = 0.06;
     const MUSIC_MUTED_STORAGE_KEY = 'bumpercar_spiky_music_muted';
     const SFX_MUTED_STORAGE_KEY = 'bumpercar_spiky_sfx_muted';
@@ -257,6 +255,7 @@
     let lastRenderTime = 0;
     let cameraX = worldSize / 2;
     let cameraY = worldSize / 2;
+    let cameraLeadSmoothedRatio = 0;
     let predictedSelf = null;
     let renderedSelf = null;
     let currentMoveSpeed = basePlayerSpeedPerSecond;
@@ -2640,6 +2639,24 @@
             dx: player.x - visual.previousX,
             dy: player.y - visual.previousY
         };
+    };
+
+    const getCameraLeadSpeedRatio = function (player, directionMagnitude) {
+        if (!player || directionMagnitude <= 0.001) {
+            return 0;
+        }
+
+        const playerProfile = getPlayerSkinProfile(player.skinName || activeSelfSkinName || selectedSkinName);
+        const maxCameraSpeed = Math.max(1, Number(playerProfile.maxBoostSpeed || playerProfile.baseSpeed || 1));
+        const reportedSpeed = player.id === selfId
+            ? Number(currentMoveSpeed || 0)
+            : Number(player.currentSpeed || 0);
+        const velocitySpeed = Math.hypot(Number(player.velocityX || 0), Number(player.velocityY || 0));
+        const movementSpeed = Number.isFinite(reportedSpeed) && reportedSpeed > 0
+            ? reportedSpeed
+            : velocitySpeed;
+
+        return Math.max(0, Math.min(1, movementSpeed / maxCameraSpeed));
     };
 
     const updateVisualAnimation = function (visual, deltaSeconds) {
@@ -5473,39 +5490,29 @@
         }
         const viewportWorldWidth = getViewportDisplayWidth() / effectiveZoom;
         const viewportWorldHeight = getViewportDisplayHeight() / effectiveZoom;
-        const deadZoneWidth = viewportWorldWidth * cameraDeadZoneRatioX;
-        const deadZoneHeight = viewportWorldHeight * cameraDeadZoneRatioY;
-        const currentCenterX = cameraX + viewportWorldWidth / 2;
-        const currentCenterY = cameraY + viewportWorldHeight / 2;
         let desiredCenterX = cameraTargetPlayer.x;
         let desiredCenterY = cameraTargetPlayer.y;
         const cameraTargetVisual = getPlayerVisual(cameraTargetPlayer.id);
         const cameraLeadVector = getPlayerDirectionVector(cameraTargetPlayer, cameraTargetVisual);
         const cameraLeadMagnitude = Math.hypot(cameraLeadVector.dx, cameraLeadVector.dy);
-        const cameraIsMoving = cameraLeadMagnitude > cameraLeadSpeedThreshold;
-        if (cameraLeadMagnitude > cameraLeadSpeedThreshold) {
-            desiredCenterX += (cameraLeadVector.dx / cameraLeadMagnitude) * viewportWorldWidth * cameraLeadRatioX;
-            desiredCenterY += (cameraLeadVector.dy / cameraLeadMagnitude) * viewportWorldHeight * cameraLeadRatioY;
+        const cameraLeadTargetRatio = getCameraLeadSpeedRatio(cameraTargetPlayer, cameraLeadMagnitude);
+        const cameraLeadBlend = 1 - Math.exp(-cameraLeadSmoothingPerSecond * deltaSeconds);
+        cameraLeadSmoothedRatio += (cameraLeadTargetRatio - cameraLeadSmoothedRatio) * cameraLeadBlend;
+        if (cameraLeadSmoothedRatio < 0.0005) {
+            cameraLeadSmoothedRatio = 0;
         }
-        let targetCenterX = currentCenterX;
-        let targetCenterY = currentCenterY;
-
-        if (!cameraIsMoving) {
-            targetCenterX = desiredCenterX;
-            targetCenterY = desiredCenterY;
-        } else {
-            if (desiredCenterX < currentCenterX - deadZoneWidth) {
-                targetCenterX = desiredCenterX + deadZoneWidth;
-            } else if (desiredCenterX > currentCenterX + deadZoneWidth) {
-                targetCenterX = desiredCenterX - deadZoneWidth;
-            }
-
-            if (desiredCenterY < currentCenterY - deadZoneHeight) {
-                targetCenterY = desiredCenterY + deadZoneHeight;
-            } else if (desiredCenterY > currentCenterY + deadZoneHeight) {
-                targetCenterY = desiredCenterY - deadZoneHeight;
-            }
+        if (cameraLeadMagnitude > 0.001 && cameraLeadSmoothedRatio > 0) {
+            desiredCenterX += (cameraLeadVector.dx / cameraLeadMagnitude) * viewportWorldWidth * cameraLeadMaxRatioX * cameraLeadSmoothedRatio;
+            desiredCenterY += (cameraLeadVector.dy / cameraLeadMagnitude) * viewportWorldHeight * cameraLeadMaxRatioY * cameraLeadSmoothedRatio;
         }
+        const minCameraCenterX = Math.min(worldSize / 2, viewportWorldWidth / 2);
+        const maxCameraCenterX = Math.max(worldSize / 2, worldSize - viewportWorldWidth / 2);
+        const minCameraCenterY = Math.min(worldSize / 2, viewportWorldHeight / 2);
+        const maxCameraCenterY = Math.max(worldSize / 2, worldSize - viewportWorldHeight / 2);
+        desiredCenterX = Math.max(minCameraCenterX, Math.min(maxCameraCenterX, desiredCenterX));
+        desiredCenterY = Math.max(minCameraCenterY, Math.min(maxCameraCenterY, desiredCenterY));
+        const targetCenterX = desiredCenterX;
+        const targetCenterY = desiredCenterY;
 
         const targetCameraX = targetCenterX - viewportWorldWidth / 2;
         const targetCameraY = targetCenterY - viewportWorldHeight / 2;
@@ -5522,6 +5529,36 @@
         updateConfetti(deltaSeconds, now);
         updateLoadingSpinner(now);
         window.requestAnimationFrame(render);
+    };
+
+    window.render_game_to_text = function () {
+        const player = renderPlayers.find(function (candidate) {
+            return candidate.id === selfId;
+        }) || null;
+        const zoom = getEffectiveZoom();
+        const viewportWidth = getViewportDisplayWidth() / zoom;
+        const viewportHeight = getViewportDisplayHeight() / zoom;
+        const visual = player ? getPlayerVisual(player.id) : null;
+        const direction = player ? getPlayerDirectionVector(player, visual) : { dx: 0, dy: 0 };
+        const directionMagnitude = Math.hypot(direction.dx, direction.dy);
+
+        return JSON.stringify({
+            coordinateSystem: 'world origin is top-left; positive X is right and positive Y is down',
+            player: player ? {
+                x: Math.round(player.x),
+                y: Math.round(player.y),
+                currentSpeed: Math.round(Number(currentMoveSpeed || player.currentSpeed || 0))
+            } : null,
+            camera: {
+                x: Math.round(cameraX),
+                y: Math.round(cameraY),
+                right: Math.round(cameraX + viewportWidth),
+                bottom: Math.round(cameraY + viewportHeight),
+                worldSize: worldSize,
+                leadSpeedRatio: Number(cameraLeadSmoothedRatio.toFixed(3)),
+                targetLeadSpeedRatio: player ? Number(getCameraLeadSpeedRatio(player, directionMagnitude).toFixed(3)) : 0
+            }
+        });
     };
 
     const handleKey = function (value) {

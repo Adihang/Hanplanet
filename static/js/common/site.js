@@ -1463,6 +1463,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const pageLang = (document.documentElement.getAttribute('lang') || 'ko').toLowerCase();
     const isEnglishPage = pageLang.startsWith('en');
+    const portfolioOwnerUsername = String(
+        document.body && document.body.getAttribute('data-portfolio-owner-username') || ''
+    ).trim();
     const printText = isEnglishPage ? {
         dialogTitle: 'Select Projects to Print',
         dialogDescription: 'Checked project detail pages will be printed with the summary.\nIf none are selected, only the summary will be printed.',
@@ -1610,6 +1613,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         await window.__printSummaryWithProjects({
             selectedProjects: selectedProjects,
+            portfolioOwnerUsername: portfolioOwnerUsername,
             printText: printText,
             escapeHtml: escapeHtml,
             isEnglishPage: isEnglishPage,

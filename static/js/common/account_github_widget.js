@@ -157,9 +157,6 @@
             modal.hidden = !opened;
             if (opened) {
                 lastFocusedElement = document.activeElement;
-                if (cancelButton) {
-                    cancelButton.focus();
-                }
                 return;
             }
             if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {

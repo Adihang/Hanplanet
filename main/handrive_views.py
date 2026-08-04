@@ -311,7 +311,16 @@ DOCS_URL_ONLY_GROUP_NAME = "url-only"
 DOCS_META_TITLE = "Handrive"
 DOCS_META_DESCRIPTION = "Hanplanet workspace"
 DOCS_LOGIN_CAPTCHA_THRESHOLD = 1
-DOCS_UPLOAD_RATE_LIMIT_BYTES_PER_SECOND = 10 * 1024 * 1024
+# HanDrive transfer throttling is enforced in the application so the limit is
+# the same whether traffic reaches Django through Docker Nginx or the native
+# fallback server.  Use decimal MB here because this is the user-facing rate.
+DOCS_TRANSFER_RATE_BYTES_PER_SECOND = max(
+    1,
+    int(getattr(settings, "HANDRIVE_TRANSFER_RATE_BYTES_PER_SECOND", 10 * 1000 * 1000)),
+)
+DOCS_UPLOAD_RATE_LIMIT_BYTES_PER_SECOND = DOCS_TRANSFER_RATE_BYTES_PER_SECOND
+DOCS_DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND = DOCS_TRANSFER_RATE_BYTES_PER_SECOND
+DOCS_DOWNLOAD_STREAM_CHUNK_BYTES = 64 * 1024
 DOCS_USER_SCOPED_QUOTA_BYTES = DEFAULT_HANDRIVE_USER_QUOTA_BYTES  # 기본값 50GB
 DOCS_USER_SCOPED_ENTRY_LIMIT = 100
 
@@ -3290,7 +3299,16 @@ def build_handrive_directory_download_response(request, source_path: Path):
         raise
 
     filename = f"{(source_path.name.strip() or 'folder')}.zip"
-    return FileResponse(zip_file, as_attachment=True, filename=filename, content_type="application/zip")
+    zip_file.seek(0, os.SEEK_END)
+    zip_size = zip_file.tell()
+    zip_file.seek(0)
+    return build_handrive_rate_limited_file_response(
+        zip_file,
+        file_size=zip_size,
+        content_type="application/zip",
+        filename=filename,
+        as_attachment=True,
+    )
 
 
 def render_plain_text_safely(text: str) -> str:
@@ -10379,6 +10397,7 @@ def handrive_common_context(request, ui_lang):
             "handrive_api_archive_create_url": reverse("main:handrive_api_archive_create"),
             "handrive_api_convert_mp3_url": reverse("main:handrive_api_convert_mp3"),
             "handrive_api_upload_url": reverse("main:handrive_api_upload"),
+            "handrive_transfer_rate_bytes_per_second": DOCS_TRANSFER_RATE_BYTES_PER_SECOND,
             "handrive_api_markdown_image_upload_url": reverse("main:handrive_api_markdown_image_upload"),
             "handrive_api_markdown_image_cleanup_url": reverse("main:handrive_api_markdown_image_cleanup"),
             "handrive_api_upload_cancel_url": reverse("main:handrive_api_upload_cancel"),
@@ -19223,11 +19242,68 @@ _DOWNLOAD_MIME_BY_EXTENSION: dict[str, str] = {
 }
 
 
+def _iter_handrive_rate_limited_file(file_handle, max_bytes: int | None = None):
+    """Yield a binary file at the application-level HanDrive download rate."""
+    remaining = None if max_bytes is None else max(0, int(max_bytes))
+    sent_bytes = 0
+    started_at = time.monotonic()
+    try:
+        while remaining is None or remaining > 0:
+            read_size = DOCS_DOWNLOAD_STREAM_CHUNK_BYTES
+            if remaining is not None:
+                read_size = min(read_size, remaining)
+            data = file_handle.read(read_size)
+            if not data:
+                break
+
+            if sent_bytes:
+                target_elapsed = sent_bytes / float(DOCS_DOWNLOAD_RATE_LIMIT_BYTES_PER_SECOND)
+                elapsed = time.monotonic() - started_at
+                if target_elapsed > elapsed:
+                    time.sleep(target_elapsed - elapsed)
+
+            yield data
+            sent_bytes += len(data)
+            if remaining is not None:
+                remaining -= len(data)
+    finally:
+        try:
+            file_handle.close()
+        except Exception:
+            pass
+
+
+def build_handrive_rate_limited_file_response(
+    file_handle,
+    *,
+    file_size: int,
+    content_type: str,
+    filename: str,
+    as_attachment: bool,
+    status: int = 200,
+    content_range: str = "",
+):
+    """Build a download response capped at the shared HanDrive transfer rate."""
+    safe_name = quote(str(filename or "download"))
+    disposition_type = "attachment" if as_attachment else "inline"
+    response = StreamingHttpResponse(
+        _iter_handrive_rate_limited_file(file_handle, max_bytes=file_size),
+        status=status,
+        content_type=content_type,
+    )
+    response["Content-Length"] = str(max(0, int(file_size)))
+    response["Content-Disposition"] = f"{disposition_type}; filename*=UTF-8''{safe_name}"
+    response["Accept-Ranges"] = "bytes"
+    # Keep the application-paced chunks visible through the default reverse
+    # proxy without changing any Nginx transfer-limit configuration.
+    response["X-Accel-Buffering"] = "no"
+    if content_range:
+        response["Content-Range"] = content_range
+    return response
+
+
 def _stream_response(request, fh, file_size: int, content_type: str, filename: str):
     """video/audio inline 스트리밍 — HTTP Range 요청 지원 (seek 가능)."""
-    safe_name = quote(filename)
-    disposition = f"inline; filename*=UTF-8''{safe_name}"
-
     range_header = request.META.get("HTTP_RANGE", "").strip()
     m = range_header and re.match(r"bytes=(\d*)-(\d*)", range_header)
     if m:
@@ -19238,34 +19314,24 @@ def _stream_response(request, fh, file_size: int, content_type: str, filename: s
 
         fh.seek(start)
 
-        def _iter(fh, length, chunk=65536):
-            try:
-                remaining = length
-                while remaining > 0:
-                    data = fh.read(min(chunk, remaining))
-                    if not data:
-                        break
-                    remaining -= len(data)
-                    yield data
-            finally:
-                try:
-                    fh.close()
-                except Exception:
-                    pass
-
-        resp = StreamingHttpResponse(_iter(fh, length), status=206, content_type=content_type)
-        resp["Content-Range"]       = f"bytes {start}-{end}/{file_size}"
-        resp["Content-Length"]      = length
-        resp["Accept-Ranges"]       = "bytes"
-        resp["Content-Disposition"] = disposition
-        return resp
+        return build_handrive_rate_limited_file_response(
+            fh,
+            file_size=length,
+            content_type=content_type,
+            filename=filename,
+            as_attachment=False,
+            status=206,
+            content_range=f"bytes {start}-{end}/{file_size}",
+        )
 
     fh.seek(0)
-    resp = FileResponse(fh, content_type=content_type)
-    resp["Content-Length"]      = file_size
-    resp["Accept-Ranges"]       = "bytes"
-    resp["Content-Disposition"] = disposition
-    return resp
+    return build_handrive_rate_limited_file_response(
+        fh,
+        file_size=file_size,
+        content_type=content_type,
+        filename=filename,
+        as_attachment=False,
+    )
 
 
 @require_http_methods(["GET"])
@@ -19393,18 +19459,25 @@ def handrive_api_download(request):
         return response
 
     if ext in _DOWNLOAD_MIME_BY_EXTENSION:
-        response = FileResponse(
+        response = build_handrive_rate_limited_file_response(
             file_handle,
-            as_attachment=True,
-            filename=filename,
+            file_size=file_size,
             content_type=_DOWNLOAD_MIME_BY_EXTENSION[ext],
+            filename=filename,
+            as_attachment=True,
         )
         if download_version:
             response["X-Handrive-Version"] = download_version
             response["ETag"] = f'"{download_version}"'
         return response
 
-    response = FileResponse(file_handle, as_attachment=True, filename=filename)
+    response = build_handrive_rate_limited_file_response(
+        file_handle,
+        file_size=file_size,
+        content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
+        filename=filename,
+        as_attachment=True,
+    )
     if download_version:
         response["X-Handrive-Version"] = download_version
         response["ETag"] = f'"{download_version}"'

@@ -336,6 +336,7 @@
         const player   = buildPlayer(el);
         players.set(el, { player, cleanups });
 
+        setupVideoAspectRatio(player, el, cleanups);
         setupControls(player);
         setupControlBarHoverState(player, cleanups);
         setupDelayedMenuPopups(player, cleanups);
@@ -439,6 +440,82 @@
         }
 
         return player;
+    }
+
+    // ── 원본 영상 비율에 맞춘 플레이어 크기 ─────────────────────────────
+    function setupVideoAspectRatio(player, el, cleanups) {
+        const mediaWrap = el.closest('.handrive-media-video-wrap');
+        if (!mediaWrap) {
+            return;
+        }
+        const layoutHost = mediaWrap.parentElement;
+        const playerElement = player && typeof player.el === 'function' ? player.el() : null;
+        const videoElement = playerElement && playerElement.querySelector('video')
+            ? playerElement.querySelector('video')
+            : el;
+        if (!layoutHost || !playerElement || !videoElement) {
+            return;
+        }
+
+        const applyAspectRatio = () => {
+            const sourceWidth = Number(videoElement.videoWidth || 0);
+            const sourceHeight = Number(videoElement.videoHeight || 0);
+            if (!sourceWidth || !sourceHeight) {
+                return;
+            }
+
+            const ratio = sourceWidth / sourceHeight;
+            const ratioValue = `${sourceWidth} / ${sourceHeight}`;
+            mediaWrap.style.setProperty('--handrive-video-aspect-ratio', ratioValue);
+            playerElement.style.setProperty('--handrive-video-aspect-ratio', ratioValue);
+            mediaWrap.dataset.videoAspectReady = '1';
+
+            const hostRect = layoutHost.getBoundingClientRect();
+            const maxWidth = Math.max(0, Number(layoutHost.clientWidth || hostRect.width || 0));
+            const maxHeight = Math.max(0, Number(layoutHost.clientHeight || hostRect.height || 0));
+            if (!maxWidth) {
+                return;
+            }
+
+            let frameWidth = maxWidth;
+            let frameHeight = frameWidth / ratio;
+            if (maxHeight > 0 && frameHeight > maxHeight) {
+                frameHeight = maxHeight;
+                frameWidth = frameHeight * ratio;
+            }
+            if (!Number.isFinite(frameWidth) || !Number.isFinite(frameHeight) || frameWidth <= 0 || frameHeight <= 0) {
+                return;
+            }
+
+            mediaWrap.style.width = `${Math.round(frameWidth)}px`;
+            mediaWrap.style.height = `${Math.round(frameHeight)}px`;
+        };
+
+        player.on('loadedmetadata', applyAspectRatio);
+        player.ready(applyAspectRatio);
+        videoElement.addEventListener('loadedmetadata', applyAspectRatio);
+
+        const resizeObserver = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(applyAspectRatio)
+            : null;
+        if (resizeObserver) {
+            resizeObserver.observe(layoutHost);
+        } else {
+            window.addEventListener('resize', applyAspectRatio);
+            cleanups.push(() => window.removeEventListener('resize', applyAspectRatio));
+        }
+
+        cleanups.push(() => {
+            videoElement.removeEventListener('loadedmetadata', applyAspectRatio);
+            if (resizeObserver) {
+                resizeObserver.disconnect();
+            }
+            mediaWrap.style.removeProperty('--handrive-video-aspect-ratio');
+            mediaWrap.style.removeProperty('width');
+            mediaWrap.style.removeProperty('height');
+            delete mediaWrap.dataset.videoAspectReady;
+            playerElement.style.removeProperty('--handrive-video-aspect-ratio');
+        });
     }
 
     // ── 컨트롤 공통 ──────────────────────────────────────────────────

@@ -175,8 +175,8 @@ MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상�
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
 PROMINENCE_META_TITLE = "Prominence II Server | Hanplanet"
-PROMINENCE_META_DESCRIPTION_KO = "Prominence II: Hasturian Era 1.20.1 Fabric 서버 접속 정보와 한국어 클라이언트 모드팩, Dynmap 월드 지도를 제공합니다."
-PROMINENCE_META_DESCRIPTION_EN = "Prominence II: Hasturian Era 1.20.1 Fabric server information, a Korean client modpack, and a Dynmap world map."
+PROMINENCE_META_DESCRIPTION_KO = "Prominence II: Hasturian Era v4.0.0 1.20.1 Fabric 서버 접속 정보와 한국어 클라이언트 모드팩, Dynmap 월드 지도를 제공합니다."
+PROMINENCE_META_DESCRIPTION_EN = "Prominence II: Hasturian Era v4.0.0 1.20.1 Fabric server information, a Korean client modpack, and a Dynmap world map."
 PROMINENCE_CURSEFORGE_URL = "https://www.curseforge.com/minecraft/modpacks/prominence-2-hasturian-era"
 PROMINENCE_KOREAN_PATCH_URL = "https://moru.gg/ko/modpack/prominence-2-hasturian-era"
 PROMINENCE_PLAYER_HEAD_URL_TEMPLATE = "https://mc-heads.net/avatar/{uuid}/24.png"
@@ -203,7 +203,7 @@ PROMINENCE_USERCACHE_PATH = Path(
 PROMINENCE_PLAYERDATA_PATH = Path(
     os.getenv("PROMINENCE_PLAYERDATA_PATH", "/Users/imhanbyeol/Development/rlcraft/world/playerdata")
 )
-PROMINENCE_SERVER_VERSION = "1.20.1 Fabric 0.18.4"
+PROMINENCE_SERVER_VERSION = "1.20.1 Fabric 0.19.3"
 PROMINENCE_SERVER_ADDRESS = "rlc.hanplanet.com"
 PROMINENCE_SERVER_PORT = 25566
 PROMINENCE_MAP_URL = "/map/"
@@ -605,6 +605,7 @@ BUMPERCAR_SPIKY_ACCOUNT_STATS_DEFAULTS = {
     "play_seconds": 0,
     "max_ner_party_size": 0,
     "game_clears": 0,
+    "raise_speaki_wins": 0,
     "ner_phase1_attack_dodges": 0,
     "ner_phase2_attack_dodges": 0,
     "ner_phase3_attack_dodges": 0,
@@ -908,8 +909,8 @@ def rebuild_bumpercar_skin_manifest(skin: BumpercarSkin) -> bool:
 def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None, game_slug="bumpercar-spiky"):
     """Build the full skin catalog shown in the client, including unlock and asset metadata."""
     stats = normalize_bumpercar_spiky_account_stats(account_stats)
-    total_game_clears = int(stats.get("game_clears", 0))
     total_play_seconds = int(stats.get("play_seconds", 0))
+    total_raise_speaki_wins = int(stats.get("raise_speaki_wins", 0))
     is_english = ui_lang == "en"
     is_admin = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
     normalized_game_slug = str(game_slug or "bumpercar-spiky").strip().lower() or "bumpercar-spiky"
@@ -997,7 +998,11 @@ def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None, game_s
             "unlock_condition": (
                 "Unavailable"
                 if is_english and normalized_game_slug == "raise-speaki"
-                else ("사용불가" if normalized_game_slug == "raise-speaki" else ("Clear the game." if is_english else "게임 클리어"))
+                else (
+                    "사용불가"
+                    if normalized_game_slug == "raise-speaki"
+                    else ("Win in Raise Speaki." if is_english else "스핔이 키우기에서 승리")
+                )
             ),
             "description": (
                 "Only the strongest Spiky survived and evolved into bipedal form.\n"
@@ -1005,7 +1010,7 @@ def _build_bumpercar_skin_catalog(ui_lang, account_stats=None, user=None, game_s
                 if is_english
                 else "스핔이중 가장 강한 스핔이 만이 살아남아 이족보행으로 진화했습니다.\n\"호박친구하고 거리가 멀어진 거에요ㅠ\""
             ),
-            "unlocked": normalized_game_slug != "raise-speaki" and (is_admin or total_game_clears >= 1),
+            "unlocked": normalized_game_slug != "raise-speaki" and (is_admin or total_raise_speaki_wins >= 1),
         },
     ]
 

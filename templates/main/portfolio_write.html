@@ -443,6 +443,19 @@ body.portfolio-write-page.theme-dark .portfolio-write-field input[type="date"] {
     box-shadow: none;
 }
 
+.portfolio-write-cover-letter-editor-surface > .handrive-editor-highlight {
+    display: none;
+}
+
+.portfolio-write-cover-letter-editor-surface > textarea[data-portfolio-markdown-editor] {
+    background: transparent;
+    color: var(--handrive-text);
+    caret-color: var(--handrive-text-stronger);
+    font-family: var(--site-font-body);
+    letter-spacing: normal;
+    -webkit-text-fill-color: currentColor;
+}
+
 body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .handrive-md-src-token-heading {
     color: #8ab4f8;
 }
@@ -907,7 +920,7 @@ body.portfolio-write-page.theme-dark .portfolio-write-handrive-editor-surface .h
                         </div>
                         <div class="handrive-list-editor portfolio-write-markdown-editor-shell">
                             <div class="handrive-list-editor-body site-loading-host">
-                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface" data-portfolio-editor-surface>
+                                <div class="handrive-editor-surface portfolio-write-handrive-editor-surface portfolio-write-cover-letter-editor-surface" data-portfolio-editor-surface>
                                     <pre class="handrive-editor-highlight handrive-editor-md" aria-hidden="true"><code></code></pre>
                                     <textarea id="portfolio-cover-letter-content" name="content" required data-portfolio-markdown-editor spellcheck="false" wrap="off">{% if selected_cover_letter %}{{ selected_cover_letter.content }}{% endif %}</textarea>
                                 </div>

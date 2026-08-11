@@ -4,8 +4,13 @@ function enableMapGestureZoom(map, container) {
     if (map.touchZoom && map.touchZoom.disable) {
         map.touchZoom.disable();
     }
-    if (map.scrollWheelZoom && map.scrollWheelZoom.enable) {
-        map.scrollWheelZoom.enable();
+    // Leaflet's built-in wheel handler debounces the stream and starts a
+    // separate zoom animation for each burst.  On high-resolution wheels
+    // this drops intermediate deltas, making a long scroll feel like one
+    // zoom step at a time.  Keep the handler disabled and consume the stream
+    // below in one rAF-driven target animation instead.
+    if (map.scrollWheelZoom && map.scrollWheelZoom.disable) {
+        map.scrollWheelZoom.disable();
     }
     if (map.doubleClickZoom && map.doubleClickZoom.enable) {
         map.doubleClickZoom.enable();
@@ -98,19 +103,90 @@ function enableMapGestureZoom(map, container) {
         }
     }
 
+    var wheelState = {
+        pendingDelta: 0,
+        targetZoom: null,
+        point: null,
+        frame: 0,
+    };
+
+    function isImageAdjusting() {
+        var editorRoot = document.getElementById("map-editor-root");
+        return !!(editorRoot && editorRoot.classList.contains("is-map-image-adjusting"));
+    }
+
+    function isWheelControlTarget(event) {
+        var target = event && event.target;
+        return !!(target && target.closest && target.closest(
+            ".leaflet-control, .leaflet-popup, .map-viewer-layers-widget"
+        ));
+    }
+
+    function normalizeWheelDelta(event) {
+        var delta = Number(event && event.deltaY) || 0;
+        if (Math.abs(delta) <= 0.01) {
+            delta = Number(event && event.deltaX) || 0;
+        }
+        if (event && event.deltaMode === 1) {
+            delta *= 16;
+        } else if (event && event.deltaMode === 2) {
+            delta *= window.innerHeight || 800;
+        }
+        return delta;
+    }
+
+    function flushWheelZoom() {
+        wheelState.frame = 0;
+        if (!map || wheelState.targetZoom === null) return;
+
+        if (wheelState.pendingDelta) {
+            // Match HanDrive's shared zoom gesture: 100 normalized wheel
+            // pixels equals one 1.125x scale step. Leaflet zoom is logarithmic
+            // (one unit doubles the scale), so convert the same ratio to map
+            // zoom units before applying it.
+            var wheelRatio = 1.125;
+            var wheelDeltaUnit = 100;
+            var scaleRatio = Math.pow(wheelRatio, -(wheelState.pendingDelta / wheelDeltaUnit));
+            var mapZoomDelta = Math.log(scaleRatio) / Math.LN2;
+            wheelState.targetZoom = map._limitZoom(wheelState.targetZoom + mapZoomDelta);
+            wheelState.pendingDelta = 0;
+        }
+
+        var currentZoom = map.getZoom();
+        var difference = wheelState.targetZoom - currentZoom;
+        if (Math.abs(difference) < 0.001) {
+            map.setZoomAround(wheelState.point || map.getSize().divideBy(2), wheelState.targetZoom, {
+                animate: false,
+            });
+            wheelState.targetZoom = map.getZoom();
+            return;
+        }
+
+        // Advance a fraction of the remaining distance so consecutive wheel
+        // events are rendered smoothly instead of as isolated jumps.
+        var nextZoom = currentZoom + difference * 0.32;
+        if (map._stop) map._stop();
+        map.setZoomAround(wheelState.point || map.getSize().divideBy(2), nextZoom, {
+            animate: false,
+        });
+        wheelState.frame = window.requestAnimationFrame(flushWheelZoom);
+    }
+
     function zoomFromWheel(event) {
-        if (!event || !(event.ctrlKey || event.metaKey)) return;
+        if (!event || isImageAdjusting() || isWheelControlTarget(event)) return;
+        var delta = normalizeWheelDelta(event);
+        if (!delta) return;
         event.preventDefault();
         event.stopPropagation();
 
-        var point = map.mouseEventToContainerPoint(event);
-        var delta = event.deltaY || 0;
-        var nextZoom = map.getZoom() - (delta / 240) * 0.8;
-
-        map.setZoomAround(point, nextZoom, {
-            animate: true,
-            duration: 0.16
-        });
+        wheelState.pendingDelta += delta;
+        wheelState.point = map.mouseEventToContainerPoint(event);
+        if (wheelState.targetZoom === null) {
+            wheelState.targetZoom = map.getZoom();
+        }
+        if (!wheelState.frame) {
+            wheelState.frame = window.requestAnimationFrame(flushWheelZoom);
+        }
     }
 
     container.addEventListener("touchstart", onTouchStart, { passive: false, capture: true });

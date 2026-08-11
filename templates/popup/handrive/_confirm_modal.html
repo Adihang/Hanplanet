@@ -17,6 +17,9 @@
         </header>
         <p id="{{ message_id }}" class="{{ confirm_message_class }}">{{ message_text|default:"" }}</p>
         <div class="{{ confirm_actions_class }}">
+            {% if save_button_id %}
+            <button type="button" class="ui-btn" id="{{ save_button_id }}" hidden>{{ save_text|default:"저장" }}</button>
+            {% endif %}
             <button type="button" class="{{ confirm_cancel_button_class }}" id="{{ cancel_button_id }}">{{ cancel_text }}</button>
             <button type="button" class="{{ confirm_confirm_button_class }}" id="{{ confirm_button_id }}">{{ confirm_text }}</button>
         </div>

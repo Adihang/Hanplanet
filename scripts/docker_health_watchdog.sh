@@ -41,6 +41,47 @@ write_rlcraft_restart_state() {
   ' sh "$RLCRAFT_RESTART_STATE_PATH" "$phase" "$updated_at" >/dev/null 2>&1 || log "could not persist Prominence II restart phase: $phase"
 }
 
+write_prominence_console_line() {
+  local command="$1"
+  local writer_pid
+
+  printf '%s\n' "$command" > "$rlcraft_fifo" &
+  writer_pid=$!
+  for _ in $(seq 1 50); do
+    if ! kill -0 "$writer_pid" 2>/dev/null; then
+      if wait "$writer_pid" 2>/dev/null; then
+        return 0
+      fi
+      return 1
+    fi
+    sleep 0.1
+  done
+
+  kill "$writer_pid" 2>/dev/null || true
+  wait "$writer_pid" 2>/dev/null || true
+  return 1
+}
+
+send_prominence_restart_countdown() {
+  if [ ! -p "$rlcraft_fifo" ]; then
+    return 1
+  fi
+
+  if ! write_prominence_console_line "say [Hanplanet] 10초 후 서버가 재시작 합니다."; then
+    return 1
+  fi
+  sleep 1
+
+  for remaining_seconds in 9 8 7 6 5 4 3 2 1; do
+    if ! write_prominence_console_line "say [Hanplanet] ${remaining_seconds}"; then
+      return 1
+    fi
+    sleep 1
+  done
+
+  write_prominence_console_line "say [Hanplanet] 서버를 재시작합니다."
+}
+
 port_is_listening() {
   [ -n "$NC_BIN" ] && "$NC_BIN" -z -w 1 127.0.0.1 "$PROMINENCE_SERVER_PORT" >/dev/null 2>&1
 }
@@ -175,19 +216,8 @@ if [ -n "$rlcraft_restart_token" ]; then
   fi
   write_rlcraft_restart_state "stopping"
   if [ -p "$rlcraft_fifo" ]; then
-    printf 'stop\n' > "$rlcraft_fifo" &
-    fifo_writer_pid=$!
-    for _ in $(seq 1 50); do
-      if ! kill -0 "$fifo_writer_pid" 2>/dev/null; then
-        wait "$fifo_writer_pid" 2>/dev/null || true
-        restart_requested=true
-        break
-      fi
-      sleep 0.1
-    done
-    if ! $restart_requested; then
-      kill "$fifo_writer_pid" 2>/dev/null || true
-      wait "$fifo_writer_pid" 2>/dev/null || true
+    if send_prominence_restart_countdown && write_prominence_console_line "stop"; then
+      restart_requested=true
     fi
   fi
 

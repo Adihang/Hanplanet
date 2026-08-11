@@ -47,6 +47,7 @@
     const joystick = root.querySelector('[data-game-joystick]');
     const joystickKnob = root.querySelector('[data-game-joystick-knob]');
     const mobileBoostButton = root.querySelector('[data-game-mobile-boost]');
+    const mobileSpecialButton = root.querySelector('[data-game-mobile-special]');
     const deathModal = root.querySelector('[data-game-death-modal]');
     const deathModalTitleNode = root.querySelector('[data-game-death-modal-title]');
     const deathModalRespawnButton = root.querySelector('[data-game-death-modal-respawn]');
@@ -107,6 +108,7 @@
     const raiseSpeakiWinnerRestartLabel = root.getAttribute('data-raise-speaki-winner-restart') || '{count}초 뒤 다시 시작';
     const raiseSpeakiBirthTitleLabel = root.getAttribute('data-raise-speaki-birth-title') || '스피키가 탄생 했습니다.';
     const raiseSpeakiBirthCountdownLabel = root.getAttribute('data-raise-speaki-birth-countdown') || '{count}초 후 스피키 승리';
+    const raiseSpeakiDoubleReviveHelp = root.getAttribute('data-raise-speaki-double-revive-help') || '';
     const skinLockedLabel = window.document.documentElement.lang === 'en' ? 'Locked' : '잠김';
     const playerName = root.getAttribute('data-player-name') || 'Player';
     const skinCatalog = (function () {
@@ -205,7 +207,7 @@
     const renderOverscan = 2;
     const cameraLeadMaxRatioX = 0.28;
     const cameraLeadMaxRatioY = 0.3;
-    const cameraLeadSmoothingPerSecond = 5.5;
+    const cameraLeadSmoothingPerSecond = 2.75;
     const remoteRenderDelaySeconds = 0.06;
     const MUSIC_MUTED_STORAGE_KEY = 'bumpercar_spiky_music_muted';
     const SFX_MUTED_STORAGE_KEY = 'bumpercar_spiky_sfx_muted';
@@ -1030,6 +1032,45 @@
         boostState = 'idle';
     };
 
+    const setRaiseSpeakiWinnerCharacterSize = function (winner, winnerSkin, winnerImageEntry) {
+        if (!raiseSpeakiWinnerCharacterNode || !winner || !winnerSkin) {
+            return;
+        }
+
+        const winnerSkinProfile = getPlayerSkinProfile(winner.skinName || 'default');
+        const winnerGrowthScale = Math.max(0.6, Number(winner.sizeMultiplier || 1));
+        const winnerIsNpc = Boolean(winner.isNpc);
+        const winnerSpriteScale = winnerIsNpc
+            ? 2.8
+            : ((winnerSkinProfile.type === 'pumkin' ? 2 : 1) * winnerGrowthScale);
+        // Double units are drawn by their dedicated renderer, which intentionally
+        // does not apply the catalog visual scale a second time.
+        const winnerSkinVisualScale = !winnerIsNpc && winnerSkinProfile.type !== 'double'
+            ? Math.max(0.1, Number(winnerSkin.visualScale || 1))
+            : 1;
+        const baseSpriteHeight = playerSpriteHeight * winnerSpriteScale * winnerSkinVisualScale * getEffectiveZoom();
+        const winnerImage = winnerImageEntry && winnerImageEntry.image ? winnerImageEntry.image : null;
+        const winnerAspectRatio = winnerImage && winnerImage.naturalWidth && winnerImage.naturalHeight
+            ? (winnerImage.naturalWidth / winnerImage.naturalHeight)
+            : 1;
+        let winnerSpriteWidth = baseSpriteHeight * winnerAspectRatio;
+        let winnerSpriteHeight = baseSpriteHeight;
+
+        if (!winnerIsNpc && winnerSkinProfile.type === 'evolution') {
+            winnerSpriteWidth = baseSpriteHeight * defaultPlayerAspectRatio * 2;
+            winnerSpriteHeight = winnerSpriteWidth / Math.max(0.1, winnerAspectRatio);
+        }
+
+        raiseSpeakiWinnerCharacterNode.style.setProperty(
+            '--multiplayer-raise-speaki-winner-character-width',
+            Math.max(1, winnerSpriteWidth).toFixed(2) + 'px'
+        );
+        raiseSpeakiWinnerCharacterNode.style.setProperty(
+            '--multiplayer-raise-speaki-winner-character-height',
+            Math.max(1, winnerSpriteHeight).toFixed(2) + 'px'
+        );
+    };
+
     const setRaiseSpeakiWinnerOverlayState = function () {
         const hasWinner = Boolean(raiseSpeakiWinner);
         const visible = raiseSpeakiWinnerPhase === 'result' && hasWinner;
@@ -1039,6 +1080,9 @@
         }
         if (raiseSpeakiWinnerOverlay) {
             raiseSpeakiWinnerOverlay.hidden = !visible;
+        }
+        if (visible && deathModal) {
+            deathModal.hidden = true;
         }
         root.classList.toggle('is-raise-speaki-winner-frozen', visible);
         if (!hasWinner) {
@@ -1067,9 +1111,13 @@
         }
         if (raiseSpeakiWinnerCharacterNode) {
             const winnerSkin = getSkinConfig(raiseSpeakiWinner.skinName || 'default');
-            const winnerImageUrl = getManagedImageSource(winnerSkin.previewIcon) || getManagedImageSource(winnerSkin.legacyIcon);
+            const winnerImageEntry = getManagedImageSource(winnerSkin.previewIcon)
+                ? winnerSkin.previewIcon
+                : winnerSkin.legacyIcon;
+            const winnerImageUrl = getManagedImageSource(winnerImageEntry);
             raiseSpeakiWinnerCharacterNode.src = winnerImageUrl || '';
             raiseSpeakiWinnerCharacterNode.alt = raiseSpeakiWinner.displayName || raiseSpeakiWinner.id || '';
+            setRaiseSpeakiWinnerCharacterSize(raiseSpeakiWinner, winnerSkin, winnerImageEntry);
         }
         if (!visible) {
             return;
@@ -1142,6 +1190,16 @@
         }
     };
 
+    const getSkinDetailDescription = function (skinRuntime) {
+        const description = String(skinRuntime && skinRuntime.description || '')
+            .replace(/₩n/g, '\n')
+            .replace(/\\n/g, '\n');
+        if (!skinRuntime || skinRuntime.name !== 'double' || !raiseSpeakiDoubleReviveHelp) {
+            return description;
+        }
+        return [raiseSpeakiDoubleReviveHelp, description].filter(Boolean).join('\n\n');
+    };
+
     const renderSkinList = function () {
         if (!skinListNode) {
             return;
@@ -1204,9 +1262,7 @@
                 if (skinDetailDescriptionNode) {
                     skinDetailDescriptionNode.hidden = !skinRuntime.unlocked;
                     skinDetailDescriptionNode.textContent = skinRuntime.unlocked
-                        ? String(skinRuntime.description || '')
-                            .replace(/₩n/g, '\n')
-                            .replace(/\\n/g, '\n')
+                        ? getSkinDetailDescription(skinRuntime)
                         : '';
                 }
                 if (skinSelectButton) {
@@ -1685,21 +1741,23 @@
             return;
         }
 
+        const winnerResultVisible = raiseSpeakiWinnerPhase === 'result' && Boolean(raiseSpeakiWinner);
+        const visible = Boolean(opened) && !winnerResultVisible;
         const safeLivesRemaining = Math.max(0, Number(livesRemaining || 0));
         const spectatablePlayers = syncSpectateTarget();
-        const canSpectate = opened && respawnReady && spectatablePlayers.length > 0;
-        const shouldHideForRespawn = respawnRequestPending && opened && respawnReady && safeLivesRemaining > 0;
-        deathModal.hidden = !opened || shouldHideForRespawn;
-        if (opened && roundResetAnnouncementActive) {
+        const canSpectate = visible && respawnReady && spectatablePlayers.length > 0;
+        const shouldHideForRespawn = respawnRequestPending && visible && respawnReady && safeLivesRemaining > 0;
+        deathModal.hidden = !visible || shouldHideForRespawn;
+        if (visible && roundResetAnnouncementActive) {
             roundResetAnnouncementLatched = true;
         }
         if (deathModalTitleNode) {
-            deathModalTitleNode.textContent = (opened && roundResetAnnouncementLatched)
+            deathModalTitleNode.textContent = (visible && roundResetAnnouncementLatched)
                 ? deathGameOverTitleLabel
                 : deathTitleLabel;
         }
         if (deathModalRespawnButton) {
-            if (!opened) {
+            if (!visible) {
                 deathModalRespawnButton.textContent = deathRespawnLabel;
             } else {
                 deathModalRespawnButton.textContent = safeLivesRemaining > 0 ? deathRespawnLabel : deathNoLivesLabel;
@@ -1722,7 +1780,7 @@
         if (deathModalSpectateNextButton) {
             deathModalSpectateNextButton.disabled = !canSpectate || spectatablePlayers.length <= 1;
         }
-        if (!opened || !respawnReady || safeLivesRemaining <= 0) {
+        if (!visible || !respawnReady || safeLivesRemaining <= 0) {
             input.respawn = false;
         }
     };
@@ -1735,6 +1793,48 @@
         if (mobileControlsToggle) {
             mobileControlsToggle.classList.toggle('is-active', opened);
             mobileControlsToggle.setAttribute('aria-pressed', opened ? 'true' : 'false');
+        }
+    };
+
+    const canUseMobileDoubleRevive = function (player) {
+        if (
+            !player ||
+            player.isNpc ||
+            player.isDummy ||
+            player.isPumpkinNpc ||
+            player.deathActive ||
+            getPlayerSkinProfile(player.skinName || activeSelfSkinName || selectedSkinName).type !== 'double'
+        ) {
+            return false;
+        }
+        const units = player.doubleState && Array.isArray(player.doubleState.units)
+            ? player.doubleState.units
+            : [];
+        const aliveUnits = units.filter(function (unit) {
+            const unitHealth = Math.max(0, Number(unit && (unit.currentHealth !== undefined ? unit.currentHealth : unit.health) || 0));
+            return !Boolean(unit && unit.inactive) && unitHealth > 0;
+        });
+        if (aliveUnits.length !== 1) {
+            return false;
+        }
+        const survivingUnit = aliveUnits[0];
+        return Math.max(1, Number(survivingUnit.level || 1)) >= 2 &&
+            Math.max(0, Number(survivingUnit.currentHealth !== undefined ? survivingUnit.currentHealth : survivingUnit.health || 0)) >= 2;
+    };
+
+    const setMobileSpecialButtonState = function (player) {
+        if (!mobileSpecialButton) {
+            return;
+        }
+        const isDoubleSkin = Boolean(
+            player && getPlayerSkinProfile(player.skinName || activeSelfSkinName || selectedSkinName).type === 'double'
+        );
+        const canRevive = isDoubleSkin && canUseMobileDoubleRevive(player);
+        mobileSpecialButton.hidden = !isDoubleSkin;
+        mobileSpecialButton.disabled = !canRevive;
+        mobileSpecialButton.setAttribute('aria-disabled', canRevive ? 'false' : 'true');
+        if (!canRevive) {
+            input.special = false;
         }
     };
 
@@ -2802,20 +2902,60 @@
         };
     };
 
-    const getCameraLeadSpeedRatio = function (player, directionMagnitude) {
+    const getCameraLeadMovementSpeed = function (player) {
+        if (!player) {
+            return 0;
+        }
+
+        const reportedSpeed = player.id === selfId
+            ? Number(currentMoveSpeed || 0)
+            : Number(player.currentSpeed || 0);
+        const velocitySpeed = Math.hypot(Number(player.velocityX || 0), Number(player.velocityY || 0));
+        return Number.isFinite(reportedSpeed) && reportedSpeed > 0
+            ? reportedSpeed
+            : velocitySpeed;
+    };
+
+    const getCameraLeadState = function (player, visual) {
+        const liveDirection = getPlayerDirectionVector(player, visual);
+        const movementSpeed = getCameraLeadMovementSpeed(player);
+        if (!visual) {
+            return {
+                dx: liveDirection.dx,
+                dy: liveDirection.dy,
+                speed: movementSpeed
+            };
+        }
+
+        const collisionAffected = Boolean(player && (player.collisionActive || player.collisionRecoveryActive));
+        const liveDirectionMagnitude = Math.hypot(liveDirection.dx, liveDirection.dy);
+        if (!collisionAffected) {
+            visual.cameraLeadSpeed = movementSpeed;
+            if (liveDirectionMagnitude > 0.001) {
+                visual.cameraLeadDirectionX = liveDirection.dx;
+                visual.cameraLeadDirectionY = liveDirection.dy;
+            }
+        }
+
+        const hasStoredDirection = Number.isFinite(visual.cameraLeadDirectionX) && Number.isFinite(visual.cameraLeadDirectionY);
+        const hasStoredSpeed = Number.isFinite(visual.cameraLeadSpeed);
+        return {
+            dx: collisionAffected && hasStoredDirection ? visual.cameraLeadDirectionX : liveDirection.dx,
+            dy: collisionAffected && hasStoredDirection ? visual.cameraLeadDirectionY : liveDirection.dy,
+            speed: collisionAffected && hasStoredSpeed ? visual.cameraLeadSpeed : movementSpeed
+        };
+    };
+
+    const getCameraLeadSpeedRatio = function (player, directionMagnitude, movementSpeedOverride) {
         if (!player || directionMagnitude <= 0.001) {
             return 0;
         }
 
         const playerProfile = getPlayerSkinProfile(player.skinName || activeSelfSkinName || selectedSkinName);
         const maxCameraSpeed = Math.max(1, Number(playerProfile.maxBoostSpeed || playerProfile.baseSpeed || 1));
-        const reportedSpeed = player.id === selfId
-            ? Number(currentMoveSpeed || 0)
-            : Number(player.currentSpeed || 0);
-        const velocitySpeed = Math.hypot(Number(player.velocityX || 0), Number(player.velocityY || 0));
-        const movementSpeed = Number.isFinite(reportedSpeed) && reportedSpeed > 0
-            ? reportedSpeed
-            : velocitySpeed;
+        const movementSpeed = Number.isFinite(movementSpeedOverride)
+            ? Math.max(0, movementSpeedOverride)
+            : getCameraLeadMovementSpeed(player);
 
         return Math.max(0, Math.min(1, movementSpeed / maxCameraSpeed));
     };
@@ -3352,6 +3492,7 @@
                     setSharedLives(selfLevel, selfCurrentHealth, selfMaxHealth, {
                         levelText: selfHudLevelText
                     });
+                    setMobileSpecialButtonState(selfPlayer);
                     setDeathModalState(selfDeathActive, selfDeathRespawnReady, selfLivesRemaining);
                     if (defeatReceivedCountNode) {
                         defeatReceivedCountNode.textContent = String(selfPlayer.defeatReceivedCount || 0);
@@ -3475,6 +3616,7 @@
             selfServerAudioStateInitialized = false;
             playerVisuals.clear();
             serverPlayerMap.clear();
+            setMobileSpecialButtonState(null);
             if (suppressNextCloseReconnect) {
                 suppressNextCloseReconnect = false;
                 return;
@@ -5811,9 +5953,10 @@
         let desiredCenterX = cameraTargetPlayer.x;
         let desiredCenterY = cameraTargetPlayer.y;
         const cameraTargetVisual = getPlayerVisual(cameraTargetPlayer.id);
-        const cameraLeadVector = getPlayerDirectionVector(cameraTargetPlayer, cameraTargetVisual);
+        const cameraLeadState = getCameraLeadState(cameraTargetPlayer, cameraTargetVisual);
+        const cameraLeadVector = { dx: cameraLeadState.dx, dy: cameraLeadState.dy };
         const cameraLeadMagnitude = Math.hypot(cameraLeadVector.dx, cameraLeadVector.dy);
-        const cameraLeadTargetRatio = getCameraLeadSpeedRatio(cameraTargetPlayer, cameraLeadMagnitude);
+        const cameraLeadTargetRatio = getCameraLeadSpeedRatio(cameraTargetPlayer, cameraLeadMagnitude, cameraLeadState.speed);
         const cameraLeadBlend = 1 - Math.exp(-cameraLeadSmoothingPerSecond * deltaSeconds);
         cameraLeadSmoothedRatio += (cameraLeadTargetRatio - cameraLeadSmoothedRatio) * cameraLeadBlend;
         if (cameraLeadSmoothedRatio < 0.0005) {
@@ -5858,8 +6001,8 @@
         const viewportWidth = getViewportDisplayWidth() / zoom;
         const viewportHeight = getViewportDisplayHeight() / zoom;
         const visual = player ? getPlayerVisual(player.id) : null;
-        const direction = player ? getPlayerDirectionVector(player, visual) : { dx: 0, dy: 0 };
-        const directionMagnitude = Math.hypot(direction.dx, direction.dy);
+        const cameraLeadState = player ? getCameraLeadState(player, visual) : { dx: 0, dy: 0, speed: 0 };
+        const directionMagnitude = Math.hypot(cameraLeadState.dx, cameraLeadState.dy);
 
         return JSON.stringify({
             coordinateSystem: 'world origin is top-left; positive X is right and positive Y is down',
@@ -5875,7 +6018,7 @@
                 bottom: Math.round(cameraY + viewportHeight),
                 worldSize: worldSize,
                 leadSpeedRatio: Number(cameraLeadSmoothedRatio.toFixed(3)),
-                targetLeadSpeedRatio: player ? Number(getCameraLeadSpeedRatio(player, directionMagnitude).toFixed(3)) : 0
+                targetLeadSpeedRatio: player ? Number(getCameraLeadSpeedRatio(player, directionMagnitude, cameraLeadState.speed).toFixed(3)) : 0
             },
             roundWinner: {
                 phase: raiseSpeakiWinnerPhase,
@@ -6116,6 +6259,29 @@
             mobileBoostButton.addEventListener(eventName, function (event) {
                 event.preventDefault();
                 setBoostState(false);
+            });
+        });
+    }
+    if (mobileSpecialButton) {
+        const setSpecialState = function (value) {
+            if (selfDeathActive || mobileSpecialButton.disabled) {
+                input.special = false;
+                return;
+            }
+            input.special = value;
+            sendInputNow();
+        };
+        mobileSpecialButton.addEventListener('pointerdown', function (event) {
+            event.preventDefault();
+            if (mobileSpecialButton.setPointerCapture) {
+                mobileSpecialButton.setPointerCapture(event.pointerId);
+            }
+            setSpecialState(true);
+        });
+        ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(function (eventName) {
+            mobileSpecialButton.addEventListener(eventName, function (event) {
+                event.preventDefault();
+                setSpecialState(false);
             });
         });
     }

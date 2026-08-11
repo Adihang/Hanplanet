@@ -187,6 +187,42 @@ def request_docker_stack_deploy() -> None:
             pass
 
 
+def _write_prominence_console_line(command: str) -> bool:
+    fifo_path = Path(
+        os.environ.get(
+            "PROMINENCE_CONSOLE_INPUT_PATH",
+            "/Users/imhanbyeol/Development/rlcraft/run/console.in",
+        )
+    )
+    try:
+        if not fifo_path.is_fifo():
+            return False
+        file_descriptor = os.open(fifo_path, os.O_WRONLY | os.O_NONBLOCK)
+    except OSError:
+        return False
+
+    payload = f"{command}\n".encode("utf-8")
+    try:
+        return os.write(file_descriptor, payload) == len(payload)
+    except OSError:
+        return False
+    finally:
+        os.close(file_descriptor)
+
+
+def _send_prominence_restart_countdown() -> bool:
+    if not _write_prominence_console_line(
+        "say [Hanplanet] 10초 후 서버가 재시작 합니다."
+    ):
+        return False
+    time.sleep(1)
+    for remaining_seconds in range(9, 0, -1):
+        if not _write_prominence_console_line(f"say [Hanplanet] {remaining_seconds}"):
+            return False
+        time.sleep(1)
+    return _write_prominence_console_line("say [Hanplanet] 서버를 재시작합니다.")
+
+
 def request_prominence_server_restart() -> str:
     """Restart only the Prominence II server through its host process manager."""
     if prominence_restart_is_active():
@@ -203,6 +239,9 @@ def request_prominence_server_restart() -> str:
             f"requested:{time.time_ns()}:{os.getpid()}",
         )
         return "queued"
+
+    write_prominence_restart_state("stopping")
+    _send_prominence_restart_countdown()
 
     try:
         subprocess.run(

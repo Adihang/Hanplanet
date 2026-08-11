@@ -1,3 +1,11 @@
+@font-face {
+    font-family: "HanDrive Code";
+    src: url("../../fonts/d2coding/HanDriveCode-Regular.woff2") format("woff2");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
 /* HanDrive UI design tokens */
 body.handrive-page,
 body.ui-page {
@@ -2344,10 +2352,6 @@ body.handrive-list-split-resizing-portrait * {
     overflow: hidden;
 }
 
-.handrive-job-queue-panel.is-collapsed {
-    max-height: none;
-}
-
 .handrive-job-queue-head {
     display: flex;
     align-items: center;
@@ -2474,13 +2478,10 @@ body.handrive-list-split-resizing-portrait * {
     color: var(--handrive-text-strong);
 }
 
-.handrive-job-queue-panel.is-collapsed .handrive-job-queue-list {
-    display: none;
-}
-
 .handrive-job-queue-list {
     flex: 1 1 auto;
     min-height: 0;
+    max-height: 1000px;
     margin: 0;
     padding: 0 12px 10px;
     list-style: none;
@@ -2490,6 +2491,23 @@ body.handrive-list-split-resizing-portrait * {
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
+    transition: max-height 260ms ease, opacity 180ms ease, padding-top 260ms ease, padding-bottom 260ms ease;
+    will-change: max-height, opacity;
+}
+
+.handrive-job-queue-panel.is-collapsed .handrive-job-queue-list {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    overflow-y: hidden;
+    pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .handrive-job-queue-list {
+        transition: none;
+    }
 }
 
 .handrive-job-queue-item {
@@ -3669,7 +3687,7 @@ body.handrive-page.theme-dark .handrive-frame-loading {
     --handrive-list-item-meta-font-size: calc(14px * var(--handrive-list-item-scale));
     --handrive-list-item-pad-y: calc(10px * var(--handrive-list-item-scale));
     --handrive-list-item-pad-x: calc(10px * var(--handrive-list-item-scale));
-    --handrive-list-item-pad-left: calc(14px * var(--handrive-list-item-scale));
+    --handrive-list-item-pad-left: calc(7px * var(--handrive-list-item-scale));
     --handrive-list-item-tree-pad-left: calc(6px * var(--handrive-list-item-scale));
     --handrive-list-item-name-gap: calc(6px * var(--handrive-list-item-scale));
     --handrive-list-item-share-offset: calc(36px * var(--handrive-list-item-scale));
@@ -4602,7 +4620,7 @@ body.ui-page:not(.theme-dark) .handrive-item-meta-trail .handrive-item-meta-labe
     align-items: stretch;
     align-self: stretch;
     flex: 0 0 auto;
-    padding: 0 0 0 14px;
+    padding: 0 0 0 7px;
     color: var(--handrive-text-strong);
     line-height: 1;
 }
@@ -5575,6 +5593,8 @@ body.handrive-popup-dragging {
 .handrive-url-share-switch-knob {
     position: relative;
     display: block;
+    align-self: center;
+    flex: 0 0 auto;
     width: var(--handrive-url-share-switch-width);
     height: var(--handrive-url-share-switch-height);
     border-radius: 999px;
@@ -5585,12 +5605,15 @@ body.handrive-popup-dragging {
 .handrive-url-share-switch-knob::after {
     content: "";
     position: absolute;
-    top: var(--handrive-url-share-switch-dot-offset);
+    top: 0;
+    bottom: 0;
     left: var(--handrive-url-share-switch-dot-offset);
     width: var(--handrive-url-share-switch-dot-size);
     height: var(--handrive-url-share-switch-dot-size);
     border-radius: 50%;
     background: var(--shared-card-bg);
+    margin-block: auto;
+    transform: translateX(0);
     transition: transform 120ms ease;
 }
 
@@ -5753,6 +5776,18 @@ body.handrive-popup-dragging {
     gap: 8px;
 }
 
+#handrive-confirm-modal.is-unsaved-confirm #handrive-confirm-save-btn {
+    order: 1;
+}
+
+#handrive-confirm-modal.is-unsaved-confirm #handrive-confirm-confirm-btn {
+    order: 2;
+}
+
+#handrive-confirm-modal.is-unsaved-confirm #handrive-confirm-cancel-btn {
+    order: 3;
+}
+
 .handrive-url-share-toggle-label {
     display: flex;
     align-items: center;
@@ -5765,6 +5800,8 @@ body.handrive-popup-dragging {
 .handrive-url-share-link-group {
     display: grid;
     grid-template-rows: 0fr;
+    box-sizing: border-box;
+    padding-bottom: 1px;
     min-width: 0;
     overflow: hidden;
     opacity: 0;
@@ -5791,6 +5828,7 @@ body.handrive-popup-dragging {
 .handrive-url-share-link-content {
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
     min-height: 0;
     overflow: hidden;
     gap: 6px;
@@ -9652,7 +9690,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
     border: 0;
     background: var(--handrive-bg);
     color: var(--handrive-text);
-    font-family: var(--handrive-code-font-family);
+    font-family: "HanDrive Code", var(--handrive-code-font-family);
     font-size: var(--handrive-code-font-size);
     line-height: var(--handrive-code-line-height);
     font-variant-ligatures: none;
@@ -9728,7 +9766,7 @@ body .handrive-code-editor .ace_gutter-cell {
 }
 
 body .handrive-code-editor .ace_text-input.ace_composition {
-    /* Keep the composition text on the same metrics as the rendered code. */
+    /* Keep the composition text on the same metrics as rendered Korean code. */
     box-sizing: border-box;
     border: 0;
     border-radius: 0;
@@ -9736,26 +9774,39 @@ body .handrive-code-editor .ace_text-input.ace_composition {
     box-shadow: none;
     background: transparent;
     color: inherit;
-    font: inherit !important;
+    font: inherit;
+    font-family: var(--site-font-body);
     font-variant-ligatures: none;
-    letter-spacing: inherit;
+    letter-spacing: normal;
     line-height: var(--handrive-code-editor-composition-line-height);
     min-height: 0;
     height: var(--handrive-code-editor-composition-line-height);
     max-height: var(--handrive-code-editor-composition-line-height);
-    /* Ace's default -1px margin assumes its 1px input padding.  This
-       surface removes that padding, so retaining the negative margin makes
-       a Korean composition start one pixel inside the committed glyph. */
+    /* Remove Ace's default input padding and margin so the composing glyph
+       starts on the same horizontal origin as the committed glyph. */
     margin: 0;
     padding: 0;
     text-align: left;
     overflow: hidden;
 }
 
-/* Keep Ace's two-column CJK cell width so the visual caret stays aligned with
-   the editor's model when composition ends and Latin text follows. */
+/* Chromium can render an IME update in Ace's composition token instead of
+   the textarea.  Keep that fallback token on the same Korean metrics too. */
+body .handrive-code-editor .ace_composition_placeholder {
+    font-family: var(--site-font-body);
+    font-variant-ligatures: none;
+    letter-spacing: normal;
+    text-align: left;
+}
+
+/* Use the same proportional Korean face during and after IME composition.
+   Latin code tokens keep the editor's monospace face. */
 body .handrive-code-editor .ace_cjk {
-    display: inline-block;
+    /* Ace writes a two-column width inline on this span.  An inline box
+       ignores that width, so committed Hangul keeps the same natural advance
+       as the IME composition glyph instead of widening on commit. */
+    display: inline;
+    font-family: var(--site-font-body);
     text-align: left;
 }
 
@@ -10901,7 +10952,7 @@ body.handrive-modal-open {
 
 .handrive-tree-browser-item .handrive-item-tree-prefix,
 .handrive-save-tree-item .handrive-item-tree-prefix {
-    padding-left: 8px;
+    padding-left: 4px;
 }
 
 .handrive-tree-browser-row,
@@ -12858,6 +12909,8 @@ input.ae-range-input::-moz-range-thumb {
     display: block;
     position: relative;
     z-index: 1;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
 }
 
 #ie-overlay-canvas {
@@ -12866,7 +12919,8 @@ input.ae-range-input::-moz-range-thumb {
     z-index: 2;
     pointer-events: none;
     display: block;
-    image-rendering: auto;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
 }
 
 .ie-text-overlay {
@@ -13316,27 +13370,33 @@ body.handrive-page.theme-dark .pe-page-wrap {
 
 /* ── 이미지/비디오/PDF 공통 텍스트 스타일 컨트롤 ── */
 .handrive-editor-text-style-field {
-    --handrive-editor-text-style-height: 30px;
-    --handrive-editor-text-style-radius: var(--handrive-radius-sm, 4px);
+    --handrive-editor-text-style-height: 34px;
+    --handrive-editor-text-style-radius: var(--handrive-radius-sm, 8px);
     --handrive-editor-text-style-border: var(--handrive-border);
     --handrive-editor-text-style-bg: var(--handrive-input-bg, var(--handrive-surface));
     --handrive-editor-text-style-hover-bg: var(--handrive-hover-soft, var(--handrive-hover));
     --handrive-editor-text-style-icon-color: var(--handrive-text-muted);
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 0;
     height: var(--handrive-editor-text-style-height);
     min-height: var(--handrive-editor-text-style-height);
-    width: 150px;
+    width: auto;
     min-width: 0;
     border: 1px solid var(--handrive-editor-text-style-border);
     border-radius: var(--handrive-editor-text-style-radius);
     background: var(--handrive-editor-text-style-bg);
     color: var(--handrive-text);
-    padding: 0 6px;
+    padding: 0 8px 0 0;
     box-sizing: border-box;
     flex: 0 0 auto;
-    transition: border-color 0.1s ease, box-shadow 0.1s ease, background-color 0.1s ease;
+    overflow: hidden;
+    transition: border-color 0.14s ease, box-shadow 0.14s ease, background-color 0.14s ease;
+}
+
+.handrive-editor-text-style-field:hover {
+    background: var(--handrive-editor-text-style-hover-bg);
 }
 
 .handrive-editor-text-style-field:focus-within {
@@ -13348,11 +13408,17 @@ body.handrive-page.theme-dark .pe-page-wrap {
     width: 20px;
     height: 20px;
     min-width: 20px;
+    flex: 0 0 20px;
+    margin: 0 4px 0 8px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
     color: var(--handrive-editor-text-style-icon-color);
-    font-size: 20px;
+    font-size: 15px;
     font-weight: 700;
     line-height: 1;
 }
@@ -13378,11 +13444,15 @@ body.handrive-page.theme-dark .pe-page-wrap {
     flex: 0 0 auto;
 }
 
+.handrive-editor-text-style-field > * {
+    min-width: 0;
+}
+
 .handrive-editor-text-style-field > .handrive-editor-text-style-font-family,
 .handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family {
     width: var(--handrive-editor-text-style-font-family-width, 128px);
     flex: 1 1 auto;
-    height: calc(var(--handrive-editor-text-style-height) - 2px);
+    height: calc(var(--handrive-editor-text-style-height) - 8px);
     min-width: 0;
     border: 0;
     border-radius: 0;
@@ -13391,16 +13461,49 @@ body.handrive-page.theme-dark .pe-page-wrap {
     font-size: 12px;
     line-height: 1;
     outline: none;
-    padding: 0;
+    padding: 0 2px 0 0;
     color-scheme: inherit;
     box-sizing: border-box;
     box-shadow: none;
     vertical-align: middle;
+    text-overflow: ellipsis;
+}
+
+.handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family {
+    display: inline-flex;
+    align-items: stretch;
+    height: 100%;
+    min-height: 0;
+    border: 0 !important;
+    border-radius: 0;
+    background: transparent !important;
+    box-shadow: none !important;
+    padding: 0;
+}
+
+.handrive-editor-text-style-field > select.handrive-editor-text-style-font-family,
+.handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family > select.handrive-editor-text-style-font-family {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+.handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family .site-custom-select-button {
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 0;
+    padding: 0;
+    text-align: left;
+}
+
+.handrive-editor-text-style-field > .site-custom-select.handrive-editor-text-style-font-family .site-custom-select-label {
+    justify-content: flex-start;
+    text-align: left;
 }
 
 .handrive-editor-text-style-field > .handrive-editor-text-style-font-size {
     width: var(--handrive-editor-text-style-font-size-width, 48px);
-    height: calc(var(--handrive-editor-text-style-height) - 2px);
+    height: calc(var(--handrive-editor-text-style-height) - 8px);
     min-width: 0;
     border: 0;
     background: transparent;
@@ -13409,7 +13512,8 @@ body.handrive-page.theme-dark .pe-page-wrap {
     line-height: 1;
     outline: none;
     padding: 0;
-    text-align: left;
+    text-align: center;
+    font-weight: 600;
     box-sizing: border-box;
     box-shadow: none;
     font-variant-numeric: tabular-nums;
@@ -13459,7 +13563,7 @@ body.handrive-page.theme-dark .pe-page-wrap {
     --handrive-editor-text-style-border: var(--pe-control-border);
     --handrive-editor-text-style-bg: var(--pe-control-bg);
     --handrive-editor-text-style-hover-bg: var(--pe-control-hover-bg);
-    padding: 0 8px;
+    padding: 0 8px 0 0;
 }
 
 .pe-font-family-select.handrive-editor-text-style-font-family {

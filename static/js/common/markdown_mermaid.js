@@ -160,7 +160,7 @@
                 lineColor: line,
                 textColor: text,
                 titleColor: textStrong,
-                edgeLabelBackground: surfaceMuted,
+                edgeLabelBackground: "transparent",
                 clusterBkg: surfaceMuted,
                 clusterBorder: border,
                 nodeBorder: border,

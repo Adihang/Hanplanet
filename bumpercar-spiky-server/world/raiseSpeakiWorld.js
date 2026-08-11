@@ -79,6 +79,7 @@ class RaiseSpeakiWorld extends BaseWorld {
         this.raiseSpeakiWinnerCountdownUntil = 0
         this.raiseSpeakiWinnerRestartUntil = 0
         this.raiseSpeakiWinner = null
+        this.raiseSpeakiWinnerStatsAwarded = false
 
         for (const player of this.players.values()) {
             if (player.isDummy) {
@@ -169,6 +170,21 @@ class RaiseSpeakiWorld extends BaseWorld {
         this.raiseSpeakiWinnerPhase = "countdown"
         this.raiseSpeakiWinnerCountdownUntil = now + RAISE_SPEAKI_WIN_CONFIRMATION_DURATION_MS
         this.raiseSpeakiWinnerRestartUntil = 0
+        this.raiseSpeakiWinnerStatsAwarded = false
+        return true
+    }
+
+    awardRaiseSpeakiWinner() {
+        if (this.raiseSpeakiWinnerStatsAwarded) {
+            return false
+        }
+        this.raiseSpeakiWinnerStatsAwarded = true
+
+        const winner = this.raiseSpeakiWinner
+        if (!winner || winner.isNpc || winner.isDummy || !winner.id) {
+            return false
+        }
+        postStatsUpdate(winner.id, { raise_speaki_wins: 1 })
         return true
     }
 
@@ -223,6 +239,7 @@ class RaiseSpeakiWorld extends BaseWorld {
         this.raiseSpeakiWinnerCountdownUntil = 0
         this.raiseSpeakiWinnerRestartUntil = 0
         this.raiseSpeakiWinner = null
+        this.raiseSpeakiWinnerStatsAwarded = false
         this.raiseSpeakiLevelDrops = []
         this.pendingNeutralPumpkinRespawns = 0
         this.playerProgress.clear()
@@ -248,6 +265,7 @@ class RaiseSpeakiWorld extends BaseWorld {
             }
             this.raiseSpeakiWinnerPhase = "result"
             this.raiseSpeakiWinnerRestartUntil = now + RAISE_SPEAKI_WINNER_DISPLAY_DURATION_MS
+            this.awardRaiseSpeakiWinner()
             this.freezeRaiseSpeakiRound()
             return true
         }
@@ -1706,13 +1724,9 @@ class RaiseSpeakiWorld extends BaseWorld {
                 let pushRatioB = separationProfile.pushB
                 if (playerB.isNpc && playerBAttacking && playerA.collisionVisualType === "defeat") {
                     pushScaleA = NPC_DEFEAT_BOUNCE_MULTIPLIER
-                    pushRatioA = 1
-                    pushRatioB = 0
                 }
                 if (playerA.isNpc && playerAAttacking && playerB.collisionVisualType === "defeat") {
                     pushScaleB = NPC_DEFEAT_BOUNCE_MULTIPLIER
-                    pushRatioA = 0
-                    pushRatioB = 1
                 }
                 if (playerA.isNpc && !playerAAttacking && !playerBAttacking) {
                     pushRatioA = 0

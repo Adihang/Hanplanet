@@ -139,14 +139,12 @@
             <div class="handrive-editor-surface" id="handrive-editor-surface">
                 <pre class="handrive-editor-highlight handrive-plain-text" id="handrive-editor-highlight" aria-hidden="true"><code id="handrive-editor-highlight-code"></code></pre>
                 <div class="handrive-editor-suggest site-dropdown-menu" id="handrive-editor-suggest" hidden></div>
-                <textarea id="handrive-content-input" spellcheck="false" wrap="off" placeholder="내용을 입력하세요.">{{ initial_content }}</textarea>
+                <textarea id="handrive-content-input" spellcheck="false" wrap="off">{{ initial_content }}</textarea>
             </div>
         </div>
     </div>
 </main>
 {% include "partials/site_footer_links.html" %}
-
-{% include "popup/handrive/markdown_snippet_menu.html" %}
 
 {% include "popup/handrive/save_modal.html" %}
 {% include "popup/handrive/commit_message_modal.html" %}

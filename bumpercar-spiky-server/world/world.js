@@ -269,6 +269,10 @@ class World {
                 moveX /= moveMagnitude
                 moveY /= moveMagnitude
             }
+            const requestedBoost = Boolean(input.boost)
+            if (!requestedBoost) {
+                player.boostReleaseRequired = false
+            }
 
             // 클라이언트 입력 구조는 이 키 집합으로 고정한다.
             player.input = {
@@ -276,13 +280,14 @@ class World {
                 down: Boolean(input.down),
                 left: Boolean(input.left),
                 right: Boolean(input.right),
-                boost: Boolean(input.boost),
+                boost: requestedBoost && !player.boostReleaseRequired,
                 special: Boolean(input.special),
                 respawn: Boolean(input.respawn),
                 moveX,
                 moveY
             }
         } catch (error) {
+            player.boostReleaseRequired = false
             player.input = {
                 up: false,
                 down: false,

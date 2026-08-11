@@ -454,6 +454,130 @@
         return listItem;
     }
 
+    var uploadQueueBehaviorStates = new WeakMap();
+    var uploadQueueAutoCollapseDelay = 10000;
+    var uploadQueueActiveStatuses = {
+        active: true,
+        in_progress: true,
+        "in-progress": true,
+        pending: true,
+        processing: true,
+        queued: true,
+        uploading: true,
+    };
+
+    function getUploadQueueBehaviorState(panel) {
+        var state = uploadQueueBehaviorStates.get(panel);
+        if (!state) {
+            state = {
+                autoCollapseTimer: null,
+                autoExpandQueued: false,
+                autoCollapseEnabled: true,
+                allComplete: false,
+                collapsed: false,
+                dismissed: false,
+                initialized: false,
+                itemKeys: new Set(),
+                onAutoCollapse: null,
+                onAutoExpand: null,
+            };
+            uploadQueueBehaviorStates.set(panel, state);
+        }
+        return state;
+    }
+
+    function clearUploadQueueAutoCollapseTimer(state) {
+        if (state.autoCollapseTimer !== null) {
+            window.clearTimeout(state.autoCollapseTimer);
+            state.autoCollapseTimer = null;
+        }
+    }
+
+    function scheduleUploadQueueAutoCollapse(state) {
+        clearUploadQueueAutoCollapseTimer(state);
+        if (!state.autoCollapseEnabled || state.dismissed || state.collapsed || !state.allComplete) {
+            return;
+        }
+        state.autoCollapseTimer = window.setTimeout(function () {
+            state.autoCollapseTimer = null;
+            if (!state.autoCollapseEnabled || state.dismissed || state.collapsed || !state.allComplete) {
+                return;
+            }
+            if (typeof state.onAutoCollapse === "function") {
+                state.onAutoCollapse();
+            }
+        }, uploadQueueAutoCollapseDelay);
+    }
+
+    function bindUploadQueueBehavior(panel, state) {
+        if (state.interactionBound) {
+            return;
+        }
+        state.interactionBound = true;
+        ["pointerdown", "click", "keydown", "wheel", "touchstart"].forEach(function (eventName) {
+            panel.addEventListener(eventName, function () {
+                scheduleUploadQueueAutoCollapse(state);
+            });
+        });
+    }
+
+    function getUploadQueueItemKey(item, index) {
+        if (item && item.id !== undefined && item.id !== null) {
+            return String(item.id);
+        }
+        return [
+            item && (item.fileName || item.file_name || item.name) || "",
+            item && (item.targetDirPath || item.target_dir_path || item.sourcePath || "") || "",
+            index,
+        ].join("|");
+    }
+
+    function isUploadQueueItemComplete(item) {
+        var status = String(item && item.status || "").toLowerCase();
+        return Boolean(status) && !uploadQueueActiveStatuses[status];
+    }
+
+    function syncUploadQueueBehavior(options) {
+        var settings = options || {};
+        var panel = settings.uploadQueuePanel || null;
+        if (!panel) {
+            return;
+        }
+        var state = getUploadQueueBehaviorState(panel);
+        var items = Array.isArray(settings.items) ? settings.items : [];
+        var itemKeys = new Set(items.map(getUploadQueueItemKey));
+        var hasNewItems = state.initialized;
+        if (hasNewItems) {
+            hasNewItems = Array.from(itemKeys).some(function (key) {
+                return !state.itemKeys.has(key);
+            });
+        }
+        state.itemKeys = itemKeys;
+        state.initialized = true;
+        state.autoCollapseEnabled = settings.autoCollapseEnabled !== false;
+        state.allComplete = items.length > 0 && items.every(isUploadQueueItemComplete);
+        state.collapsed = Boolean(settings.collapsed);
+        state.dismissed = Boolean(settings.dismissed);
+        state.onAutoCollapse = settings.onAutoCollapse || null;
+        state.onAutoExpand = settings.onAutoExpand || null;
+        bindUploadQueueBehavior(panel, state);
+
+        if (hasNewItems) {
+            clearUploadQueueAutoCollapseTimer(state);
+            if (state.collapsed && typeof state.onAutoExpand === "function" && !state.autoExpandQueued) {
+                state.autoExpandQueued = true;
+                window.setTimeout(function () {
+                    state.autoExpandQueued = false;
+                    if (state.collapsed && !state.dismissed && typeof state.onAutoExpand === "function") {
+                        state.onAutoExpand();
+                    }
+                }, 0);
+                return;
+            }
+        }
+        scheduleUploadQueueAutoCollapse(state);
+    }
+
     function renderUploadQueuePanel(options) {
         var settings = options || {};
         var uploadQueuePanel = settings.uploadQueuePanel || null;
@@ -472,8 +596,12 @@
             return;
         }
 
+        syncUploadQueueBehavior(settings);
+
         uploadQueuePanel.classList.toggle("is-collapsed", collapsed);
-        uploadQueueList.hidden = collapsed;
+        uploadQueueList.hidden = false;
+        uploadQueueList.setAttribute("aria-hidden", collapsed ? "true" : "false");
+        uploadQueueList.inert = collapsed;
         if (uploadQueueToggleButton) {
             var expanded = collapsed ? "false" : "true";
             var toggleLabel = collapsed

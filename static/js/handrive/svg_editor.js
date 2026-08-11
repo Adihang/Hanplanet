@@ -17,7 +17,32 @@
     var HISTORY_BYTE_LIMIT = 32 * 1024 * 1024;
     var MIN_ZOOM = 0.00001;
     var MAX_ZOOM = 1000;
+    var HANDRIVE_ZOOM_STEP_RATIO = 1.125;
     var instanceSequence = 0;
+
+    function getSvgEditorZoomStepValue(currentValue, direction) {
+        var zoomGesture = window.HanplanetZoomGesture;
+        if (zoomGesture && typeof zoomGesture.getZoomStepValue === "function") {
+            return zoomGesture.getZoomStepValue(currentValue, direction, HANDRIVE_ZOOM_STEP_RATIO);
+        }
+        return (Number(currentValue) || 1) * (Number(direction) >= 0
+            ? HANDRIVE_ZOOM_STEP_RATIO
+            : (1 / HANDRIVE_ZOOM_STEP_RATIO));
+    }
+
+    function getSvgEditorWheelZoomValue(currentValue, event) {
+        var zoomGesture = window.HanplanetZoomGesture;
+        var normalizedDelta = zoomGesture && typeof zoomGesture.normalizeWheelDelta === "function"
+            ? zoomGesture.normalizeWheelDelta(event)
+            : (Number(event && event.deltaY) || Number(event && event.deltaX) || 0);
+        if (zoomGesture && typeof zoomGesture.getProportionalWheelValue === "function") {
+            return zoomGesture.getProportionalWheelValue({
+                currentValue: currentValue,
+                normalizedDelta: normalizedDelta,
+            }, { wheelRatio: HANDRIVE_ZOOM_STEP_RATIO });
+        }
+        return (Number(currentValue) || 1) * Math.pow(HANDRIVE_ZOOM_STEP_RATIO, -normalizedDelta / 100);
+    }
 
     var ALLOWED_ELEMENTS = new Set([
         "circle", "clippath", "defs", "desc", "ellipse", "feblend",
@@ -1487,10 +1512,10 @@
             updateActionButtons();
         } else if (action === "zoom-in") {
             var rectIn = state.refs.viewport.getBoundingClientRect();
-            setZoom(state.zoom * 1.2, rectIn.left + rectIn.width / 2, rectIn.top + rectIn.height / 2);
+            setZoom(getSvgEditorZoomStepValue(state.zoom, 1), rectIn.left + rectIn.width / 2, rectIn.top + rectIn.height / 2);
         } else if (action === "zoom-out") {
             var rectOut = state.refs.viewport.getBoundingClientRect();
-            setZoom(state.zoom / 1.2, rectOut.left + rectOut.width / 2, rectOut.top + rectOut.height / 2);
+            setZoom(getSvgEditorZoomStepValue(state.zoom, -1), rectOut.left + rectOut.width / 2, rectOut.top + rectOut.height / 2);
         } else if (action === "zoom-fit") fitToViewport();
         else if (action === "apply-source") applySourceFromField(sourceCandidate);
     }
@@ -2025,7 +2050,7 @@
         event.preventDefault();
         state.autoFit = false;
         if (event.ctrlKey || event.metaKey || event.altKey) {
-            setZoom(state.zoom * Math.exp(-event.deltaY * 0.002), event.clientX, event.clientY);
+            setZoom(getSvgEditorWheelZoomValue(state.zoom, event), event.clientX, event.clientY);
         } else {
             state.panX -= event.shiftKey ? event.deltaY : event.deltaX;
             state.panY -= event.shiftKey ? 0 : event.deltaY;

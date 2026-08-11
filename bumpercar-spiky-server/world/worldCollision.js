@@ -300,25 +300,73 @@ module.exports = {
      * @param {number} recoveryUntil - 시각 효과 종료 시각 (부스트 잠금 기준)
      */
     applyCollisionSlow(player, now, recoveryUntil) {
-        if (!player || player.isNpc || this.isPlayerDead(player)) {
+        if (!player || this.isPlayerDead(player)) {
             return
         }
 
-        // 인간 유저는 충돌 직후 잠시 느려지지만, 돌진 잠금은 시각 효과 종료까지 유지한다.
+        // 충돌 직후 잠시 느려지고, 돌진 잠금은 시각 효과 종료까지 유지한다.
         const collisionRecoveryMs = player.collisionVisualType === "defeat"
             ? Math.round(COLLISION_RECOVERY_DURATION_MS * 1.2)
             : COLLISION_RECOVERY_DURATION_MS
         const resolvedRecoveryUntil = now + collisionRecoveryMs
         const resolvedBoostDisabledUntil = Math.max(now + COLLISION_BOOST_LOCK_DURATION_MS, Number(recoveryUntil || 0))
+
+        // 네르는 일반 충돌에서 돌진을 계속하도록 예외 처리돼 있어, 충돌 뒤에도 앞으로 밀고 나갔다.
+        // 실제 돌진 중이었다면 즉시 rest로 전환해 반발 방향 이동만 남기고, 연속 돌진 예약도 취소한다.
+        if (player.isNpc) {
+            const wasDashing = player.npcState === "charging" ||
+                player.boostState === "charging" ||
+                player.boostState === "cooldown"
+            if (!wasDashing) {
+                return
+            }
+            player.boostState = "idle"
+            player.currentSpeed = player.collisionSlowSpeed
+            player.collisionRecoveryStartedAt = now
+            player.collisionRecoveryUntil = resolvedRecoveryUntil
+            player.boostDisabledStartedAt = now
+            player.boostDisabledUntil = resolvedBoostDisabledUntil
+            player.npcState = "rest"
+            player.npcRestUntil = Math.max(now + NPC_REST_DURATION_MS, resolvedRecoveryUntil)
+            player.npcTargetId = ""
+            player.npcChargeDirectionX = 0
+            player.npcChargeDirectionY = 0
+            player.npcChargeDistanceRemaining = 0
+            player.npcChargeDistanceTotal = 0
+            player.npcChargeWindupStartedAt = 0
+            player.npcChargeWindupUntil = 0
+            player.npcQueuedExtraCharges = 0
+            return
+        }
+
         player.boostState = "idle"
         player.input.boost = false
+        player.boostReleaseRequired = true
+        player.boostDirectionX = 0
+        player.boostDirectionY = 0
         player.currentSpeed = player.collisionSlowSpeed
+        player.lastMoveX = 0
+        player.lastMoveY = 0
         player.collisionRecoveryStartedAt = now
         player.collisionRecoveryUntil = resolvedRecoveryUntil
         player.boostDisabledStartedAt = now
         player.boostDisabledUntil = resolvedBoostDisabledUntil
         player.npcChargeWindupStartedAt = 0
         player.npcChargeWindupUntil = 0
+
+        // 더미 AI는 dummyState가 charging인 동안 boostState와 별개로 기존 돌진 벡터를 사용한다.
+        // 상태까지 rest로 바꾸지 않으면 다음 틱에 충돌 전 방향으로 다시 이동한다.
+        if (player.isDummy && (player.dummyState === "charging" || player.boostState === "charging" || player.boostState === "cooldown")) {
+            player.dummyState = "rest"
+            player.dummyRestUntil = Math.max(now + NPC_REST_DURATION_MS, resolvedRecoveryUntil)
+            player.dummyChargeDistanceRemaining = 0
+            player.dummyChargeDistanceTotal = 0
+            player.dummyChargeWindupStartedAt = 0
+            player.dummyChargeWindupUntil = 0
+            player.dummyQueuedExtraCharges = 0
+            player.boostDirectionX = 0
+            player.boostDirectionY = 0
+        }
 
         // 더블 스핔이는 본체와 각 유닛이 돌진 상태를 별도로 보관한다.
         // 본체만 정지시키면 유닛이 다음 틱에도 기존 돌진 방향으로 움직이므로,
@@ -332,6 +380,8 @@ module.exports = {
                 unit.boostDirectionX = 0
                 unit.boostDirectionY = 0
                 unit.currentSpeed = player.collisionSlowSpeed
+                unit.lastMoveX = 0
+                unit.lastMoveY = 0
                 unit.collisionRecoveryStartedAt = now
                 unit.collisionRecoveryUntil = resolvedRecoveryUntil
                 unit.boostDisabledStartedAt = now
@@ -373,6 +423,8 @@ module.exports = {
      * @param {boolean} [playerBAttacking=false] - B가 공격 중인지 여부
      */
     applyStandardCollisionBounce(playerA, playerB, now, normalX, normalY, overlap, playerAAttacking = false, playerBAttacking = false) {
+        const playerAWasDashing = playerAAttacking || isPlayerAttackingForCollision(playerA)
+        const playerBWasDashing = playerBAttacking || isPlayerAttackingForCollision(playerB)
         const relativeMoveX = playerB.lastMoveX - playerA.lastMoveX
         const relativeMoveY = playerB.lastMoveY - playerA.lastMoveY
         const relativeImpactSpeed = Math.max(
@@ -412,10 +464,10 @@ module.exports = {
 
         let pushRatioA = separationProfile.pushA
         let pushRatioB = separationProfile.pushB
-        if (playerA.isNpc && !playerAAttacking && !playerBAttacking) {
+        if (playerA.isNpc && !playerAWasDashing && !playerBWasDashing) {
             pushRatioA = 0
             pushRatioB = 1
-        } else if (playerB.isNpc && !playerAAttacking && !playerBAttacking) {
+        } else if (playerB.isNpc && !playerAWasDashing && !playerBWasDashing) {
             pushRatioA = 1
             pushRatioB = 0
         }
@@ -733,13 +785,9 @@ module.exports = {
                 let pushRatioB = separationProfile.pushB
                 if (playerB.isNpc && playerBAttacking && playerA.collisionVisualType === "defeat") {
                     pushScaleA = NPC_DEFEAT_BOUNCE_MULTIPLIER
-                    pushRatioA = 1
-                    pushRatioB = 0
                 }
                 if (playerA.isNpc && playerAAttacking && playerB.collisionVisualType === "defeat") {
                     pushScaleB = NPC_DEFEAT_BOUNCE_MULTIPLIER
-                    pushRatioA = 0
-                    pushRatioB = 1
                 }
                 if (playerA.isNpc && !playerAAttacking && !playerBAttacking) {
                     pushRatioA = 0
@@ -756,7 +804,7 @@ module.exports = {
                 }
 
                 // 네르-유저 충돌은 유저가 더 멀리 밀려나게 2:1 비율을 적용한다.
-                // 네르가 charging 중일 때도 상태를 끊지 않고 현재 돌진을 유지한다.
+                // 돌진한 쪽도 반대 방향으로 밀어내므로 충돌 뒤에 제자리에서 다시 돌진하지 않는다.
                 this.applyCollisionPush(playerA, -normalX, -normalY, scaledSeparation * pushRatioA * pushScaleA)
                 this.applyCollisionPush(playerB, normalX, normalY, scaledSeparation * pushRatioB * pushScaleB)
             }

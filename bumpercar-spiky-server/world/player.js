@@ -108,6 +108,8 @@ class Player {
         // 유저 가속은 시작 방향으로 고정 직진하기 때문에 그 방향을 별도로 저장한다.
         this.boostDirectionX = 0
         this.boostDirectionY = 0
+        // 충돌로 돌진이 끊긴 뒤에는 부스트 키를 한 번 뗐다가 다시 눌러야 재돌진할 수 있다.
+        this.boostReleaseRequired = false
         this.input = {
             up: false,
             down: false,

@@ -25,8 +25,14 @@
     <script>
         (function () {
             const path = window.location.pathname;
-            const bumpercarPattern = /^\/(?:ko|en)\/sub\/bumpercar-spiky\/?$/;
-            if (bumpercarPattern.test(path) || path === '/sub/bumpercar-spiky/' || path === '/sub/bumpercar-spiky') {
+            const multiplayerGamePattern = /^\/(?:ko|en)\/sub\/(?:bumpercar-spiky|raise-speaki)\/?$/;
+            const multiplayerGamePaths = new Set([
+                '/sub/bumpercar-spiky/',
+                '/sub/bumpercar-spiky',
+                '/sub/raise-speaki/',
+                '/sub/raise-speaki'
+            ]);
+            if (multiplayerGamePattern.test(path) || multiplayerGamePaths.has(path)) {
                 document.documentElement.classList.add('preload-light-bg');
                 return;
             }

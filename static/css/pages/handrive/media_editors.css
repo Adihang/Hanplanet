@@ -306,6 +306,21 @@ body.handrive-page.theme-dark .handrive-media-editor-surface {
     flex-wrap: nowrap;
 }
 
+.handrive-image-editor-surface .ie-ribbon-section :is(.ie-tool-btn, .ie-action-btn) > svg {
+    width: 21px;
+    height: 21px;
+}
+
+.handrive-image-editor-surface .ie-ribbon-section .ie-mode-btn > svg {
+    width: 16px;
+    height: 16px;
+}
+
+.handrive-image-editor-surface .ie-ribbon-section--imageops .ie-action-btn > svg {
+    width: 22px;
+    height: 22px;
+}
+
 .handrive-image-editor-surface .ie-tool-rail {
     grid-area: tools;
     display: flex;
@@ -323,9 +338,9 @@ body.handrive-page.theme-dark .handrive-media-editor-surface {
 }
 
 .handrive-image-editor-surface .ie-tool-rail .ie-ribbon-section {
+    width: 100%;
     display: grid;
-    grid-template-columns: repeat(2, var(--hme-control-size));
-    justify-content: center;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 5px;
 }
 
@@ -339,7 +354,16 @@ body.handrive-page.theme-dark .handrive-media-editor-surface {
 
 .handrive-image-editor-surface .ie-tool-rail .ie-shape-mode-group {
     grid-column: 1 / -1;
-    justify-self: center;
+    justify-self: stretch;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.handrive-image-editor-surface .ie-tool-rail .ie-shape-mode-group .ie-mode-btn {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
 }
 
 .handrive-image-editor-surface .ie-inspector {
@@ -413,6 +437,12 @@ body.handrive-page.theme-dark .handrive-media-editor-surface {
     border-color: var(--hme-border);
     border-radius: var(--hme-radius-sm);
     background: var(--hme-control-bg);
+}
+
+.handrive-image-editor-surface .ie-inspector .handrive-editor-text-style-field {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .handrive-image-editor-surface .ie-inspector .ie-font-family-select {
@@ -802,6 +832,41 @@ body.handrive-page.theme-dark .handrive-media-editor-surface {
     border: 1px solid color-mix(in srgb, var(--hme-border) 72%, transparent);
     border-radius: var(--hme-radius-sm);
     background: color-mix(in srgb, var(--hme-panel-muted) 72%, transparent);
+}
+
+.handrive-video-editor-surface .ve-subtitle-style-grid .handrive-editor-text-style-field {
+    --handrive-editor-text-style-height: var(--hme-control-size);
+    --handrive-editor-text-style-radius: var(--hme-radius-sm);
+    --handrive-editor-text-style-border: var(--hme-border);
+    --handrive-editor-text-style-bg: var(--hme-control-bg);
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    height: var(--hme-control-size);
+    padding: 0 8px 0 0;
+}
+
+.handrive-video-editor-surface .ve-subtitle-style-grid .handrive-editor-text-style-field:has(.handrive-editor-text-style-font-family) {
+    flex: 1 1 180px;
+    min-width: 160px;
+}
+
+.handrive-video-editor-surface .ve-subtitle-style-grid .handrive-editor-text-style-field:has(.handrive-editor-text-style-font-size) {
+    flex: 0 1 108px;
+    min-width: 96px;
+}
+
+.handrive-video-editor-surface .ve-subtitle-style-grid .ve-subtitle-toggle-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    flex: 1 1 160px;
+    min-width: 145px;
+    gap: 8px;
+}
+
+.handrive-video-editor-surface .ve-subtitle-style-grid .ve-subtitle-toggle-field .handrive-editor-text-style-color {
+    width: 24px;
+    height: 24px;
 }
 
 .handrive-video-editor-surface .ve-subtitle-style-grid input[type="checkbox"] {
@@ -1265,7 +1330,18 @@ body.handrive-page.theme-dark .handrive-media-editor-surface {
     .handrive-image-editor-surface .ie-tool-rail .ie-ribbon-section {
         display: flex;
         flex: 0 0 auto;
+        width: auto;
         flex-wrap: nowrap;
+    }
+
+    .handrive-image-editor-surface .ie-tool-rail .ie-shape-mode-group {
+        width: auto;
+        flex: 0 0 auto;
+    }
+
+    .handrive-image-editor-surface .ie-tool-rail .ie-shape-mode-group .ie-mode-btn {
+        flex: 0 0 var(--hme-control-size);
+        width: var(--hme-control-size);
     }
 
     .handrive-image-editor-surface .ie-tool-rail .ie-ribbon-sep {

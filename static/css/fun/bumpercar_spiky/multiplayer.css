@@ -58,6 +58,7 @@
 }
 
 .hanplanet-multiplayer-page {
+    color-scheme: light;
     --multiplayer-z-sprite: 2;
     --multiplayer-z-hud: 4;
     --multiplayer-z-loading: 8;
@@ -1071,15 +1072,6 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
     display: block;
 }
 
-.hanplanet-multiplayer-page.theme-dark .multiplayer-kicker,
-.hanplanet-multiplayer-page.theme-dark .multiplayer-description {
-    color: var(--ide-text-muted);
-}
-
-.hanplanet-multiplayer-page.theme-dark .multiplayer-heading {
-    color: var(--ide-text-stronger);
-}
-
 .multiplayer-fullscreen-exit {
     position: absolute;
     top: 18px;
@@ -1231,6 +1223,34 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 
 .multiplayer-boost-button:active {
     translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
+.multiplayer-special-button {
+    position: absolute;
+    right: 54px;
+    bottom: 186px;
+    min-width: 116px;
+    min-height: 54px;
+    padding: 10px 16px;
+    border: 0;
+    border-radius: 999px;
+    opacity: 0.72;
+    pointer-events: auto;
+    touch-action: none;
+    background: rgba(124, 58, 237, 0.92);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 800;
+    line-height: 1.2;
+    box-shadow: 0 10px 22px rgba(91, 33, 182, 0.22);
+}
+
+.multiplayer-special-button:active:not(:disabled) {
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
+.multiplayer-special-button:disabled {
+    opacity: 0.32;
 }
 
 .multiplayer-idle-modal-backdrop {
@@ -1419,11 +1439,11 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 
 .multiplayer-raise-speaki-winner-modal {
     display: flex;
-    width: min(360px, 100%);
+    width: min(520px, 100%);
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    padding: 28px 32px 26px;
+    padding: 28px clamp(16px, 5vw, 32px) 26px;
     border: 1px solid rgb(255 255 255 / 0.72);
     border-radius: 28px;
     background: rgb(255 255 255 / 0.94);
@@ -1434,15 +1454,16 @@ body.hanplanet-multiplayer-page .ui-auth-account-stats-toggle {
 .multiplayer-raise-speaki-winner-title {
     margin: 0;
     color: #7f1d1d;
-    font-size: clamp(30px, 5vw, 42px);
+    font-size: clamp(20px, 5vw, 42px);
     font-weight: 1000;
     letter-spacing: -0.06em;
     line-height: 1.05;
+    white-space: nowrap;
 }
 
 .multiplayer-raise-speaki-winner-character {
-    width: 116px;
-    height: 116px;
+    width: var(--multiplayer-raise-speaki-winner-character-width, 116px);
+    height: var(--multiplayer-raise-speaki-winner-character-height, 116px);
     object-fit: contain;
     image-rendering: auto;
 }
@@ -1643,6 +1664,13 @@ body.multiplayer-fullscreen-active {
         height: 104px;
     }
 
+    .multiplayer-special-button {
+        right: 42px;
+        bottom: 160px;
+        min-width: 104px;
+        min-height: 50px;
+    }
+
     .multiplayer-app.is-fullscreen .multiplayer-fullscreen-exit {
         top: 46px;
         left: 14px;
@@ -1720,6 +1748,15 @@ body.multiplayer-fullscreen-active {
     .multiplayer-boost-button {
         width: 94px;
         height: 94px;
+    }
+
+    .multiplayer-special-button {
+        right: 34px;
+        bottom: 146px;
+        min-width: 94px;
+        min-height: 46px;
+        padding: 8px 12px;
+        font-size: 12px;
     }
 
     .multiplayer-death-modal-title {

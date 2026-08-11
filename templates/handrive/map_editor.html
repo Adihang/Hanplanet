@@ -1219,7 +1219,17 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             uploadQueueList: uploadQueueList,
             uploadQueuePanel: uploadQueuePanel,
             uploadQueueSummary: uploadQueueSummary,
-            uploadQueueToggleButton: uploadQueueToggleButton
+            uploadQueueToggleButton: uploadQueueToggleButton,
+            autoCollapseEnabled: true,
+            onAutoExpand: function() {
+                uploadQueueCollapsed = false;
+                uploadQueueDismissed = false;
+                renderMapUploadQueue();
+            },
+            onAutoCollapse: function() {
+                uploadQueueCollapsed = true;
+                renderMapUploadQueue();
+            }
         });
     }
 
@@ -2539,9 +2549,10 @@ body.theme-dark .leaflet-draw-toolbar .leaflet-draw-draw-polygon:hover {
             crs: L.CRS.Simple,
             minZoom: -4,
             maxZoom: 4,
-            zoomSnap: 0.25,
+            zoomSnap: 0,
             attributionControl: false,
-            scrollWheelZoom: true,
+            wheelPxPerZoomLevel: 120,
+            scrollWheelZoom: false,
             touchZoom: false,
             doubleClickZoom: true,
         });

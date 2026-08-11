@@ -348,6 +348,68 @@ body.theme-dark .site-custom-select {
     box-shadow: var(--site-popup-shadow-common, 0 8px 18px rgba(0, 0, 0, 0.2)), var(--site-modal-exterior-dim-shadow, 0 0 0 100vmax rgb(var(--site-modal-backdrop-rgb, 0 0 0) / var(--site-modal-backdrop-opacity, 0.24)));
 }
 
+@keyframes site-modal-header-unfold {
+    from {
+        clip-path: inset(
+            0 0 max(0px, calc(100% - var(--site-modal-opening-head-height, 56px))) 0
+            round var(--site-popup-radius-common, 12px)
+        );
+    }
+    to {
+        clip-path: inset(0 round var(--site-popup-radius-common, 12px));
+    }
+}
+
+:where(
+    .site-modal-dialog,
+    .root-auth-modal-dialog,
+    .site-legal-modal-dialog,
+    .auth-modal-dialog,
+    .handrive-popup-modal-dialog,
+    .handrive-drive-modal-dialog,
+    .handrive-folder-modal-dialog,
+    .handrive-help-modal-dialog,
+    .hpmail-mailbox-modal-dialog,
+    .image-demo-modal,
+    .media-tool-modal,
+    .bumpercar-stats-modal,
+    .multiplayer-skin-modal,
+    .multiplayer-idle-modal,
+    .map-name-popup,
+    .map-bind-picker,
+    .ve-image-upload-panel,
+    .ae-drive-dialog,
+    .portfolio-print-selector-panel
+).is-modal-header-opening:has(> .site-modal-head, > .handrive-popup-head, > .handrive-drive-modal-head, > .auth-modal-head, > .hpmail-mailbox-modal-head, > .image-demo-modal-head, > .media-tool-modal-head, > .bumpercar-stats-modal-header, > .multiplayer-skin-modal-header, > .ve-image-upload-head, > .ae-drive-head) {
+    animation: site-modal-header-unfold 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :where(
+        .site-modal-dialog,
+        .root-auth-modal-dialog,
+        .site-legal-modal-dialog,
+        .auth-modal-dialog,
+        .handrive-popup-modal-dialog,
+        .handrive-drive-modal-dialog,
+        .handrive-folder-modal-dialog,
+        .handrive-help-modal-dialog,
+        .hpmail-mailbox-modal-dialog,
+        .image-demo-modal,
+        .media-tool-modal,
+        .bumpercar-stats-modal,
+        .multiplayer-skin-modal,
+        .multiplayer-idle-modal,
+        .map-name-popup,
+        .map-bind-picker,
+        .ve-image-upload-panel,
+        .ae-drive-dialog,
+        .portfolio-print-selector-panel
+    ).is-modal-header-opening {
+        animation: none;
+    }
+}
+
 .site-modal-body {
     position: relative;
     min-width: 0;

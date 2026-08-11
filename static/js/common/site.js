@@ -147,7 +147,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // 페이지 종류를 보고 "항상 밝은 콘텐츠 표면"을 유지해야 하는 화면을 먼저 판정한다.
     const currentPath = window.location.pathname;
     const localizedLightBgPattern = /^\/(?:ko|en)\/(?:portfolio\/?|project\/\d+\/?|handrive(?:\/.*)?)$/;
-    const isLightBackgroundPage = document.body.classList.contains('portfolio-page') ||
+    const isMultiplayerGamePage = document.body.classList.contains('hanplanet-multiplayer-page');
+    const isLightBackgroundPage = isMultiplayerGamePage ||
+        document.body.classList.contains('portfolio-page') ||
         document.body.classList.contains('project-page') ||
         document.body.classList.contains('handrive-page') ||
         document.body.classList.contains('handrive-page') ||
@@ -449,13 +451,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 페이지 표면 모드를 적용하는 함수
     const applyPageSurfaceMode = function (useDarkTheme) {
-        currentSurfaceMode = useDarkTheme;
-        document.body.classList.toggle('theme-dark', useDarkTheme);
+        const shouldUseDarkTheme = isMultiplayerGamePage ? false : useDarkTheme;
+        currentSurfaceMode = shouldUseDarkTheme;
+        document.body.classList.toggle('theme-dark', shouldUseDarkTheme);
         window.dispatchEvent(new CustomEvent('hanplanet:themechange', {
-            detail: { dark: useDarkTheme }
+            detail: { dark: shouldUseDarkTheme }
         }));
 
-        if (useDarkTheme) {
+        if (shouldUseDarkTheme) {
             document.documentElement.classList.remove('preload-light-bg');
             document.documentElement.classList.add('preload-dark-bg');
         } else {
@@ -467,8 +470,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const surfaceColor = useDarkTheme ? SURFACE_COLOR.dark : SURFACE_COLOR.light;
-        setLightSurfaceStylesEnabled(!useDarkTheme);
+        const surfaceColor = shouldUseDarkTheme ? SURFACE_COLOR.dark : SURFACE_COLOR.light;
+        setLightSurfaceStylesEnabled(!shouldUseDarkTheme);
         setSurfaceBackground(document.documentElement, surfaceColor);
         setSurfaceBackground(document.body, surfaceColor);
 

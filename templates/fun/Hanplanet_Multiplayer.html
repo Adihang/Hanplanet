@@ -48,6 +48,7 @@
             data-raise-speaki-winner-restart="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_winner_restart' %}"
             data-raise-speaki-birth-title="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_birth_title' %}"
             data-raise-speaki-birth-countdown="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_birth_countdown' %}"
+            data-raise-speaki-double-revive-help="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_double_revive_help' %}"
         >
             <section class="multiplayer-grid" aria-label="{{ multiplayer_title }}">
                 <div class="multiplayer-canvas-wrap">
@@ -236,6 +237,15 @@
                             </div>
                             <button class="multiplayer-boost-button" type="button" data-game-mobile-boost>
                                 {% include 'partials/ui_i18n.html' with key='multiplayer_boost_button' %}
+                            </button>
+                            <button
+                                class="multiplayer-special-button"
+                                type="button"
+                                data-game-mobile-special
+                                aria-label="{% include_trimmed 'partials/ui_i18n.html' key='raise_speaki_double_revive_button' %}"
+                                hidden
+                            >
+                                {% include 'partials/ui_i18n.html' with key='raise_speaki_double_revive_button' %}
                             </button>
                         </div>
                         <span data-game-player-count hidden>0</span>

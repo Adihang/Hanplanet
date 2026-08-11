@@ -193,7 +193,7 @@
     const renderOverscan = 2;
     const cameraLeadMaxRatioX = 0.28;
     const cameraLeadMaxRatioY = 0.3;
-    const cameraLeadSmoothingPerSecond = 5.5;
+    const cameraLeadSmoothingPerSecond = 2.75;
     const remoteRenderDelaySeconds = 0.06;
     const MUSIC_MUTED_STORAGE_KEY = 'bumpercar_spiky_music_muted';
     const SFX_MUTED_STORAGE_KEY = 'bumpercar_spiky_sfx_muted';
@@ -2641,20 +2641,60 @@
         };
     };
 
-    const getCameraLeadSpeedRatio = function (player, directionMagnitude) {
+    const getCameraLeadMovementSpeed = function (player) {
+        if (!player) {
+            return 0;
+        }
+
+        const reportedSpeed = player.id === selfId
+            ? Number(currentMoveSpeed || 0)
+            : Number(player.currentSpeed || 0);
+        const velocitySpeed = Math.hypot(Number(player.velocityX || 0), Number(player.velocityY || 0));
+        return Number.isFinite(reportedSpeed) && reportedSpeed > 0
+            ? reportedSpeed
+            : velocitySpeed;
+    };
+
+    const getCameraLeadState = function (player, visual) {
+        const liveDirection = getPlayerDirectionVector(player, visual);
+        const movementSpeed = getCameraLeadMovementSpeed(player);
+        if (!visual) {
+            return {
+                dx: liveDirection.dx,
+                dy: liveDirection.dy,
+                speed: movementSpeed
+            };
+        }
+
+        const collisionAffected = Boolean(player && (player.collisionActive || player.collisionRecoveryActive));
+        const liveDirectionMagnitude = Math.hypot(liveDirection.dx, liveDirection.dy);
+        if (!collisionAffected) {
+            visual.cameraLeadSpeed = movementSpeed;
+            if (liveDirectionMagnitude > 0.001) {
+                visual.cameraLeadDirectionX = liveDirection.dx;
+                visual.cameraLeadDirectionY = liveDirection.dy;
+            }
+        }
+
+        const hasStoredDirection = Number.isFinite(visual.cameraLeadDirectionX) && Number.isFinite(visual.cameraLeadDirectionY);
+        const hasStoredSpeed = Number.isFinite(visual.cameraLeadSpeed);
+        return {
+            dx: collisionAffected && hasStoredDirection ? visual.cameraLeadDirectionX : liveDirection.dx,
+            dy: collisionAffected && hasStoredDirection ? visual.cameraLeadDirectionY : liveDirection.dy,
+            speed: collisionAffected && hasStoredSpeed ? visual.cameraLeadSpeed : movementSpeed
+        };
+    };
+
+    const getCameraLeadSpeedRatio = function (player, directionMagnitude, movementSpeedOverride) {
         if (!player || directionMagnitude <= 0.001) {
             return 0;
         }
 
         const playerProfile = getPlayerSkinProfile(player.skinName || activeSelfSkinName || selectedSkinName);
         const maxCameraSpeed = Math.max(1, Number(playerProfile.maxBoostSpeed || playerProfile.baseSpeed || 1));
-        const reportedSpeed = player.id === selfId
-            ? Number(currentMoveSpeed || 0)
-            : Number(player.currentSpeed || 0);
-        const velocitySpeed = Math.hypot(Number(player.velocityX || 0), Number(player.velocityY || 0));
-        const movementSpeed = Number.isFinite(reportedSpeed) && reportedSpeed > 0
-            ? reportedSpeed
-            : velocitySpeed;
+        const movementSpeed = Number.isFinite(movementSpeedOverride)
+            ? Math.max(0, movementSpeedOverride)
+            : getCameraLeadMovementSpeed(player);
 
         return Math.max(0, Math.min(1, movementSpeed / maxCameraSpeed));
     };
@@ -5493,9 +5533,10 @@
         let desiredCenterX = cameraTargetPlayer.x;
         let desiredCenterY = cameraTargetPlayer.y;
         const cameraTargetVisual = getPlayerVisual(cameraTargetPlayer.id);
-        const cameraLeadVector = getPlayerDirectionVector(cameraTargetPlayer, cameraTargetVisual);
+        const cameraLeadState = getCameraLeadState(cameraTargetPlayer, cameraTargetVisual);
+        const cameraLeadVector = { dx: cameraLeadState.dx, dy: cameraLeadState.dy };
         const cameraLeadMagnitude = Math.hypot(cameraLeadVector.dx, cameraLeadVector.dy);
-        const cameraLeadTargetRatio = getCameraLeadSpeedRatio(cameraTargetPlayer, cameraLeadMagnitude);
+        const cameraLeadTargetRatio = getCameraLeadSpeedRatio(cameraTargetPlayer, cameraLeadMagnitude, cameraLeadState.speed);
         const cameraLeadBlend = 1 - Math.exp(-cameraLeadSmoothingPerSecond * deltaSeconds);
         cameraLeadSmoothedRatio += (cameraLeadTargetRatio - cameraLeadSmoothedRatio) * cameraLeadBlend;
         if (cameraLeadSmoothedRatio < 0.0005) {
@@ -5539,8 +5580,8 @@
         const viewportWidth = getViewportDisplayWidth() / zoom;
         const viewportHeight = getViewportDisplayHeight() / zoom;
         const visual = player ? getPlayerVisual(player.id) : null;
-        const direction = player ? getPlayerDirectionVector(player, visual) : { dx: 0, dy: 0 };
-        const directionMagnitude = Math.hypot(direction.dx, direction.dy);
+        const cameraLeadState = player ? getCameraLeadState(player, visual) : { dx: 0, dy: 0, speed: 0 };
+        const directionMagnitude = Math.hypot(cameraLeadState.dx, cameraLeadState.dy);
 
         return JSON.stringify({
             coordinateSystem: 'world origin is top-left; positive X is right and positive Y is down',
@@ -5556,7 +5597,7 @@
                 bottom: Math.round(cameraY + viewportHeight),
                 worldSize: worldSize,
                 leadSpeedRatio: Number(cameraLeadSmoothedRatio.toFixed(3)),
-                targetLeadSpeedRatio: player ? Number(getCameraLeadSpeedRatio(player, directionMagnitude).toFixed(3)) : 0
+                targetLeadSpeedRatio: player ? Number(getCameraLeadSpeedRatio(player, directionMagnitude, cameraLeadState.speed).toFixed(3)) : 0
             }
         });
     };

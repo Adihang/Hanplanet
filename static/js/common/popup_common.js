@@ -59,6 +59,40 @@
         ".ve-image-upload-panel",
         ".ae-drive-dialog"
     ].join(", ");
+    const modalOpeningDialogSelector = [
+        ".site-modal-dialog",
+        ".root-auth-modal-dialog",
+        ".site-legal-modal-dialog",
+        ".auth-modal-dialog",
+        ".handrive-popup-modal-dialog",
+        ".handrive-drive-modal-dialog",
+        ".handrive-folder-modal-dialog",
+        ".handrive-help-modal-dialog",
+        ".hpmail-mailbox-modal-dialog",
+        ".image-demo-modal",
+        ".media-tool-modal",
+        ".bumpercar-stats-modal",
+        ".multiplayer-skin-modal",
+        ".multiplayer-idle-modal",
+        ".map-name-popup",
+        ".map-bind-picker",
+        ".ve-image-upload-panel",
+        ".ae-drive-dialog",
+        ".portfolio-print-selector-panel"
+    ].join(", ");
+    const modalOpeningHeaderSelector = [
+        ".site-modal-head",
+        ".handrive-popup-head",
+        ".handrive-drive-modal-head",
+        ".auth-modal-head",
+        ".hpmail-mailbox-modal-head",
+        ".image-demo-modal-head",
+        ".media-tool-modal-head",
+        ".bumpercar-stats-modal-header",
+        ".multiplayer-skin-modal-header",
+        ".ve-image-upload-head",
+        ".ae-drive-head"
+    ].join(", ");
     const helpModalResizeHandleSelector = "[data-handrive-help-modal-resize-handle]";
     const interactiveDragSkipSelector = [
         "button",
@@ -1713,6 +1747,48 @@
         refreshCommonPopupStateDeferred();
     }
 
+    function syncModalHeaderOpeningAnimation(target, open) {
+        if (!target || target.nodeType !== 1) {
+            return;
+        }
+        const dialogs = [];
+        if (target.matches && target.matches(modalOpeningDialogSelector)) {
+            dialogs.push(target);
+        }
+        if (target.querySelectorAll) {
+            target.querySelectorAll(modalOpeningDialogSelector).forEach(function (dialog) {
+                if (dialogs.indexOf(dialog) === -1) {
+                    dialogs.push(dialog);
+                }
+            });
+        }
+        dialogs.forEach(function (dialog) {
+            const directHeader = Array.from(dialog.children || []).find(function (child) {
+                return child.matches && child.matches(modalOpeningHeaderSelector);
+            });
+            if (!directHeader) {
+                return;
+            }
+            if (!open) {
+                dialog.classList.remove("is-modal-header-opening");
+                dialog.style.removeProperty("--site-modal-opening-head-height");
+                return;
+            }
+            const headerRect = directHeader.getBoundingClientRect
+                ? directHeader.getBoundingClientRect()
+                : null;
+            const headerHeight = headerRect && Number.isFinite(headerRect.height) && headerRect.height > 0
+                ? headerRect.height
+                : directHeader.offsetHeight;
+            if (Number.isFinite(headerHeight) && headerHeight > 0) {
+                dialog.style.setProperty("--site-modal-opening-head-height", headerHeight + "px");
+            }
+            dialog.classList.remove("is-modal-header-opening");
+            void dialog.offsetWidth;
+            dialog.classList.add("is-modal-header-opening");
+        });
+    }
+
     function handleCommonDomMutation(records) {
         let shouldEnhanceSelects = false;
         const selectsToSync = new Set();
@@ -1727,11 +1803,28 @@
                         (node.querySelector && node.querySelector("select:not([multiple])"))) {
                         shouldEnhanceSelects = true;
                     }
+                    if (
+                        (node.matches && (node.matches(modalRootSelector) || node.matches(modalOpeningDialogSelector))) ||
+                        (node.querySelector && node.querySelector(modalOpeningDialogSelector))
+                    ) {
+                        const syncOpening = function () {
+                            if (node.isConnected && isVisible(node)) {
+                                syncModalHeaderOpeningAnimation(node, true);
+                            }
+                        };
+                        syncOpening();
+                        if (!isVisible(node)) {
+                            window.requestAnimationFrame(syncOpening);
+                        }
+                    }
                 });
                 return;
             }
             if (record.type === "attributes") {
                 const target = record.target;
+                if (record.attributeName === "hidden") {
+                    syncModalHeaderOpeningAnimation(target, target.hidden === false && !target.closest("[hidden]"));
+                }
                 if (record.attributeName === "title") {
                     removeNativeTooltipTitle(target);
                 }

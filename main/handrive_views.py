@@ -177,9 +177,9 @@ HANDRIVE_GOOGLE_DRIVE_URL_PREFIX = "google-drive"
 HANDRIVE_TRASH_PUBLIC_SEGMENT = "trash"
 HANDRIVE_URL_ID_SEPARATOR = "~"
 GOOGLE_DRIVE_SELECTED_ITEM_LIMIT = 300
-HANDRIVE_SHARE_TOKEN_BYTES = 32
+HANDRIVE_SHARE_TOKEN_BYTES = 16
 HANDRIVE_SHARE_ITEM_QUERY_PARAM = "share_item"
-HANDRIVE_SHARE_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
+HANDRIVE_SHARE_TOKEN_PATTERN = re.compile(r"^(?:[A-Za-z0-9_-]{22}|[A-Za-z0-9_-]{43})$")
 MINECRAFT_SSO_PUBLIC_HOST = "mc.hanplanet.com"
 MINECRAFT_SSO_QUERY_PARAM = "minecraft_sso"
 MINECRAFT_SSO_FAILED_VALUE = "failed"
@@ -1422,7 +1422,7 @@ DOCS_TEXT = {
         "map_create_placeholder": "지도 이름을 입력하세요",
         "folder_icon_title": "아이콘 변경",
         "folder_icon_file_label": "이미지 파일 선택",
-        "folder_icon_file_button": "파일 선택",
+        "folder_icon_file_button": "업로드",
         "folder_icon_file_empty": "선택된 파일 없음",
         "folder_icon_delete_button": "아이콘 삭제",
         "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
@@ -1954,7 +1954,7 @@ DOCS_TEXT = {
         "map_create_placeholder": "Enter map name",
         "folder_icon_title": "Change Icon",
         "folder_icon_file_label": "Choose image file",
-        "folder_icon_file_button": "Choose file",
+        "folder_icon_file_button": "Upload",
         "folder_icon_file_empty": "No file selected",
         "folder_icon_delete_button": "Remove Icon",
         "git_repo_name_placeholder": "my-repo (letters, numbers, ., -, _)",
@@ -10725,6 +10725,7 @@ def _render_hanplanet_email_html(
     eyebrow: str,
     intro_html: str,
     body_html: str,
+    preheader_text: str = "",
     cta_label: str = "",
     cta_url: str = "",
     footer_note: str = "",
@@ -10732,6 +10733,7 @@ def _render_hanplanet_email_html(
     """Hanplanet 공통 HTML 메일 템플릿."""
     safe_title = escape(title)
     safe_eyebrow = escape(eyebrow)
+    safe_preheader = escape(preheader_text)
     safe_cta_label = escape(cta_label)
     safe_cta_url = escape(cta_url)
     safe_footer_note = escape(footer_note)
@@ -10752,10 +10754,19 @@ def _render_hanplanet_email_html(
             '<p style="margin:14px 0 0;color:#535353;font-size:12px;line-height:1.5;">'
             f"{safe_footer_note}</p>"
         )
+    preheader_html = ""
+    if safe_preheader:
+        # 메일 본문에는 보이지 않지만 알림용 본문 추출 시 읽히도록 시각적으로만 숨긴다.
+        preheader_html = (
+            '<div aria-hidden="true" '
+            'style="max-height:0;overflow:hidden;opacity:0;color:transparent;'
+            'font-size:1px;line-height:1px;mso-hide:all;">'
+            f"{safe_preheader}</div>"
+        )
     return (
         '<!doctype html><html><body style="margin:0;padding:0;background:#eeeeee;'
         'font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Apple SD Gothic Neo,Malgun Gothic,Arial,sans-serif;'
-        'color:#111111;">'
+        f'color:#111111;">{preheader_html}'
         '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;background:#eeeeee;">'
         '<tr><td align="center" style="padding:28px 14px;">'
         '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-collapse:collapse;">'
@@ -10806,15 +10817,15 @@ def _send_2fa_email(user, code: str, ui_lang: str = "ko") -> bool:
     if is_en:
         subject = "[Hanplanet] Email verification code"
         body = (
-            f"Hi,\n\n"
-            f"Here is your Hanplanet login verification code.\n\n"
             f"Verification code: {code}\n\n"
+            f"Here is your Hanplanet login verification code.\n\n"
             f"This code expires in {expiry} minutes.\n"
             f"If you did not request this, please ignore this email."
         )
         html_message = _render_hanplanet_email_html(
             title="Login verification code",
             eyebrow="Hanplanet Account Security",
+            preheader_text=f"[{code}]",
             intro_html='<p style="margin:0;">Enter the code below to continue signing in to Hanplanet.</p>',
             body_html=(
                 _render_hanplanet_email_code_box(code)
@@ -10828,15 +10839,15 @@ def _send_2fa_email(user, code: str, ui_lang: str = "ko") -> bool:
     else:
         subject = "[Hanplanet] 이메일 인증 코드"
         body = (
-            f"안녕하세요,\n\n"
-            f"Hanplanet 로그인 인증 코드입니다.\n\n"
             f"인증 코드: {code}\n\n"
+            f"Hanplanet 로그인 인증 코드입니다.\n\n"
             f"이 코드는 {expiry}분 후 만료됩니다.\n"
             f"본인이 요청하지 않은 경우 이 메일을 무시하세요."
         )
         html_message = _render_hanplanet_email_html(
             title="로그인 인증 코드",
             eyebrow="Hanplanet Account Security",
+            preheader_text=f"[{code}]",
             intro_html='<p style="margin:0;">Hanplanet 로그인을 계속하려면 아래 인증 코드를 입력해주세요.</p>',
             body_html=(
                 _render_hanplanet_email_code_box(code)
@@ -14001,6 +14012,7 @@ def handrive_api_signup_2fa_send_code(request, ui_lang=None):
             html_message=_render_hanplanet_email_html(
                 title="회원가입 이메일 인증",
                 eyebrow="Hanplanet Account Verification",
+                preheader_text=f"[{code}]",
                 intro_html='<p style="margin:0;">회원가입을 계속하려면 아래 인증 코드를 입력해주세요.</p>',
                 body_html=(
                     _render_hanplanet_email_code_box(code)
@@ -15310,6 +15322,13 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
         if (target_path / MAP_META_FILENAME).is_file():
             return handrive_map_viewer(request, map_path=str(relative_path), ui_lang=ui_lang)
         return handrive_list(request, folder_path=relative_path, ui_lang=ui_lang)
+
+    if target_path.is_file() and is_handrive_supported_archive_path(target_path):
+        return handrive_list(
+            request,
+            folder_path=build_archive_virtual_path(relative_path),
+            ui_lang=ui_lang,
+        )
 
     if shared_subpath:
         return handrive_view(request, doc_path=relative_path, ui_lang=ui_lang)

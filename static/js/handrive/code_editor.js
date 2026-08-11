@@ -95,6 +95,7 @@
         }
 
         const editor = window.ace.edit(host);
+        const aceTextInput = host.querySelector(".ace_text-input");
         const indentGuides = document.createElement("div");
         indentGuides.className = "handrive-ace-indent-guides";
         indentGuides.hidden = true;
@@ -133,6 +134,7 @@
         let renderedEditorGutterOffset = -1;
         let renderedEditorHorizontalScrollState = null;
         let renderedEditorCompositionLineHeight = -1;
+        let compositionInputMetricsFrame = 0;
         let editorLineScrollSelectionActive = false;
         let editorLineScrollSelectionSyncFrame = 0;
         let editorLineScrollSelectionKey = "";
@@ -145,13 +147,14 @@
         session.setTabSize(4);
         session.setUseSoftTabs(true);
         session.setFoldStyle("markbeginend");
+        const editorFontFamily = '"HanDrive Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace';
         editor.setOptions({
             animatedScroll: false,
             behavioursEnabled: true,
             displayIndentGuides: false,
             enableKeyboardAccessibility: true,
             fadeFoldWidgets: false,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+            fontFamily: editorFontFamily,
             fontSize: "16px",
             highlightActiveLine: true,
             highlightGutterLine: true,
@@ -612,6 +615,18 @@
             );
         }
 
+        function toggleEditorLineScrollComment() {
+            if (
+                !editorLineScrollSelectionActive
+                || currentMode === "text"
+                || !getEditorLineScrollSelectionRanges().length
+            ) {
+                return false;
+            }
+            editor.execCommand("togglecomment");
+            return true;
+        }
+
         function syncTextareaSelection() {
             if (applyingTextareaValue) {
                 return;
@@ -669,6 +684,83 @@
                 "--handrive-code-editor-composition-line-height",
                 lineHeight + "px",
             );
+        }
+
+        function syncCompositionInputMetrics() {
+            compositionInputMetricsFrame = 0;
+            if (!aceTextInput || !aceTextInput.classList.contains("ace_composition")) {
+                return;
+            }
+            const bodyStyle = window.getComputedStyle(document.body);
+            const committedCjk = host.querySelector(".ace_cjk");
+            const committedStyle = committedCjk
+                ? window.getComputedStyle(committedCjk)
+                : bodyStyle;
+            aceTextInput.style.fontFamily = (
+                committedStyle.fontFamily
+                || bodyStyle.fontFamily
+                || "sans-serif"
+            );
+            aceTextInput.style.fontSize = (
+                committedStyle.fontSize
+                || getEditorFontSize() + "px"
+            );
+            aceTextInput.style.fontWeight = committedStyle.fontWeight || "inherit";
+            aceTextInput.style.fontStyle = committedStyle.fontStyle || "normal";
+            aceTextInput.style.fontStretch = committedStyle.fontStretch || "normal";
+            aceTextInput.style.fontVariantLigatures = "none";
+            aceTextInput.style.letterSpacing = committedStyle.letterSpacing || "normal";
+            aceTextInput.style.wordSpacing = committedStyle.wordSpacing || "normal";
+            aceTextInput.style.lineHeight = (
+                Math.max(1, Number(editor.renderer.lineHeight) || getEditorFontSize())
+                + "px"
+            );
+            aceTextInput.style.margin = "0";
+            aceTextInput.style.padding = "0";
+        }
+
+        function scheduleCompositionInputMetrics() {
+            if (compositionInputMetricsFrame) {
+                return;
+            }
+            compositionInputMetricsFrame = window.requestAnimationFrame(
+                syncCompositionInputMetrics,
+            );
+        }
+
+        if (aceTextInput) {
+            aceTextInput.addEventListener(
+                "compositionstart",
+                scheduleCompositionInputMetrics,
+            );
+            aceTextInput.addEventListener(
+                "compositionupdate",
+                scheduleCompositionInputMetrics,
+            );
+            aceTextInput.addEventListener("input", function (event) {
+                if (event.isComposing || aceTextInput.classList.contains("ace_composition")) {
+                    scheduleCompositionInputMetrics();
+                }
+            });
+            aceTextInput.addEventListener("compositionend", function () {
+                window.requestAnimationFrame(function () {
+                    [
+                        "font-family",
+                        "font-size",
+                        "font-weight",
+                        "font-style",
+                        "font-stretch",
+                        "font-variant-ligatures",
+                        "letter-spacing",
+                        "line-height",
+                        "margin",
+                        "padding",
+                        "word-spacing",
+                    ].forEach(function (property) {
+                        aceTextInput.style.removeProperty(property);
+                    });
+                });
+            });
         }
 
         function syncEditorLineNumberScrollPadding() {
@@ -886,6 +978,17 @@
             ) {
                 return;
             }
+            if (
+                event.key === "/"
+                && !event.altKey
+                && !event.shiftKey
+                && (event.ctrlKey || event.metaKey)
+                && toggleEditorLineScrollComment()
+            ) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
             syncTextareaSelection();
             const forwardedEvent = new KeyboardEvent("keydown", {
                 altKey: event.altKey,
@@ -973,6 +1076,19 @@
         syncEditorLineNumberScrollPadding();
         editor.resize(false);
         scheduleCodeStructureOverlaysRender();
+        if (document.fonts && typeof document.fonts.load === "function") {
+            document.fonts.load(getEditorFontSize() + 'px "HanDrive Code"').then(function () {
+                if (!host.isConnected) {
+                    return;
+                }
+                editor.renderer.updateFontSize();
+                editor.resize(false);
+                syncEditorLineNumberGutterOffset();
+                syncEditorCompositionLineHeight();
+                invalidateCodeStructureOverlays();
+                scheduleCodeStructureOverlaysRender();
+            }).catch(function () {});
+        }
         return adapter;
     }
 

@@ -23,7 +23,6 @@ const {
     DOUBLE_STEER_DEADZONE_RADIANS,
     DOUBLE_ALIGNMENT_DEADZONE_DISTANCE,
     DOUBLE_INACTIVE_FADE_MS,
-    COLLISION_RECOVERY_DURATION_MS,
     COLLISION_IMPACT_DURATION_MS,
 } = require("../config/constants")
 const {
@@ -45,7 +44,6 @@ const {
 const { WORLD_SIZE } = require("../config/config")
 const {
     COLLISION_VISUAL_BASE_DURATION_MS,
-    COLLISION_BOOST_LOCK_DURATION_MS,
     NPC_DEFEAT_BOUNCE_MULTIPLIER,
 } = require("../config/constants")
 
@@ -536,22 +534,19 @@ module.exports = {
                 const hitNormalX = hitLeftWall ? 1 : (hitRightWall ? -1 : 0)
                 const hitNormalY = hitTopWall ? 1 : (hitBottomWall ? -1 : 0)
                 const collisionVisualUntil = now + COLLISION_VISUAL_BASE_DURATION_MS
+                player.collisionVisualUntil = collisionVisualUntil
+                player.collisionImpactUntil = now + COLLISION_IMPACT_DURATION_MS
+                player.collisionVisualType = "win"
+                player.collisionImpactX = hitNormalX
+                player.collisionImpactY = hitNormalY
                 unit.collisionVisualUntil = collisionVisualUntil
                 unit.collisionImpactUntil = now + COLLISION_IMPACT_DURATION_MS
                 unit.collisionVisualType = "win"
                 unit.collisionImpactX = hitNormalX
                 unit.collisionImpactY = hitNormalY
-                unit.boostState = "idle"
-                unit.currentSpeed = player.collisionSlowSpeed
-                unit.collisionRecoveryStartedAt = now
-                unit.collisionRecoveryUntil = now + COLLISION_RECOVERY_DURATION_MS
-                unit.boostDisabledStartedAt = now
-                unit.boostDisabledUntil = Math.max(
-                    now + COLLISION_BOOST_LOCK_DURATION_MS,
-                    Number(collisionVisualUntil || 0)
-                )
-                unit.boostDirectionX = 0
-                unit.boostDirectionY = 0
+                // 유닛 하나가 벽에 닿아도 두 유닛과 본체의 돌진을 함께 해제한다.
+                // 개별 유닛만 멈추면 다른 유닛이 기존 돌진 상태를 유지해 쌍핔이가 계속 돌진한 것처럼 보인다.
+                this.applyCollisionSlow(player, now, collisionVisualUntil)
             }
         })
 

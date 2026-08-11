@@ -2672,6 +2672,37 @@
         HANDRIVE_MEDIA_PLAYBACK_MODE_REPEAT,
         HANDRIVE_MEDIA_PLAYBACK_MODE_NEXT,
     ];
+    const HANDRIVE_ZOOM_STEP_RATIO = 1.125;
+    const HANDRIVE_ZOOM_WHEEL_DELTA_UNIT = 100;
+
+    function getHandriveZoomStepValue(currentValue, direction) {
+        const zoomGesture = window.HanplanetZoomGesture;
+        if (zoomGesture && typeof zoomGesture.getZoomStepValue === "function") {
+            return zoomGesture.getZoomStepValue(currentValue, direction, HANDRIVE_ZOOM_STEP_RATIO);
+        }
+        const value = Number(currentValue);
+        const safeValue = Number.isFinite(value) && value > 0 ? value : 1;
+        return safeValue * (Number(direction) >= 0
+            ? HANDRIVE_ZOOM_STEP_RATIO
+            : (1 / HANDRIVE_ZOOM_STEP_RATIO));
+    }
+
+    function getHandriveProportionalWheelValue(context) {
+        const zoomGesture = window.HanplanetZoomGesture;
+        if (zoomGesture && typeof zoomGesture.getProportionalWheelValue === "function") {
+            return zoomGesture.getProportionalWheelValue(context, {
+                wheelRatio: HANDRIVE_ZOOM_STEP_RATIO,
+                wheelDeltaUnit: HANDRIVE_ZOOM_WHEEL_DELTA_UNIT,
+            });
+        }
+        const currentValue = Number(context && context.currentValue);
+        const safeCurrentValue = Number.isFinite(currentValue) && currentValue > 0 ? currentValue : 1;
+        const normalizedDelta = Number(context && context.normalizedDelta) || Number(context && context.delta) || 0;
+        return safeCurrentValue * Math.pow(
+            HANDRIVE_ZOOM_STEP_RATIO,
+            -normalizedDelta / HANDRIVE_ZOOM_WHEEL_DELTA_UNIT
+        );
+    }
 
     function bindHanplanetZoomGesture(surface, options) {
         const zoomGesture = window.HanplanetZoomGesture;
@@ -2713,7 +2744,7 @@
             context.step = safeStep;
             const nextValue = typeof options.getWheelValue === "function"
                 ? options.getWheelValue(context)
-                : currentValue + (direction * safeStep);
+                : getHandriveProportionalWheelValue(context);
             options.setValue(nextValue, context);
         };
         surface.addEventListener("wheel", handleWheel, { passive: false });
@@ -4028,33 +4059,70 @@
     }
 
     function extractEditorCompletionToken(sourceText, cursorIndex) {
-        // Completion matching only looks at the trailing identifier fragment immediately
-        // before the caret; everything else is ignored for predictable snippet insertion.
+        // Keep the trailing identifier for compact triggers, while retaining the line
+        // prefix so suggestions can also match the text that will actually be inserted.
         const text = String(sourceText || "");
         const cursor = Math.max(0, Number(cursorIndex || 0));
         const prefix = text.slice(0, cursor);
         const match = prefix.match(/([A-Za-z0-9_][A-Za-z0-9_-]*)$/);
-        if (!match || !match[1]) {
+        const currentLine = prefix.slice(prefix.lastIndexOf("\n") + 1);
+        if ((!match || !match[1]) && !currentLine.trim()) {
             return null;
         }
-        const token = match[1];
+        const token = match && match[1] ? match[1] : "";
         return {
             token: token,
             start: cursor - token.length,
             end: cursor,
+            sourcePrefix: prefix,
         };
     }
 
-    function findBestEditorCompletionItem(completionItems, tokenText) {
-        const matches = findEditorCompletionItems(completionItems, tokenText, 1);
+    function findEditorSuggestionPreviewPrefixMatch(insertText, sourcePrefix) {
+        const normalizedInsertText = String(insertText || "").toLowerCase();
+        const prefix = String(sourcePrefix || "");
+        const lineStart = prefix.lastIndexOf("\n") + 1;
+        const currentLine = prefix.slice(lineStart);
+        if (!normalizedInsertText || !currentLine.trim()) {
+            return null;
+        }
+
+        const firstOffset = Math.max(0, currentLine.length - normalizedInsertText.length);
+        for (let offset = firstOffset; offset < currentLine.length; offset += 1) {
+            const candidate = currentLine.slice(offset);
+            const previousCharacter = offset > 0 ? currentLine.charAt(offset - 1) : "";
+            const startsAtBoundary = offset === 0
+                || /\s/.test(previousCharacter)
+                || "=([{,:;!?+*/%&|^~".includes(previousCharacter);
+            if (!startsAtBoundary) {
+                continue;
+            }
+            if (!candidate.trim() || /^\s/.test(candidate)) {
+                continue;
+            }
+            if (normalizedInsertText.startsWith(candidate.toLowerCase())) {
+                return {
+                    start: lineStart + offset,
+                    length: candidate.length,
+                };
+            }
+        }
+        return null;
+    }
+
+    function findBestEditorCompletionItem(completionItems, tokenInfo) {
+        const matches = findEditorCompletionItems(completionItems, tokenInfo, 1);
         return matches.length ? matches[0] : null;
     }
 
-    function findEditorCompletionItems(completionItems, tokenText, limit) {
+    function findEditorCompletionItems(completionItems, tokenInfo, limit) {
         // Rank candidates by exactness, visible label, snippet preview, and explicit
         // priority so short prefixes still find useful completions like querySelector.
-        const normalizedToken = String(tokenText || "").toLowerCase();
-        if (!normalizedToken || !Array.isArray(completionItems) || completionItems.length === 0) {
+        const context = tokenInfo && typeof tokenInfo === "object"
+            ? tokenInfo
+            : { token: String(tokenInfo || ""), sourcePrefix: "" };
+        const normalizedToken = String(context.token || "").toLowerCase();
+        if (!Array.isArray(completionItems) || completionItems.length === 0) {
             return [];
         }
 
@@ -4064,34 +4132,44 @@
             const trigger = String(item.trigger || "").toLowerCase();
             const label = String(item.label || "").toLowerCase();
             const insertText = String(item.insertText || "").toLowerCase();
+            const previewMatch = findEditorSuggestionPreviewPrefixMatch(
+                item.insertText,
+                context.sourcePrefix,
+            );
             let matchRank = -1;
             let matchIndex = -1;
+            let completionStart = previewMatch
+                ? previewMatch.start
+                : Number(context.start || 0);
 
             if (trigger && trigger === normalizedToken) {
                 matchRank = 0;
                 matchIndex = 0;
-            } else if (trigger && trigger.startsWith(normalizedToken)) {
+            } else if (previewMatch) {
+                matchRank = 1;
+                matchIndex = -previewMatch.length;
+            } else if (normalizedToken && trigger && trigger.startsWith(normalizedToken)) {
                 matchRank = 1;
                 matchIndex = 0;
-            } else if (label && label.startsWith(normalizedToken)) {
+            } else if (normalizedToken && label && label.startsWith(normalizedToken)) {
                 matchRank = 2;
                 matchIndex = 0;
-            } else if (insertText && insertText.startsWith(normalizedToken)) {
+            } else if (normalizedToken && insertText && insertText.startsWith(normalizedToken)) {
                 matchRank = 3;
                 matchIndex = 0;
-            } else if (trigger) {
+            } else if (normalizedToken && trigger) {
                 matchIndex = trigger.indexOf(normalizedToken);
                 if (matchIndex >= 0) {
                     matchRank = 4;
                 }
             }
-            if (matchRank < 0 && label) {
+            if (matchRank < 0 && normalizedToken && label) {
                 matchIndex = label.indexOf(normalizedToken);
                 if (matchIndex >= 0) {
                     matchRank = 5;
                 }
             }
-            if (matchRank < 0 && insertText) {
+            if (matchRank < 0 && normalizedToken && insertText) {
                 matchIndex = insertText.indexOf(normalizedToken);
                 if (matchIndex >= 0) {
                     matchRank = 6;
@@ -4106,6 +4184,7 @@
                 trigger: trigger,
                 matchRank: matchRank,
                 matchIndex: matchIndex,
+                completionStart: completionStart,
             });
         }
 
@@ -4133,7 +4212,9 @@
 
         const maxItems = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : candidates.length;
         return candidates.slice(0, maxItems).map(function (candidate) {
-            return candidate.item;
+            return Object.assign({}, candidate.item, {
+                completionStart: candidate.completionStart,
+            });
         });
     }
 
@@ -4147,15 +4228,11 @@
     }
 
     function getEditorSuggestionPreview(item) {
-        const explicit = item && item.description ? item.description : "";
-        if (explicit) {
-            return truncateEditorSuggestionText(explicit, 82);
-        }
         const insertText = String((item && item.insertText) || "");
-        const firstLine = insertText.split(/\r?\n/).find(function (line) {
-            return String(line || "").trim();
-        }) || insertText;
-        return truncateEditorSuggestionText(firstLine, 82);
+        if (insertText) {
+            return truncateEditorSuggestionText(insertText.replace(/\r?\n/g, " ↵ "), 120);
+        }
+        return truncateEditorSuggestionText(item && item.description ? item.description : "", 120);
     }
 
     function getEditorSuggestionKind(item) {
@@ -4186,7 +4263,7 @@
     function buildEditorSuggestionPayload(suggestion, tokenInfo) {
         const item = suggestion || {};
         return {
-            start: tokenInfo.start,
+            start: Number.isFinite(item.completionStart) ? item.completionStart : tokenInfo.start,
             end: tokenInfo.end,
             insertText: item.insertText || "",
             cursorBack: Number(item.cursorBack || 0),
@@ -6571,6 +6648,7 @@
         const confirmMessage = document.getElementById("handrive-confirm-message");
         const confirmCancelButton = document.getElementById("handrive-confirm-cancel-btn");
         const confirmConfirmButton = document.getElementById("handrive-confirm-confirm-btn");
+        const confirmSaveButton = document.getElementById("handrive-confirm-save-btn");
 
         if (
             !confirmModal ||
@@ -6596,10 +6674,16 @@
             }
 
             confirmModal.hidden = true;
+            confirmModal.classList.remove("is-unsaved-confirm");
+            if (confirmSaveButton) {
+                confirmSaveButton.hidden = true;
+                confirmSaveButton.classList.remove("ui-btn-primary");
+            }
+            confirmConfirmButton.classList.add("ui-btn-primary");
             isOpen = false;
 
             if (resolvePending) {
-                resolvePending(Boolean(confirmed));
+                resolvePending(confirmed);
                 resolvePending = null;
             }
 
@@ -6621,6 +6705,12 @@
             close(true);
         });
 
+        if (confirmSaveButton) {
+            confirmSaveButton.addEventListener("click", function () {
+                close("save");
+            });
+        }
+
         document.addEventListener("keydown", function (event) {
             if (event.key !== "Escape" || !isOpen) {
                 return;
@@ -6636,6 +6726,7 @@
             const messageText = settings.message || "";
             const cancelText = settings.cancelText || t("cancel", "취소");
             const confirmText = settings.confirmText || t("js_confirm_ok", "확인");
+            const isUnsavedChanges = Boolean(settings.unsavedChanges);
 
             if (resolvePending) {
                 resolvePending(false);
@@ -6646,6 +6737,13 @@
             confirmMessage.textContent = messageText;
             confirmCancelButton.textContent = cancelText;
             confirmConfirmButton.textContent = confirmText;
+            confirmModal.classList.toggle("is-unsaved-confirm", isUnsavedChanges);
+            confirmConfirmButton.classList.toggle("ui-btn-primary", !isUnsavedChanges);
+            if (confirmSaveButton) {
+                confirmSaveButton.textContent = settings.saveText || t("unsaved_changes_save_button", "저장");
+                confirmSaveButton.hidden = !isUnsavedChanges;
+                confirmSaveButton.classList.toggle("ui-btn-primary", isUnsavedChanges);
+            }
 
             confirmModal.hidden = false;
             isOpen = true;
@@ -7466,8 +7564,6 @@
         const HANDRIVE_LIST_ITEM_SCALE_LEGACY_STORAGE_KEY = "hanplanet.handrive.list.itemScale";
         const HANDRIVE_LIST_ITEM_SCALE_MIN = 0.72;
         const HANDRIVE_LIST_ITEM_SCALE_MAX = 1.6;
-        const HANDRIVE_LIST_ITEM_SCALE_STEP = 0.05;
-        const HANDRIVE_LIST_ITEM_SCALE_WHEEL_SENSITIVITY = 0.00042;
         const HANDRIVE_LIST_ITEM_SCALE_LAYOUT_DELAY_MS = 120;
         const HANDRIVE_LIST_ITEM_SCALE_PERSIST_DELAY_MS = 420;
         const HANDRIVE_LIST_VIRTUAL_SCROLL_MIN_ITEMS = 180;
@@ -7535,6 +7631,7 @@
         const editorSaveButton = document.getElementById("handrive-list-save-btn");
         const editorBodyLoadingOverlay = document.getElementById("handrive-list-editor-body-loading");
         const editorSavingOverlay = document.getElementById("handrive-list-editor-saving");
+        const listConfirmModal = document.getElementById("handrive-confirm-modal");
         const editorHighlightCode = document.getElementById("handrive-list-editor-highlight-code");
         const editorSurface = document.getElementById("handrive-list-editor-surface");
         const editorHighlight = document.getElementById("handrive-list-editor-highlight");
@@ -8959,8 +9056,8 @@
         let listSvgEditorSessionToken = 0;
         let listMediaEditorSessionToken = 0;
         let bypassListEditorUnsavedGuard = false;
+        let listUnsavedDecisionPromise = null;
         let listSuggestEventsBound = false;
-        let listMarkdownSnippetEventsBound = false;
         let listMarkdownImageEventsBound = false;
         let listMarkdownUploadedImagePaths = [];
         const LIST_EDITOR_PREVIEW_EXTENSIONS = new Set([".md", ".html", ".jsx"]);
@@ -9557,9 +9654,9 @@
             replaceListEditorSelection(snippet.text, snippet.selectStart, snippet.selectEnd, snippet.replaceStart, snippet.replaceEnd);
         }
 
-        function findListEditorSuggestions(extension, tokenText) {
+        function findListEditorSuggestions(extension, tokenInfo) {
             const items = resolveEditorCompletionItemsByExtension(extension);
-            return findEditorCompletionItems(items, tokenText, 8);
+            return findEditorCompletionItems(items, tokenInfo, 8);
         }
 
         function renderListEditorSuggestDropdown() {
@@ -9728,7 +9825,7 @@
                 return;
             }
 
-            const suggestions = findListEditorSuggestions(extension, tokenInfo.token);
+            const suggestions = findListEditorSuggestions(extension, tokenInfo);
             if (!suggestions.length) {
                 clearListEditorSuggestion();
                 return;
@@ -9961,12 +10058,6 @@
             bindHanplanetZoomGesture(listItemsContainer, {
                 min: HANDRIVE_LIST_ITEM_SCALE_MIN,
                 max: HANDRIVE_LIST_ITEM_SCALE_MAX,
-                wheelStep: HANDRIVE_LIST_ITEM_SCALE_STEP,
-                getWheelValue: function (context) {
-                    const currentValue = Number(context.currentValue) || handriveListItemScale;
-                    const normalizedDelta = Number(context.normalizedDelta) || Number(context.delta) || 0;
-                    return currentValue * Math.exp(-normalizedDelta * HANDRIVE_LIST_ITEM_SCALE_WHEEL_SENSITIVITY);
-                },
                 ignoreAlt: true,
                 getValue: function () {
                     return handriveListItemScale;
@@ -12885,18 +12976,112 @@
 
         function confirmDiscardUnsavedListEditorChanges() {
             if (!hasUnsavedListEditorChanges()) {
-                return true;
+                return Promise.resolve("continue");
             }
-            const confirmed = window.confirm(
-                t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?")
-            );
-            if (confirmed) {
-                bypassListEditorUnsavedGuard = true;
-                window.setTimeout(function () {
-                    bypassListEditorUnsavedGuard = false;
-                }, 1200);
+            if (listUnsavedDecisionPromise) {
+                return listUnsavedDecisionPromise;
             }
-            return confirmed;
+            listUnsavedDecisionPromise = requestConfirmDialog({
+                title: t("unsaved_changes_title", "저장되지 않은 변경 사항"),
+                message: t("image_editor_unsaved_warning", "저장되지 않은 변경 사항이 있습니다. 계속하시겠습니까?"),
+                cancelText: t("cancel", "취소"),
+                confirmText: t("unsaved_changes_leave_button", "저장안함"),
+                saveText: t("unsaved_changes_save_button", "저장"),
+                unsavedChanges: true,
+            }).then(function (choice) {
+                if (choice === "save") {
+                    return saveActiveListEditorFromUnsavedDialog();
+                }
+                if (choice) {
+                    bypassListEditorUnsavedGuard = true;
+                    window.setTimeout(function () {
+                        bypassListEditorUnsavedGuard = false;
+                    }, 1200);
+                    return "discard";
+                }
+                return "cancel";
+            }).finally(function () {
+                listUnsavedDecisionPromise = null;
+            });
+            return listUnsavedDecisionPromise;
+        }
+
+        function saveActiveListEditorFromUnsavedDialog() {
+            if (
+                !editorSaveButton ||
+                editorSaveButton.disabled ||
+                !activeListEditorEntry
+            ) {
+                return Promise.resolve("cancel");
+            }
+
+            if (activeListEditorEntry.can_demo_edit) {
+                editorSaveButton.click();
+                return Promise.resolve("cancel");
+            }
+
+            const startedAt = Date.now();
+            const timeoutMs = 30000;
+            editorSaveButton.click();
+
+            return new Promise(function (resolve) {
+                let settled = false;
+                let sawSaveBusyState = false;
+                let saveBusyEndedAt = 0;
+                const finish = function (result) {
+                    if (settled) {
+                        return;
+                    }
+                    settled = true;
+                    resolve(result);
+                };
+                const poll = function () {
+                    const isSaveBusy = Boolean(
+                        editorSaveButton.disabled ||
+                        (editorPanel && editorPanel.classList.contains("is-saving"))
+                    );
+                    const isConfirmDialogOpen = Boolean(
+                        listConfirmModal && !listConfirmModal.hidden
+                    );
+                    if (isSaveBusy) {
+                        sawSaveBusyState = true;
+                        saveBusyEndedAt = 0;
+                    } else if (sawSaveBusyState && !saveBusyEndedAt) {
+                        saveBusyEndedAt = Date.now();
+                    }
+                    if (
+                        !activeListEditorEntry ||
+                        !editorPanel ||
+                        editorPanel.hidden ||
+                        !hasUnsavedListEditorChanges()
+                    ) {
+                        finish("saved");
+                        return;
+                    }
+                    if (
+                        !sawSaveBusyState &&
+                        !isConfirmDialogOpen &&
+                        Date.now() - startedAt >= 500
+                    ) {
+                        finish("cancel");
+                        return;
+                    }
+                    if (
+                        sawSaveBusyState &&
+                        saveBusyEndedAt &&
+                        Date.now() - saveBusyEndedAt >= 5000
+                    ) {
+                        finish("cancel");
+                        return;
+                    }
+                    if (Date.now() - startedAt >= timeoutMs) {
+                        finish("cancel");
+                        return;
+                    }
+                    window.setTimeout(poll, 60);
+                };
+                window.setTimeout(poll, 0);
+            });
         }
 
         function teardownListMediaEditors() {
@@ -13789,7 +13974,6 @@
                 bindHanplanetZoomGesture(listEditorInteractionTarget, {
                     min: 8,
                     max: 40,
-                    wheelStep: 2,
                     getValue: function () {
                         return listEditorFontSize;
                     },
@@ -14230,14 +14414,17 @@
             };
             editorCancelButton.onclick = function (event) {
                 event.preventDefault();
-                if (!confirmDiscardUnsavedListEditorChanges()) {
-                    return;
-                }
-                cleanupListMarkdownUploadedImages(entry)
-                    .catch(alertError)
-                    .finally(function () {
-                        closeEditorAndRestorePreviewState();
-                    });
+                confirmDiscardUnsavedListEditorChanges()
+                    .then(function (decision) {
+                        if (decision === "cancel" || decision === "saved") {
+                            return;
+                        }
+                        return cleanupListMarkdownUploadedImages(entry)
+                            .finally(function () {
+                                closeEditorAndRestorePreviewState();
+                            });
+                    })
+                    .catch(alertError);
             };
         }
 
@@ -14726,10 +14913,6 @@
                     }
                     return 40;
                 },
-                wheelStep: function () {
-                    const kind = getListPreviewZoomKind();
-                    return kind === "image" || kind === "frame" ? 0.15 : 2;
-                },
                 getValue: function () {
                     const kind = getListPreviewZoomKind();
                     if (kind === "image") {
@@ -14837,7 +15020,10 @@
             if (Math.abs(delta) < 0.01) {
                 return;
             }
-            setPreviewFrameZoom(state.previewFrameZoom + ((delta < 0 ? 1 : -1) * 0.15));
+            setPreviewFrameZoom(getHandriveProportionalWheelValue({
+                currentValue: state.previewFrameZoom,
+                normalizedDelta: delta,
+            }));
         }
 
         function setPreviewImageZoom(nextZoom) {
@@ -15006,22 +15192,22 @@
             }
         }
 
-        function syncPreviewFromSelection() {
+        async function syncPreviewFromSelection() {
             if (!previewPanel) {
-                return;
-            }
-            if (!confirmDiscardUnsavedListEditorChanges()) {
-                if (activeListEditorEntry) {
-                    applySelection([activeListEditorEntry.path], {
-                        primaryPath: activeListEditorEntry.path,
-                        anchorPath: activeListEditorEntry.path,
-                        skipPreview: true,
-                    });
-                }
                 return;
             }
             const selectedEntries = getSelectedEntries();
             if (selectedEntries.length !== 1) {
+                if (await confirmDiscardUnsavedListEditorChanges() === "cancel") {
+                    if (activeListEditorEntry) {
+                        applySelection([activeListEditorEntry.path], {
+                            primaryPath: activeListEditorEntry.path,
+                            anchorPath: activeListEditorEntry.path,
+                            skipPreview: true,
+                        });
+                    }
+                    return;
+                }
                 clearPreviewPane();
                 return;
             }
@@ -15033,7 +15219,28 @@
             const entryPath = normalizePath(entry.path, true);
             if (entryPath === state.activePreviewPath) {
                 // 현재 미리보기 중인 파일을 다시 선택하면 토글(닫기)
+                if (await confirmDiscardUnsavedListEditorChanges() === "cancel") {
+                    if (activeListEditorEntry) {
+                        applySelection([activeListEditorEntry.path], {
+                            primaryPath: activeListEditorEntry.path,
+                            anchorPath: activeListEditorEntry.path,
+                            skipPreview: true,
+                        });
+                    }
+                    return;
+                }
                 clearPreviewPane();
+                return;
+            }
+            // 실제로 미리보기로 전환하면서 편집기를 닫기 직전에만 확인한다.
+            if (await confirmDiscardUnsavedListEditorChanges() === "cancel") {
+                if (activeListEditorEntry) {
+                    applySelection([activeListEditorEntry.path], {
+                        primaryPath: activeListEditorEntry.path,
+                        anchorPath: activeListEditorEntry.path,
+                        skipPreview: true,
+                    });
+                }
                 return;
             }
             // 새 파일로 전환 시 이전/현재 row 상태만 갱신해서 큰 목록 전체를 다시 그리지 않는다.
@@ -15161,7 +15368,7 @@
             syncEntryRowSelectedStates(previousSelectedPaths.concat([previousSelectedPath]));
             updatePathCurrentSize();
             if (settings.openPreview && !settings.skipPreview) {
-                syncPreviewFromSelection();
+                syncPreviewFromSelection().catch(alertError);
             }
         }
 
@@ -16424,6 +16631,16 @@
                 uploadQueuePanel: uploadQueuePanel,
                 uploadQueueSummary: uploadQueueSummary,
                 uploadQueueToggleButton: uploadQueueToggleButton,
+                autoCollapseEnabled: !isTutorialPreview,
+                onAutoExpand: function () {
+                    state.uploadQueueCollapsed = false;
+                    state.uploadQueueDismissed = false;
+                    renderUploadQueue();
+                },
+                onAutoCollapse: function () {
+                    state.uploadQueueCollapsed = true;
+                    renderUploadQueue();
+                },
             });
         }
 
@@ -16433,7 +16650,9 @@
                 uploadQueuePanel.classList.toggle("is-collapsed", isCollapsed);
             }
             if (uploadQueueList) {
-                uploadQueueList.hidden = isCollapsed;
+                uploadQueueList.hidden = false;
+                uploadQueueList.setAttribute("aria-hidden", isCollapsed ? "true" : "false");
+                uploadQueueList.inert = isCollapsed;
             }
             if (uploadQueueToggleButton) {
                 const toggleLabel = isCollapsed
@@ -18158,7 +18377,13 @@
                 archiveToolbarUrlShareButton.hidden = !(canShowArchiveActions && canEditArchive && urlShareApiUrl);
             }
             if (archiveToolbarDownloadButton) {
-                const downloadUrl = archiveEntry ? buildDownloadUrl(archiveEntry.path) : "";
+                const downloadUrl = archiveEntry
+                    ? (
+                        hasSharedContext() && archiveEntry.share_download_url
+                            ? archiveEntry.share_download_url
+                            : buildDownloadUrl(archiveEntry.path)
+                    )
+                    : "";
                 archiveToolbarDownloadButton.hidden = !downloadUrl;
                 if (downloadUrl) {
                     archiveToolbarDownloadButton.href = downloadUrl;
@@ -20012,7 +20237,7 @@
             });
         }
 
-        function editEntry(entry) {
+        async function editEntry(entry) {
             if (!entry) {
                 return;
             }
@@ -20033,7 +20258,7 @@
                     }
                     return;
                 }
-                if (!confirmDiscardUnsavedListEditorChanges()) {
+                if (await confirmDiscardUnsavedListEditorChanges() === "cancel") {
                     return;
                 }
             }
@@ -20735,7 +20960,7 @@
                 updateListColumnVisibility();
                 scheduleListBodyHeight();
                 scheduleAdjacentSelectedRowCornerSync();
-                if (renderListOptions.openPreview) { syncPreviewFromSelection(); }
+                if (renderListOptions.openPreview) { syncPreviewFromSelection().catch(alertError); }
                 return;
             }
             if (state.searchQuery) {
@@ -20762,7 +20987,7 @@
             updateListColumnVisibility();
             scheduleListBodyHeight();
             scheduleAdjacentSelectedRowCornerSync();
-            if (renderListOptions.openPreview) { syncPreviewFromSelection(); }
+            if (renderListOptions.openPreview) { syncPreviewFromSelection().catch(alertError); }
             scheduleSyncCurrentDirRowHeightWithSideHead();
         }
 
@@ -21677,13 +21902,13 @@
 
         if (previewZoomOutButton) {
             previewZoomOutButton.addEventListener("click", function () {
-                setPreviewImageZoom(state.previewImageZoom - 0.25);
+                setPreviewImageZoom(getHandriveZoomStepValue(state.previewImageZoom, -1));
             });
         }
 
         if (previewZoomInButton) {
             previewZoomInButton.addEventListener("click", function () {
-                setPreviewImageZoom(state.previewImageZoom + 0.25);
+                setPreviewImageZoom(getHandriveZoomStepValue(state.previewImageZoom, 1));
             });
         }
 
@@ -21805,38 +22030,6 @@
             });
         }
 
-        if (!listMarkdownSnippetEventsBound && markdownSnippetMenu) {
-            listMarkdownSnippetEventsBound = true;
-
-            markdownSnippetButtons.forEach(function (button) {
-                button.addEventListener("click", function () {
-                    const snippetType = button.getAttribute("data-editor-snippet") || "";
-                    insertListMarkdownSnippet(snippetType);
-                    closeListMarkdownSnippetMenu();
-                });
-            });
-
-            if (editorSurface) {
-                editorSurface.addEventListener("contextmenu", function (event) {
-                    if (editorPanel && editorPanel.hidden) {
-                        return;
-                    }
-                    const currentExtension = resolveListEditorExtension() || ".md";
-                    if (currentExtension !== ".md") {
-                        closeListMarkdownSnippetMenu();
-                        return;
-                    }
-                    const visibleCount = syncListSnippetMenuItemsByExtension(currentExtension);
-                    if (visibleCount <= 0) {
-                        closeListMarkdownSnippetMenu();
-                        return;
-                    }
-                    event.preventDefault();
-                    openListMarkdownSnippetMenu(event.clientX, event.clientY);
-                });
-            }
-        }
-
         document.addEventListener("click", function (event) {
             if (!contextMenu || contextMenu.hidden) {
                 return;
@@ -21896,10 +22089,6 @@
                     setRenameModalOpen(false);
                     return;
                 }
-                if (markdownSnippetMenu && !markdownSnippetMenu.hidden) {
-                    closeListMarkdownSnippetMenu();
-                    return;
-                }
                 if (syncModal && !syncModal.hidden) {
                     setSyncModalOpen(false);
                     return;
@@ -21910,16 +22099,6 @@
                 }
                 closeContextMenu();
             }
-        });
-
-        document.addEventListener("mousedown", function (event) {
-            if (!markdownSnippetMenu || markdownSnippetMenu.hidden) {
-                return;
-            }
-            if (event.target instanceof Element && markdownSnippetMenu.contains(event.target)) {
-                return;
-            }
-            closeListMarkdownSnippetMenu();
         });
 
         if (listPane && uploadApiUrl) {
@@ -22233,8 +22412,6 @@
 
         window.addEventListener("scroll", closeContextMenu, { passive: true });
         window.addEventListener("resize", closeContextMenu, { passive: true });
-        window.addEventListener("scroll", closeListMarkdownSnippetMenu, { passive: true });
-        window.addEventListener("resize", closeListMarkdownSnippetMenu, { passive: true });
         window.addEventListener("resize", debouncedUpdateListLayoutMode, { passive: true });
         window.addEventListener("orientationchange", debouncedUpdateListLayoutMode, { passive: true });
         window.addEventListener("resize", updateListColumnVisibility, { passive: true });
@@ -24928,7 +25105,7 @@
                     3,
                     "edit_surface",
                     textByLang("편집기", "Editor"),
-                    textByLang("텍스트와 Markdown은 코드 하이라이트, 자동완성, 스니펫 메뉴를 지원하고 이미지/오디오/영상/PDF/스프레드시트는 전용 편집기를 사용합니다.", "Text and Markdown support highlighting, completion, and snippets. Images, audio, video, PDFs, and spreadsheets use dedicated editors."),
+                    textByLang("텍스트와 Markdown은 코드 하이라이트와 자동완성을 지원하고 이미지/오디오/영상/PDF/스프레드시트는 전용 편집기를 사용합니다.", "Text and Markdown support highlighting and completion. Images, audio, video, PDFs, and spreadsheets use dedicated editors."),
                     textByLang("편집 영역에서 내용을 바꿔볼 수 있습니다.", "Try changing content in the editor area."),
                     {
                         labelKey: "guest_demo_onboarding_step_edit",
@@ -26483,7 +26660,6 @@
             closeMapCreateModal();
             setFolderIconModalOpen(false);
             setSyncModalOpen(false);
-            closeListMarkdownSnippetMenu();
             closeContextMenu();
             document.dispatchEvent(new window.CustomEvent("handrive:tutorial-close-help-modal"));
             syncHandriveModalBodyState();
@@ -27236,13 +27412,13 @@
 
         if (viewZoomOutButton) {
             viewZoomOutButton.addEventListener("click", function () {
-                setViewImageZoom(viewImageZoom - 0.25);
+                setViewImageZoom(getHandriveZoomStepValue(viewImageZoom, -1));
             });
         }
 
         if (viewZoomInButton) {
             viewZoomInButton.addEventListener("click", function () {
-                setViewImageZoom(viewImageZoom + 0.25);
+                setViewImageZoom(getHandriveZoomStepValue(viewImageZoom, 1));
             });
         }
 
@@ -27258,9 +27434,6 @@
                 },
                 max: function () {
                     return contentArticle.classList.contains("handrive-media") ? 3 : 40;
-                },
-                wheelStep: function () {
-                    return contentArticle.classList.contains("handrive-media") ? 0.15 : 2;
                 },
                 getValue: function () {
                     return contentArticle.classList.contains("handrive-media") ? viewImageZoom : viewTextFontSize;
@@ -28103,9 +28276,14 @@
                     title: t("unsaved_changes_title", "저장"),
                     message: t("unsaved_changes_message", "저장되지 않은 변경 사항이 있습니다. 이동 전에 저장할까요?"),
                     cancelText: t("cancel", "취소"),
-                    confirmText: t("unsaved_changes_leave_button", "저장안함")
-                }).then(function (confirmed) {
-                    return confirmed ? "leave" : "cancel";
+                    confirmText: t("unsaved_changes_leave_button", "저장안함"),
+                    saveText: t("unsaved_changes_save_button", "저장"),
+                    unsavedChanges: true,
+                }).then(function (choice) {
+                    if (choice === "save") {
+                        return "save";
+                    }
+                    return choice ? "leave" : "cancel";
                 });
             }
 
@@ -29157,9 +29335,9 @@
             }
         }
 
-        function findEditorSuggestions(extension, tokenText) {
+        function findEditorSuggestions(extension, tokenInfo) {
             const items = resolveEditorCompletionItemsByExtension(extension);
-            return findEditorCompletionItems(items, tokenText, 8);
+            return findEditorCompletionItems(items, tokenInfo, 8);
         }
 
         function renderWriteEditorSuggestDropdown() {
@@ -29204,7 +29382,7 @@
                 clearEditorSuggestion();
                 return;
             }
-            const suggestions = findEditorSuggestions(extension, tokenInfo.token);
+            const suggestions = findEditorSuggestions(extension, tokenInfo);
             if (!suggestions.length) {
                 clearEditorSuggestion();
                 return;
@@ -31010,7 +31188,6 @@
             bindHanplanetZoomGesture(writeEditorInteractionTarget, {
                 min: 8,
                 max: 40,
-                wheelStep: 2,
                 getValue: function () {
                     return writeEditorFontSize;
                 },
@@ -31064,11 +31241,20 @@
                     }
                     return;
                 }
-                if (event.key !== "Tab" || event.shiftKey) {
+                if (
+                    event.key !== "Tab"
+                    || event.shiftKey
+                    || event.altKey
+                    || event.metaKey
+                    || event.ctrlKey
+                ) {
                     return;
                 }
                 if (acceptEditorSuggestion()) {
                     event.preventDefault();
+                    return;
+                }
+                if (writeCodeEditor) {
                     return;
                 }
                 event.preventDefault();
@@ -31134,36 +31320,6 @@
                 if (event.currentTarget && typeof event.currentTarget.blur === "function") {
                     event.currentTarget.blur();
                 }
-            });
-        }
-
-        markdownSnippetButtons.forEach(function (button) {
-            button.addEventListener("click", function () {
-                const snippetType = button.getAttribute("data-editor-snippet") || "";
-                const currentExtension = getCurrentEditorExtension();
-                if (currentExtension === DOCS_DEFAULT_EXTENSION) {
-                    insertMarkdownSnippet(snippetType);
-                } else if (!insertLanguageSnippet(snippetType, currentExtension)) {
-                    insertMarkdownSnippet(snippetType);
-                }
-                closeMarkdownSnippetMenu();
-            });
-        });
-
-        if (editorSurface) {
-            editorSurface.addEventListener("contextmenu", function (event) {
-                const currentExtension = getCurrentEditorExtension();
-                if (currentExtension !== DOCS_DEFAULT_EXTENSION) {
-                    closeMarkdownSnippetMenu();
-                    return;
-                }
-                const visibleCount = syncSnippetMenuItemsByExtension(currentExtension);
-                if (visibleCount <= 0) {
-                    closeMarkdownSnippetMenu();
-                    return;
-                }
-                event.preventDefault();
-                openMarkdownSnippetMenu(event.clientX, event.clientY);
             });
         }
 
@@ -31290,10 +31446,6 @@
                 closeUnsavedModal("cancel");
                 return;
             }
-            if (markdownSnippetMenu && !markdownSnippetMenu.hidden) {
-                closeMarkdownSnippetMenu();
-                return;
-            }
             if (previewModal && !previewModal.hidden) {
                 setPreviewModalOpen(false);
                 return;
@@ -31385,16 +31537,6 @@
             });
         }, true);
 
-        document.addEventListener("mousedown", function (event) {
-            if (!markdownSnippetMenu || markdownSnippetMenu.hidden) {
-                return;
-            }
-            if (event.target instanceof Element && markdownSnippetMenu.contains(event.target)) {
-                return;
-            }
-            closeMarkdownSnippetMenu();
-        });
-
         document.addEventListener("submit", function (event) {
             if (event.defaultPrevented) {
                 return;
@@ -31432,9 +31574,6 @@
         window.addEventListener("orientationchange", scheduleContentInputAutoHeight, { passive: true });
         window.addEventListener("resize", scheduleWriteSvgEditorResize, { passive: true });
         window.addEventListener("orientationchange", scheduleWriteSvgEditorResize, { passive: true });
-        window.addEventListener("scroll", closeMarkdownSnippetMenu, { passive: true });
-        window.addEventListener("resize", closeMarkdownSnippetMenu, { passive: true });
-
         if (window.visualViewport) {
             window.visualViewport.addEventListener("resize", scheduleContentInputAutoHeight, { passive: true });
             window.visualViewport.addEventListener("scroll", scheduleContentInputAutoHeight, { passive: true });

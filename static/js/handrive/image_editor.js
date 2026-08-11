@@ -22,6 +22,32 @@
         return payload.error_message || payload.message || payload.error || fallback || "";
     }
 
+    var HANDRIVE_ZOOM_STEP_RATIO = 1.125;
+
+    function getImageEditorZoomStepValue(currentValue, direction) {
+        var zoomGesture = window.HanplanetZoomGesture;
+        if (zoomGesture && typeof zoomGesture.getZoomStepValue === "function") {
+            return zoomGesture.getZoomStepValue(currentValue, direction, HANDRIVE_ZOOM_STEP_RATIO);
+        }
+        return (Number(currentValue) || 1) * (Number(direction) >= 0
+            ? HANDRIVE_ZOOM_STEP_RATIO
+            : (1 / HANDRIVE_ZOOM_STEP_RATIO));
+    }
+
+    function getImageEditorWheelZoomValue(currentValue, event) {
+        var zoomGesture = window.HanplanetZoomGesture;
+        var normalizedDelta = zoomGesture && typeof zoomGesture.normalizeWheelDelta === "function"
+            ? zoomGesture.normalizeWheelDelta(event)
+            : (Number(event && event.deltaY) || Number(event && event.deltaX) || 0);
+        if (zoomGesture && typeof zoomGesture.getProportionalWheelValue === "function") {
+            return zoomGesture.getProportionalWheelValue({
+                currentValue: currentValue,
+                normalizedDelta: normalizedDelta,
+            }, { wheelRatio: HANDRIVE_ZOOM_STEP_RATIO });
+        }
+        return (Number(currentValue) || 1) * Math.pow(HANDRIVE_ZOOM_STEP_RATIO, -normalizedDelta / 100);
+    }
+
     var state = {
         activeTool: "pencil",
         brushSize: 4,
@@ -104,6 +130,14 @@
     var resizeOriginalImageData = null;
     var resizeHandleBoundMove = null, resizeHandleBoundUp = null;
 
+    // Preserve source pixels for every canvas used by the pixel editor.
+    function getPixelatedContext(canvas, options) {
+        if (!canvas || typeof canvas.getContext !== "function") return null;
+        var ctx = canvas.getContext("2d", options);
+        if (ctx) ctx.imageSmoothingEnabled = false;
+        return ctx;
+    }
+
     // ── 초기화 ────────────────────────────────────────────────────────────
     function init(options) {
         var opts = options || {};
@@ -140,8 +174,8 @@
         saveAsModal = document.getElementById("ie-save-as-modal");
 
         if (!mainCanvas || !overlayCanvas) return;
-        mainCtx    = mainCanvas.getContext("2d", { willReadFrequently: true });
-        overlayCtx = overlayCanvas.getContext("2d");
+        mainCtx    = getPixelatedContext(mainCanvas, { willReadFrequently: true });
+        overlayCtx = getPixelatedContext(overlayCanvas);
 
         state.isDirty = false;
         state.undoHistory = [];
@@ -282,6 +316,7 @@
             overlayCanvas.width = targetW;
             overlayCanvas.height = targetH;
         }
+        overlayCtx.imageSmoothingEnabled = false;
         overlayCtx.setTransform(scale, 0, 0, scale, 0, 0);
     }
 
@@ -306,7 +341,7 @@
             canvas = document.createElement("canvas");
             canvas.width = imageData.width;
             canvas.height = imageData.height;
-            canvas.getContext("2d").putImageData(imageData, 0, 0);
+            getPixelatedContext(canvas).putImageData(imageData, 0, 0);
             state.selectionPreviewCanvas = canvas;
         }
         return canvas;
@@ -496,8 +531,8 @@
             case "crop":       cropToSelection();              break;
             case "zoom-fit":   zoomFit();                      break;
             case "zoom-100":   setZoom(1);                     break;
-            case "zoom-in":    setZoom(nextZoomLevel(state.zoom));  break;
-            case "zoom-out":   setZoom(prevZoomLevel(state.zoom)); break;
+            case "zoom-in":    setZoom(getImageEditorZoomStepValue(state.zoom, 1));  break;
+            case "zoom-out":   setZoom(getImageEditorZoomStepValue(state.zoom, -1)); break;
             case "save-as":    openSaveAsModal();              break;
         }
     }
@@ -526,7 +561,7 @@
         if (canvasArea) {
             boundWheel = function (e) {
                 e.preventDefault();
-                setZoom(state.zoom * (e.deltaY < 0 ? 1.15 : (1 / 1.15)));
+                setZoom(getImageEditorWheelZoomValue(state.zoom, e));
             };
             canvasArea.addEventListener("wheel", boundWheel, { passive: false });
         }
@@ -757,7 +792,14 @@
         mainCtx.save();
         mainCtx.globalAlpha = 1.0;
         mainCtx.strokeStyle = useSecondary ? state.secondaryColor : state.primaryColor;
+        mainCtx.fillStyle = useSecondary ? state.secondaryColor : state.primaryColor;
         mainCtx.lineWidth   = state.brushSize;
+        state.pixelStroke = state.activeTool === "pencil" && isPixelRasterWidth(state.brushSize);
+        if (state.pixelStroke) {
+            mainCtx.shadowBlur = 0;
+            drawHardPixelLine(mainCtx, x, y, x, y, state.brushSize);
+            return;
+        }
         mainCtx.lineCap     = "round";
         mainCtx.lineJoin    = "round";
         mainCtx.beginPath();
@@ -769,6 +811,10 @@
     }
 
     function continueStroke(x, y) {
+        if (state.pixelStroke) {
+            drawHardPixelLine(mainCtx, state.lastX, state.lastY, x, y, state.brushSize);
+            return;
+        }
         mainCtx.lineTo(x, y);
         mainCtx.stroke();
         mainCtx.beginPath();
@@ -778,6 +824,7 @@
     function endStroke() {
         mainCtx.shadowBlur = 0;
         mainCtx.restore();
+        state.pixelStroke = false;
         commitHistoryState();
     }
 
@@ -987,7 +1034,7 @@
         var s = state.selection;
         var tmp = document.createElement("canvas");
         tmp.width = s.w; tmp.height = s.h;
-        var tmpCtx = tmp.getContext("2d");
+        var tmpCtx = getPixelatedContext(tmp);
         var hasPoly = state.freeSelectPath && state.freeSelectPath.length > 2;
 
         tmpCtx.drawImage(mainCanvas, s.x, s.y, s.w, s.h, 0, 0, s.w, s.h);
@@ -1408,7 +1455,7 @@
         var s = state.selection;
         var tmp = document.createElement("canvas");
         tmp.width = s.w; tmp.height = s.h;
-        var tmpCtx = tmp.getContext("2d");
+        var tmpCtx = getPixelatedContext(tmp);
         var hasPoly = state.freeSelectPath && state.freeSelectPath.length > 2;
 
         tmpCtx.drawImage(mainCanvas, s.x, s.y, s.w, s.h, 0, 0, s.w, s.h);
@@ -1457,8 +1504,9 @@
                                 img.onload = function () {
                                     var c = document.createElement("canvas");
                                     c.width = img.width; c.height = img.height;
-                                    c.getContext("2d").drawImage(img, 0, 0);
-                                    var pastedImageData = c.getContext("2d").getImageData(0, 0, img.width, img.height);
+                                    var pasteCtx = getPixelatedContext(c);
+                                    pasteCtx.drawImage(img, 0, 0);
+                                    var pastedImageData = pasteCtx.getImageData(0, 0, img.width, img.height);
                                     URL.revokeObjectURL(url);
                                     pasteSelectionInternal(pastedImageData);
                                 };
@@ -1573,6 +1621,133 @@
         return value / Math.max(0.125, state.zoom || 1);
     }
 
+    function isPixelRasterWidth(value) {
+        var width = Number(value);
+        return Number.isFinite(width) && width >= 1 && Math.abs(width - Math.round(width)) < 0.0001;
+    }
+
+    function drawHardPixelLine(ctx, x0, y0, x1, y1, width) {
+        if (!ctx) return;
+        var thickness = Math.max(1, Math.round(Number(width) || 1));
+        var half = Math.floor(thickness / 2);
+        var startX = Math.round(x0), startY = Math.round(y0);
+        var endX = Math.round(x1), endY = Math.round(y1);
+        var dx = Math.abs(endX - startX), sx = startX < endX ? 1 : -1;
+        var dy = -Math.abs(endY - startY), sy = startY < endY ? 1 : -1;
+        var error = dx + dy;
+        while (true) {
+            ctx.fillRect(startX - half, startY - half, thickness, thickness);
+            if (startX === endX && startY === endY) break;
+            var doubled = 2 * error;
+            if (doubled >= dy) { error += dy; startX += sx; }
+            if (doubled <= dx) { error += dx; startY += sy; }
+        }
+    }
+
+    function drawHardPolygonOutline(ctx, points, width) {
+        if (!ctx || !points || points.length < 2) return;
+        for (var i = 0; i < points.length; i++) {
+            var current = points[i];
+            var next = points[(i + 1) % points.length];
+            drawHardPixelLine(ctx, current[0], current[1], next[0], next[1], width);
+        }
+    }
+
+    function drawHardPolygonFill(ctx, points) {
+        if (!ctx || !points || points.length < 3) return;
+        var minY = Infinity, maxY = -Infinity;
+        points.forEach(function (point) {
+            minY = Math.min(minY, point[1]);
+            maxY = Math.max(maxY, point[1]);
+        });
+        for (var y = Math.floor(minY); y <= Math.ceil(maxY); y++) {
+            var sampleY = y + 0.5;
+            var intersections = [];
+            for (var i = 0; i < points.length; i++) {
+                var a = points[i];
+                var b = points[(i + 1) % points.length];
+                if ((a[1] <= sampleY && b[1] > sampleY) || (b[1] <= sampleY && a[1] > sampleY)) {
+                    intersections.push(a[0] + (sampleY - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+                }
+            }
+            intersections.sort(function (a, b) { return a - b; });
+            for (var j = 0; j + 1 < intersections.length; j += 2) {
+                var left = Math.ceil(intersections[j] - 0.5);
+                var right = Math.floor(intersections[j + 1] - 0.5);
+                if (right >= left) ctx.fillRect(left, y, right - left + 1, 1);
+            }
+        }
+    }
+
+    function buildEllipsePoints(cx, cy, rx, ry) {
+        var radius = Math.max(Math.abs(rx), Math.abs(ry));
+        var segments = Math.min(256, Math.max(24, Math.ceil(radius * Math.PI)));
+        var points = [];
+        for (var i = 0; i < segments; i++) {
+            var angle = (i / segments) * Math.PI * 2;
+            points.push([cx + rx * Math.cos(angle), cy + ry * Math.sin(angle)]);
+        }
+        return points;
+    }
+
+    function buildRoundedRectPoints(x, y, w, h, radius) {
+        var r = Math.max(0, Math.min(radius, Math.abs(w) / 2, Math.abs(h) / 2));
+        if (!r) return [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+        var points = [];
+        var corners = [
+            [x + w - r, y + r, -Math.PI / 2],
+            [x + w - r, y + h - r, 0],
+            [x + r, y + h - r, Math.PI / 2],
+            [x + r, y + r, Math.PI],
+        ];
+        corners.forEach(function (corner) {
+            for (var i = 0; i <= 6; i++) {
+                var angle = corner[2] + (i / 6) * Math.PI / 2;
+                points.push([corner[0] + r * Math.cos(angle), corner[1] + r * Math.sin(angle)]);
+            }
+        });
+        return points;
+    }
+
+    function renderPixelShape(ctx, tool, x1, y1, x2, y2, mode, lineW) {
+        var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+        var rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
+        var points;
+        switch (tool) {
+            case "rect":
+                points = [[Math.min(x1, x2), Math.min(y1, y2)], [Math.max(x1, x2), Math.min(y1, y2)],
+                    [Math.max(x1, x2), Math.max(y1, y2)], [Math.min(x1, x2), Math.max(y1, y2)]];
+                break;
+            case "rounded-rect":
+                points = buildRoundedRectPoints(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1), Math.min(12, rx * 0.3, ry * 0.3));
+                break;
+            case "ellipse":
+                points = buildEllipsePoints(cx, cy, rx, ry);
+                break;
+            case "triangle":
+                points = [[cx, y1], [x2, y2], [x1, y2]];
+                break;
+            case "diamond":
+                points = [[cx, y1], [x2, cy], [cx, y2], [x1, cy]];
+                break;
+            case "star":
+                points = [];
+                var starRadius = Math.max(rx, ry);
+                for (var i = 0; i < 10; i++) {
+                    var starAngle = i * Math.PI / 5 - Math.PI / 2;
+                    var radius = i % 2 === 0 ? starRadius : starRadius * 0.4;
+                    points.push([cx + radius * Math.cos(starAngle) * (rx / Math.max(rx, starRadius || 1)),
+                        cy + radius * Math.sin(starAngle) * (ry / Math.max(ry, starRadius || 1))]);
+                }
+                break;
+            default:
+                return false;
+        }
+        if (mode === "filled" || mode === "both") drawHardPolygonFill(ctx, points);
+        if (mode === "outline" || mode === "both") drawHardPolygonOutline(ctx, points, lineW);
+        return true;
+    }
+
     // ── 도형 도구 ─────────────────────────────────────────────────────────
     function beginShape(x, y, useSecondary) { state.shapeUseSecondary = useSecondary; }
 
@@ -1596,7 +1771,30 @@
     function renderShape(ctx, tool, x1, y1, x2, y2, color, mode, lineW) {
         ctx.save();
         ctx.strokeStyle = color; ctx.fillStyle = color;
-        ctx.lineWidth = lineW; ctx.lineCap = "round"; ctx.lineJoin = "round";
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
+        ctx.filter = "none";
+        ctx.lineWidth = lineW; ctx.lineCap = "butt"; ctx.lineJoin = "miter";
+        if (isPixelRasterWidth(lineW)) {
+            if (tool === "line") {
+                drawHardPixelLine(ctx, x1, y1, x2, y2, lineW);
+                ctx.restore();
+                return;
+            }
+            if (tool === "arrow") {
+                var arrowAngle = Math.atan2(y2 - y1, x2 - x1);
+                var arrowHead = Math.max(lineW * 3, 12);
+                drawHardPixelLine(ctx, x1, y1, x2, y2, lineW);
+                drawHardPixelLine(ctx, x2, y2, x2 - arrowHead * Math.cos(arrowAngle - Math.PI / 6), y2 - arrowHead * Math.sin(arrowAngle - Math.PI / 6), lineW);
+                drawHardPixelLine(ctx, x2, y2, x2 - arrowHead * Math.cos(arrowAngle + Math.PI / 6), y2 - arrowHead * Math.sin(arrowAngle + Math.PI / 6), lineW);
+                ctx.restore();
+                return;
+            }
+            if (renderPixelShape(ctx, tool, x1, y1, x2, y2, mode, lineW)) {
+                ctx.restore();
+                return;
+            }
+        }
         var cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
         var rx = Math.abs(x2 - x1) / 2, ry = Math.abs(y2 - y1) / 2;
         ctx.beginPath();
@@ -1730,7 +1928,7 @@
         var abs = Math.abs(degrees) % 360;
         if (abs === 90) { tmp.width = state.canvasHeight; tmp.height = state.canvasWidth; }
         else            { tmp.width = state.canvasWidth;  tmp.height = state.canvasHeight; }
-        var ctx = tmp.getContext("2d");
+        var ctx = getPixelatedContext(tmp);
         ctx.save();
         ctx.translate(tmp.width / 2, tmp.height / 2);
         ctx.rotate(degrees * Math.PI / 180);
@@ -1747,7 +1945,7 @@
         if (!mainCanvas) return;
         var tmp = document.createElement("canvas");
         tmp.width = state.canvasWidth; tmp.height = state.canvasHeight;
-        var ctx = tmp.getContext("2d");
+        var ctx = getPixelatedContext(tmp);
         ctx.save();
         if (axis === "h") { ctx.translate(state.canvasWidth, 0); ctx.scale(-1, 1); }
         else              { ctx.translate(0, state.canvasHeight); ctx.scale(1, -1); }
@@ -1762,6 +1960,7 @@
     function resizeCanvasTo(w, h) {
         state.canvasWidth  = w; state.canvasHeight = h;
         mainCanvas.width   = w; mainCanvas.height  = h;
+        mainCtx.imageSmoothingEnabled = false;
         syncOverlayCanvasResolution();
         clearOverlayCanvas();
     }
@@ -1771,8 +1970,7 @@
         newW = Math.max(1, newW); newH = Math.max(1, newH);
         var tmp = document.createElement("canvas");
         tmp.width = newW; tmp.height = newH;
-        var ctx = tmp.getContext("2d");
-        ctx.imageSmoothingEnabled = true;
+        var ctx = getPixelatedContext(tmp);
         ctx.drawImage(mainCanvas, 0, 0, newW, newH);
         resizeCanvasTo(newW, newH);
         mainCtx.drawImage(tmp, 0, 0);
@@ -1863,6 +2061,7 @@
 
         state.canvasWidth  = newW; state.canvasHeight = newH;
         mainCanvas.width   = newW; mainCanvas.height  = newH;
+        mainCtx.imageSmoothingEnabled = false;
         syncOverlayCanvasResolution();
         clearOverlayCanvas();
 
@@ -1878,8 +2077,6 @@
     }
 
     // ── 줌 ───────────────────────────────────────────────────────────────
-    var ZOOM_LEVELS = [0.125, 0.25, 0.333, 0.5, 0.667, 0.75, 1, 1.5, 2, 3, 4, 6, 8];
-
     function setZoom(newZoom) {
         state.zoom = Math.max(0.125, Math.min(8, newZoom));
         if (canvasWrap) {
@@ -1905,20 +2102,6 @@
             return;
         }
         setZoom(Math.min(areaW / state.canvasWidth, areaH / state.canvasHeight, 1));
-    }
-
-    function nextZoomLevel(current) {
-        for (var i = 0; i < ZOOM_LEVELS.length; i++) {
-            if (ZOOM_LEVELS[i] > current + 0.001) return ZOOM_LEVELS[i];
-        }
-        return ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
-    }
-
-    function prevZoomLevel(current) {
-        for (var i = ZOOM_LEVELS.length - 1; i >= 0; i--) {
-            if (ZOOM_LEVELS[i] < current - 0.001) return ZOOM_LEVELS[i];
-        }
-        return ZOOM_LEVELS[0];
     }
 
     // ── 상태바 ───────────────────────────────────────────────────────────
@@ -2152,8 +2335,8 @@
             var k = e.key.toLowerCase();
             if (!ctrl && toolKeys[k]) { setActiveTool(toolKeys[k]); return; }
 
-            if (ctrl && e.key === "=") { e.preventDefault(); setZoom(nextZoomLevel(state.zoom)); return; }
-            if (ctrl && e.key === "-") { e.preventDefault(); setZoom(prevZoomLevel(state.zoom)); return; }
+            if (ctrl && e.key === "=") { e.preventDefault(); setZoom(getImageEditorZoomStepValue(state.zoom, 1)); return; }
+            if (ctrl && e.key === "-") { e.preventDefault(); setZoom(getImageEditorZoomStepValue(state.zoom, -1)); return; }
             if (ctrl && e.key === "0") { e.preventDefault(); setZoom(1); return; }
         };
         document.addEventListener("keydown", boundKeyDown);
@@ -2390,7 +2573,7 @@
         var tmp = document.createElement("canvas");
         tmp.width = s.w;
         tmp.height = s.h;
-        var tmpCtx = tmp.getContext("2d");
+        var tmpCtx = getPixelatedContext(tmp);
         var hasPoly = state.freeSelectPath && state.freeSelectPath.length > 2;
 
         if (state.selectionFloating && state.selectionImageData) {

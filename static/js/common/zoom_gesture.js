@@ -8,6 +8,8 @@
     const DEFAULT_MIN_VALUE = 0.1;
     const DEFAULT_MAX_VALUE = 10;
     const DEFAULT_WHEEL_STEP = 1;
+    const DEFAULT_ZOOM_STEP_RATIO = 1.125;
+    const DEFAULT_WHEEL_DELTA_UNIT = 100;
 
     function resolveOption(option, fallback, context) {
         if (typeof option === "function") {
@@ -56,6 +58,32 @@
             delta *= window.innerHeight || 800;
         }
         return delta;
+    }
+
+    function getZoomStepValue(currentValue, direction, ratio) {
+        const value = Number(currentValue);
+        const safeValue = Number.isFinite(value) && value > 0 ? value : 1;
+        const resolvedRatio = Number(ratio);
+        const safeRatio = Number.isFinite(resolvedRatio) && resolvedRatio > 1
+            ? resolvedRatio
+            : DEFAULT_ZOOM_STEP_RATIO;
+        return safeValue * (Number(direction) >= 0 ? safeRatio : (1 / safeRatio));
+    }
+
+    function getProportionalWheelValue(context, options) {
+        const settings = options || {};
+        const currentValue = Number(context && context.currentValue);
+        const safeCurrentValue = Number.isFinite(currentValue) && currentValue > 0 ? currentValue : 1;
+        const normalizedDelta = Number(context && context.normalizedDelta) || Number(context && context.delta) || 0;
+        const resolvedRatio = Number(resolveOption(settings.wheelRatio, DEFAULT_ZOOM_STEP_RATIO, context));
+        const safeRatio = Number.isFinite(resolvedRatio) && resolvedRatio > 1
+            ? resolvedRatio
+            : DEFAULT_ZOOM_STEP_RATIO;
+        const resolvedDeltaUnit = Number(resolveOption(settings.wheelDeltaUnit, DEFAULT_WHEEL_DELTA_UNIT, context));
+        const safeDeltaUnit = Number.isFinite(resolvedDeltaUnit) && resolvedDeltaUnit > 0
+            ? resolvedDeltaUnit
+            : DEFAULT_WHEEL_DELTA_UNIT;
+        return safeCurrentValue * Math.pow(safeRatio, -normalizedDelta / safeDeltaUnit);
     }
 
     function getTouchPoint(touch) {
@@ -160,7 +188,7 @@
             context.step = step;
             const nextValue = typeof settings.getWheelValue === "function"
                 ? settings.getWheelValue(context)
-                : currentValue + (direction * step);
+                : getProportionalWheelValue(context, settings);
             writeCurrentValue(nextValue, settings, context);
         }
 
@@ -353,7 +381,6 @@
         bind(surface, {
             min: controller.getMin,
             max: controller.getMax,
-            wheelStep: controller.getWheelStep,
             getValue: controller.getValue,
             setValue: controller.setValue,
         });
@@ -447,9 +474,6 @@
             getMax: function () {
                 return controller.getKind() === "text" ? 40 : 4;
             },
-            getWheelStep: function () {
-                return controller.getKind() === "text" ? 2 : 0.15;
-            },
             getValue: function () {
                 var kind = controller.getKind();
                 if (kind === "text") {
@@ -505,7 +529,10 @@
                 if (Math.abs(delta) < 0.01) {
                     return;
                 }
-                controller.setValue(state.frameZoom + ((delta < 0 ? 1 : -1) * 0.15));
+                controller.setValue(getProportionalWheelValue({
+                    currentValue: state.frameZoom,
+                    normalizedDelta: delta,
+                }));
             },
             apply: function () {
                 var content = controller.getContent();
@@ -539,7 +566,6 @@
         bind(body, {
             min: controller.getMin,
             max: controller.getMax,
-            wheelStep: controller.getWheelStep,
             getValue: controller.getValue,
             setValue: controller.setValue,
         });
@@ -608,6 +634,11 @@
 
     window.HanplanetZoomGesture = {
         bind: bind,
+        getProportionalWheelValue: getProportionalWheelValue,
+        getZoomStepValue: getZoomStepValue,
+        normalizeWheelDelta: normalizeWheelDelta,
+        stepRatio: DEFAULT_ZOOM_STEP_RATIO,
+        wheelDeltaUnit: DEFAULT_WHEEL_DELTA_UNIT,
     };
     window.HanplanetPreviewModalZoom = {
         bind: bindUiPreviewModalZoom,

@@ -85,6 +85,17 @@
     touch-action: none;
     overscroll-behavior: contain;
 }
+/* Keep the high-resolution map background crisp after Leaflet finishes a zoom. */
+.map-viewer-page img.leaflet-image-layer {
+    image-rendering: auto;
+    image-rendering: high-quality;
+    image-rendering: -webkit-optimize-contrast;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+.map-viewer-page .leaflet-overlay-pane svg {
+    shape-rendering: geometricPrecision;
+}
 .map-loading-overlay {
     position: absolute;
     inset: 0;
@@ -2252,48 +2263,6 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         }
     }, 20000);
 
-    function installMapWheelZoom() {
-        if (!map || !map.getContainer) return;
-        var mapContainer = map.getContainer();
-        var wheelDelta = 0;
-        var wheelPoint = null;
-        var wheelFrame = 0;
-
-        function normalizeWheelDelta(event) {
-            var delta = Number(event.deltaY) || 0;
-            if (event.deltaMode === 1) {
-                delta *= 16;
-            } else if (event.deltaMode === 2) {
-                delta *= window.innerHeight || 800;
-            }
-            return delta;
-        }
-
-        function flushWheelZoom() {
-            wheelFrame = 0;
-            if (!map || !wheelDelta) return;
-            var point = wheelPoint || map.getSize().divideBy(2);
-            var pixelsPerZoom = Math.max(1, (Number(map.options.wheelPxPerZoomLevel) || 120) * 2);
-            var nextZoom = map._limitZoom(map.getZoom() - (wheelDelta / pixelsPerZoom));
-            wheelDelta = 0;
-            if (nextZoom === map.getZoom()) return;
-            if (map._stop) map._stop();
-            map.setZoomAround(point, nextZoom);
-        }
-
-        mapContainer.addEventListener("wheel", function(event) {
-            var delta = normalizeWheelDelta(event);
-            if (!delta) return;
-            event.preventDefault();
-            event.stopPropagation();
-            wheelDelta += delta;
-            wheelPoint = map.mouseEventToContainerPoint(event);
-            if (!wheelFrame) {
-                wheelFrame = window.requestAnimationFrame(flushWheelZoom);
-            }
-        }, { passive: false });
-    }
-
     function isSameOriginImage(src) {
         if (!src) return false;
         if (/^(data|blob):/i.test(src)) return true;
@@ -2893,7 +2862,6 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             doubleClickZoom: true,
             zoomControl: false,
         });
-        installMapWheelZoom();
         L.control.zoom({ position: "topright" }).addTo(map);
         installMapPipButton();
         var scheduleTopRightControlSizeUpdate = null;
@@ -3586,11 +3554,54 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
         // ── Stroke weight (scales with zoom so lines look constant on the image) ──
         var BASE_WEIGHT = 4;
+        var STROKE_OUTLINE_EXTRA_WIDTH = 2;
         var refZoom = null;  // lazily set on first use (map may be null at IIFE run time)
         function getStrokeWeight() {
             if (!map) return BASE_WEIGHT;
             if (refZoom === null) refZoom = map.getZoom();
             return Math.max(0.5, BASE_WEIGHT * Math.pow(2, map.getZoom() - refZoom));
+        }
+        function getStrokeOutlineWeight() {
+            return getStrokeWeight() + (STROKE_OUTLINE_EXTRA_WIDTH * 2);
+        }
+        function createStrokePolyline(points, color, opacity) {
+            var outline = L.polyline(points, {
+                color: "#fff",
+                weight: getStrokeOutlineWeight(),
+                opacity: Math.min(1, (opacity || 0.8) + 0.1),
+                lineCap: "round",
+                lineJoin: "round",
+                interactive: false
+            }).addTo(map);
+            var line = L.polyline(points, {
+                color: color,
+                weight: getStrokeWeight(),
+                opacity: opacity || 0.8,
+                lineCap: "round",
+                lineJoin: "round",
+                interactive: false
+            }).addTo(map);
+            line._strokeOutline = outline;
+            return line;
+        }
+        function setStrokePolylinePoints(line, points) {
+            if (!line) return;
+            line.setLatLngs(points);
+            if (line._strokeOutline) line._strokeOutline.setLatLngs(points);
+        }
+        function setStrokePolylineWeight(line) {
+            if (!line) return;
+            line.setStyle({ weight: getStrokeWeight() });
+            if (line._strokeOutline) {
+                line._strokeOutline.setStyle({ weight: getStrokeOutlineWeight() });
+            }
+        }
+        function removeStrokePolyline(line) {
+            if (!line || !map) return;
+            if (line._strokeOutline && map.hasLayer(line._strokeOutline)) {
+                map.removeLayer(line._strokeOutline);
+            }
+            if (map.hasLayer(line)) map.removeLayer(line);
         }
         // Register zoomend AFTER map is ready (called from initMap via window._onMapReady)
         var _pendingStrokes = [];
@@ -3607,13 +3618,12 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             }
             _pendingTexts = [];
             map.on("zoomend", function () {
-                var w = getStrokeWeight();
                 for (var i = 0; i < strokeLayers.length; i++) {
-                    if (map.hasLayer(strokeLayers[i])) strokeLayers[i].setStyle({ weight: w });
+                    if (map.hasLayer(strokeLayers[i])) setStrokePolylineWeight(strokeLayers[i]);
                 }
-                if (localLine) localLine.setStyle({ weight: w });
+                if (localLine) setStrokePolylineWeight(localLine);
                 for (var id in peerState) {
-                    if (peerState[id].line) peerState[id].line.setStyle({ weight: w });
+                    if (peerState[id].line) setStrokePolylineWeight(peerState[id].line);
                 }
                 layoutAllTextBlocks();
                 updatePingEdgeIndicators();
@@ -4132,9 +4142,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 strokeAction.op = "delete";
                 pushUndoAction(strokeAction);
             }
-            if (map.hasLayer(layer)) {
-                map.removeLayer(layer);
-            }
+            removeStrokePolyline(layer);
             for (var i = 0; i < strokeLayers.length; i++) {
                 if (strokeLayers[i] === layer) {
                     strokeLayers.splice(i, 1);
@@ -4778,9 +4786,9 @@ body.map-viewer-page.eraser-mode .leaflet-container {
                 drawPoints.push(pixelLL(px.x, px.y));
                 drawRawPoints.push({ x: px.x, y: px.y });
                 if (!localLine) {
-                    localLine = L.polyline(drawPoints, { color: myColor, weight: getStrokeWeight(), opacity: 0.85, interactive: false }).addTo(map);
+                    localLine = createStrokePolyline(drawPoints, myColor, 0.85);
                 } else {
-                    localLine.setLatLngs(drawPoints);
+                    setStrokePolylinePoints(localLine, drawPoints);
                 }
                 if (wsActive && now - lastDrawSent >= DRAW_THROTTLE_MS) {
                     lastDrawSent = now;
@@ -4801,11 +4809,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var finishedLine = localLine;
             localLine = null;
             if (cancel || drawPoints.length < 2) {
-                if (finishedLine) map.removeLayer(finishedLine);
+                if (finishedLine) removeStrokePolyline(finishedLine);
                 if (wsActive) send({ type: "draw_cancel" });
             } else {
                 if (wsActive) {
-                    if (finishedLine) map.removeLayer(finishedLine);
+                    if (finishedLine) removeStrokePolyline(finishedLine);
                     pendingStrokeHistory = cloneStrokeAction(null, myColor, drawRawPoints);
                     send({ type: "draw_end", points: drawRawPoints });
                 } else {
@@ -5201,16 +5209,16 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var p = ensurePeer(id, color);
             p.drawPts.push(pixelLL(x, y));
             if (!p.line) {
-                p.line = L.polyline(p.drawPts, { color: p.color, weight: getStrokeWeight(), opacity: 0.85, interactive: false }).addTo(map);
+                p.line = createStrokePolyline(p.drawPts, p.color, 0.85);
             } else {
-                p.line.setLatLngs(p.drawPts);
+                setStrokePolylinePoints(p.line, p.drawPts);
             }
             moveCursor(id, color, x, y);
         }
 
         function finalizeStroke(id, color, points, strokeId) {
             var p = ensurePeer(id, color);
-            if (p.line) { map.removeLayer(p.line); p.line = null; }
+            if (p.line) { removeStrokePolyline(p.line); p.line = null; }
             p.drawPts = [];
             renderStroke(color, points, strokeId);
             if (id === myId) {
@@ -5228,7 +5236,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
 
         function cancelDraw(id) {
             var p = peerState[id]; if (!p) return;
-            if (p.line) { map.removeLayer(p.line); p.line = null; }
+            if (p.line) { removeStrokePolyline(p.line); p.line = null; }
             p.drawPts = [];
         }
 
@@ -5236,10 +5244,11 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             if (!points || points.length < 2) return;
             if (!map) { _pendingStrokes.push({ color: color, points: points, strokeId: strokeId }); return; }
             if (strokeId) eraseStrokeById(strokeId);
-            var pl = L.polyline(
+            var pl = createStrokePolyline(
                 points.map(function (pt) { return pixelLL(pt.x, pt.y); }),
-                { color: color, weight: getStrokeWeight(), opacity: 0.8, interactive: false }
-            ).addTo(map);
+                color,
+                0.8
+            );
             pl._strokeId = strokeId || null;
             pl._strokeColor = color || myColor;
             pl._strokePoints = points.map(function(pt) { return { x: pt.x, y: pt.y }; });
@@ -5250,7 +5259,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
         function eraseStrokeById(strokeId) {
             for (var i = 0; i < strokeLayers.length; i++) {
                 if (strokeLayers[i]._strokeId === strokeId) {
-                    map.removeLayer(strokeLayers[i]);
+                    removeStrokePolyline(strokeLayers[i]);
                     strokeLayers.splice(i, 1);
                     return;
                 }
@@ -5261,7 +5270,7 @@ body.map-viewer-page.eraser-mode .leaflet-container {
             var p = peerState[id]; if (!p) return;
             clearTimeout(p.hideTimer);
             if (p.marker) map.removeLayer(p.marker);
-            if (p.line) map.removeLayer(p.line);
+            if (p.line) removeStrokePolyline(p.line);
             delete peerState[id];
         }
 

@@ -63,7 +63,7 @@
                 <a
                     class="handrive-icon-btn"
                     id="handrive-list-toolbar-archive-download-btn"
-                    href="{{ handrive_api_download_url }}?path={{ current_dir_archive_path|default:''|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}{% if handrive_admin_user %}&{{ handrive_admin_user_param|default:'handrive_user'|urlencode }}={{ handrive_admin_user|urlencode }}{% endif %}"
+                    href="{% if current_dir_share_download_url %}{{ current_dir_share_download_url }}{% else %}{{ handrive_api_download_url }}?path={{ current_dir_archive_path|default:''|urlencode }}{% if handrive_shared_owner_username and handrive_shared_slug %}&share_owner={{ handrive_shared_owner_username|urlencode }}&share_slug={{ handrive_shared_slug|urlencode }}{% endif %}{% if handrive_admin_user %}&{{ handrive_admin_user_param|default:'handrive_user'|urlencode }}={{ handrive_admin_user|urlencode }}{% endif %}{% endif %}"
                     aria-label="{{ handrive_text.download_button }}"
                     title="{{ handrive_text.download_button }}"
                     {% if not current_dir_is_archive_virtual %}hidden{% endif %}
@@ -416,7 +416,6 @@
 {% include "partials/site_footer_links.html" %}
 
 {% include "popup/handrive/context_menu.html" %}
-{% include "popup/handrive/markdown_snippet_menu.html" %}
 
 {% include "popup/handrive/archive_extract_modal.html" %}
 {% include "popup/handrive/archive_create_modal.html" %}

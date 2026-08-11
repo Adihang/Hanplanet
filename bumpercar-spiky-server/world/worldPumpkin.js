@@ -577,6 +577,16 @@ module.exports = {
         pumpkinNpc.collisionImpactUntil = now + COLLISION_IMPACT_DURATION_MS
         pumpkinNpc.collisionImpactX = attackDirectionX
         pumpkinNpc.collisionImpactY = attackDirectionY
+        // 펌킨 NPC 명중도 플레이어 간 충돌과 같은 충돌이다. 이 경로가 반환으로 끝나면
+        // 쌍핔이 유닛은 기존 돌진 상태를 계속 유지하므로, 공격자의 돌진과 재입력을 함께 끊는다.
+        if (!attacker.isNpc && !attacker.isDummy) {
+            attacker.collisionVisualUntil = pumpkinNpc.collisionVisualUntil
+            attacker.collisionImpactUntil = pumpkinNpc.collisionImpactUntil
+            attacker.collisionVisualType = "win"
+            attacker.collisionImpactX = -attackDirectionX
+            attacker.collisionImpactY = -attackDirectionY
+            this.applyCollisionSlow(attacker, now, attacker.collisionVisualUntil)
+        }
         this.startPumpkinNpcDefeatDash(
             pumpkinNpc,
             attackDirectionX,

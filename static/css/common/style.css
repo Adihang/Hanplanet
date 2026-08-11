@@ -41,7 +41,7 @@
     --site-modal-backdrop-opacity: 0.24;
     --site-modal-backdrop-bg: rgb(var(--site-modal-backdrop-rgb) / var(--site-modal-backdrop-opacity));
     --site-modal-surface-rgb: 248 248 248;
-    --site-modal-surface-opacity: 0.72;
+    --site-modal-surface-opacity: 0.84;
     --site-modal-surface-bg: rgb(var(--site-modal-surface-rgb) / var(--site-modal-surface-opacity));
     --site-loading-content-filter: blur(3px);
     --site-loading-content-opacity: 0.46;
@@ -1153,7 +1153,14 @@ body.root-page {
 }
 
 .root-search-shell {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
     width: min(920px, 100%);
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
     min-height: auto;
     display: flex;
     flex-direction: column;
@@ -4879,6 +4886,8 @@ body.portfolio-page .projects .project_card:has(.project_card_link:active) {
     --handrive-mermaid-line: var(--handrive-text-muted, var(--site-text-muted, #535353));
     --handrive-mermaid-node-bg: var(--handrive-surface-subtle, var(--site-surface-muted, #f5f5f5));
     --handrive-mermaid-node-text: var(--handrive-text, var(--site-text, #222222));
+    --handrive-mermaid-arrow: #393939;
+    --handrive-mermaid-arrow: color-mix(in srgb, var(--handrive-mermaid-line) 60%, var(--handrive-mermaid-node-text) 40%);
     --handrive-mermaid-edge-label-bg: var(--handrive-mermaid-bg);
     --handrive-mermaid-label-radius: var(--handrive-radius-sm, 8px);
     margin: 12px 0;
@@ -4894,6 +4903,9 @@ body.theme-dark .handrive-mermaid {
     --handrive-mermaid-line: var(--handrive-text-stronger, var(--site-text-stronger, #fafafa));
     --handrive-mermaid-node-bg: var(--handrive-surface-subtle, var(--site-surface-muted, #363636));
     --handrive-mermaid-node-text: var(--handrive-text, var(--site-text, #f2f2f2));
+    /* Keep arrowheads visibly separate from both the near-white text and lines. */
+    --handrive-mermaid-arrow: #b7b7b7;
+    --handrive-mermaid-arrow: color-mix(in srgb, var(--handrive-mermaid-node-text) 55%, #777777 45%);
 }
 
 .handrive-mermaid-output {
@@ -4912,9 +4924,18 @@ body.theme-dark .handrive-mermaid {
     stroke: var(--handrive-mermaid-line);
 }
 
-.handrive-mermaid-output .marker {
-    fill: var(--handrive-mermaid-line);
-    stroke: var(--handrive-mermaid-line);
+.handrive-mermaid-output .marker,
+.handrive-mermaid-output .marker .arrowMarkerPath,
+.handrive-mermaid-output marker.marker.flowchart,
+.handrive-mermaid-output marker.marker.flowchart path.arrowMarkerPath,
+.handrive-mermaid-output marker#arrowhead,
+.handrive-mermaid-output marker#arrowhead path,
+.handrive-mermaid-output marker#crosshead,
+.handrive-mermaid-output marker#crosshead path,
+.handrive-mermaid-output marker#filled-head,
+.handrive-mermaid-output marker#filled-head path {
+    fill: var(--handrive-mermaid-arrow) !important;
+    stroke: var(--handrive-mermaid-arrow) !important;
 }
 
 .handrive-mermaid-output .node rect,
@@ -4947,6 +4968,11 @@ body.theme-dark .handrive-mermaid {
 .handrive-mermaid-output .labelBkg {
     background: var(--handrive-mermaid-edge-label-bg);
     fill: var(--handrive-mermaid-edge-label-bg);
+}
+
+.handrive-mermaid-output .edgeLabel .labelBkg {
+    background: transparent !important;
+    fill: transparent !important;
 }
 
 .handrive-mermaid-source {

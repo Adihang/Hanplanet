@@ -1,6 +1,12 @@
 const assert = require("node:assert/strict")
 const test = require("node:test")
 
+const accountStats = require("../services/accountStats")
+const recordedStatsUpdates = []
+accountStats.postStatsUpdate = (...args) => {
+    recordedStatsUpdates.push(args)
+}
+
 const RaiseSpeakiWorld = require("../world/raiseSpeakiWorld")
 
 function findDummy(world) {
@@ -8,6 +14,7 @@ function findDummy(world) {
 }
 
 test("Raise Speaki locks a level-10 winner, freezes the round, and resets after the result countdown", () => {
+    recordedStatsUpdates.length = 0
     const world = new RaiseSpeakiWorld()
     const neutralPumpkins = Array.from(world.players.values()).filter((player) => player.isNeutralPumpkinNpc)
     assert.equal(neutralPumpkins.length, 4)
@@ -32,6 +39,9 @@ test("Raise Speaki locks a level-10 winner, freezes the round, and resets after 
     world.advanceRaiseSpeakiWinnerRound(world.raiseSpeakiWinnerCountdownUntil)
 
     assert.equal(world.raiseSpeakiWinnerPhase, "result")
+    assert.deepEqual(recordedStatsUpdates, [["winner", { raise_speaki_wins: 1 }]])
+    world.advanceRaiseSpeakiWinnerRound(world.raiseSpeakiWinnerRestartUntil - 1)
+    assert.equal(recordedStatsUpdates.length, 1)
     assert.equal(world.getRaiseSpeakiWinnerCountdownSeconds(world.raiseSpeakiWinnerRestartUntil - 5_000), 5)
     for (const player of world.players.values()) {
         assert.equal(player.currentSpeed, 0)
@@ -50,6 +60,19 @@ test("Raise Speaki locks a level-10 winner, freezes the round, and resets after 
     assert.equal(world.getStoredPlayerProgress("disconnected-level-ten"), null)
     assert.equal(winner.level, 1)
     assert.equal(otherPlayer.level, 1)
+})
+
+test("Raise Speaki NPC victories do not award an account skin-unlock stat", () => {
+    recordedStatsUpdates.length = 0
+    const world = new RaiseSpeakiWorld()
+    const npcWinner = findDummy(world)
+    world.applyRaiseSpeakiLevel(npcWinner, 10)
+    world.update()
+
+    world.advanceRaiseSpeakiWinnerRound(world.raiseSpeakiWinnerCountdownUntil)
+
+    assert.equal(world.raiseSpeakiWinnerPhase, "result")
+    assert.equal(recordedStatsUpdates.length, 0)
 })
 
 test("Raise Speaki AI target weights increase with target level and decrease with distance", () => {

@@ -1087,6 +1087,18 @@ DOCS_NON_EDITABLE_MEDIA_MODES = {
     DOCS_RENDER_MODE_OFFICE,
     DOCS_RENDER_MODE_PDF,
 }
+DOCS_PRINTABLE_RENDER_MODES = frozenset({
+    DOCS_RENDER_MODE_MARKDOWN,
+    DOCS_RENDER_MODE_PLAIN_TEXT,
+    DOCS_RENDER_MODE_MEDIA_IMAGE,
+    DOCS_RENDER_MODE_OFFICE,
+    DOCS_RENDER_MODE_PDF,
+})
+
+
+def is_handrive_printable_render_mode(render_mode: str | None) -> bool:
+    """읽기/미리보기에서 인쇄 버튼을 제공할 수 있는 render mode인지 반환한다."""
+    return str(render_mode or "").strip().lower() in DOCS_PRINTABLE_RENDER_MODES
 
 DOCS_TEXT = {
     "ko": {
@@ -15221,11 +15233,7 @@ def handrive_view(request, doc_path, ui_lang=None):
             doc_edit_url,
             {"tutorial": "1", "from_list": handrive_tutorial_return_url},
         )
-    doc_can_print = render_profile["mode"] not in {
-        DOCS_RENDER_MODE_MEDIA_VIDEO,
-        DOCS_RENDER_MODE_MEDIA_3D,
-        DOCS_RENDER_MODE_UNSUPPORTED,
-    }
+    doc_can_print = is_handrive_printable_render_mode(render_profile["mode"])
 
     context.update(
         {
@@ -15240,7 +15248,9 @@ def handrive_view(request, doc_path, ui_lang=None):
             "doc_can_demo_edit": doc_can_demo_edit,
             "doc_can_save_spreadsheet": False,
             "doc_can_show_edit": doc_can_show_edit,
+            "doc_edit_visibility": "1" if doc_can_show_edit else "0",
             "doc_edit_url": doc_edit_url,
+            "doc_edit_href": doc_edit_url if doc_can_show_edit else "",
             "doc_is_url_only": doc_is_url_only,
             "doc_share_url": doc_share_url,
             "doc_share_download_url": doc_share_download_url,
@@ -15390,17 +15400,15 @@ def handrive_shared_view(request, owner_username, share_slug, ui_lang=None, shar
             "doc_slug_path": share_slug,
             "doc_parent_dir": "",
             "doc_can_read": True,
-            "doc_can_print": render_profile["mode"] not in {
-                DOCS_RENDER_MODE_MEDIA_VIDEO,
-                DOCS_RENDER_MODE_MEDIA_3D,
-                DOCS_RENDER_MODE_UNSUPPORTED,
-            },
+            "doc_can_print": is_handrive_printable_render_mode(render_profile["mode"]),
             "doc_can_edit": doc_can_edit,
             "doc_can_delete": doc_can_delete,
             "doc_can_demo_edit": False,
             "doc_can_save_spreadsheet": False,
             "doc_can_show_edit": doc_can_show_edit,
+            "doc_edit_visibility": "1" if doc_can_show_edit else "0",
             "doc_edit_url": doc_edit_url,
+            "doc_edit_href": doc_edit_url if doc_can_show_edit else "",
             "doc_is_excel_file": file_extension in {".xls", ".xlsx"},
             "doc_is_spreadsheet_file": doc_is_spreadsheet_file,
             "doc_is_url_only": True,

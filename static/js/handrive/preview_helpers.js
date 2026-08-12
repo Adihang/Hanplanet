@@ -165,6 +165,66 @@
         }
     }
 
+    var printablePreviewRenderModes = new Set([
+        "markdown",
+        "plain_text",
+        "media_image",
+        "office",
+        "pdf"
+    ]);
+
+    function isPrintablePreviewRenderMode(renderMode) {
+        return printablePreviewRenderModes.has(String(renderMode || "").trim().toLowerCase());
+    }
+
+    function getHandriveActionVisibility(options) {
+        var settings = options || {};
+        var entry = settings.entry || null;
+        var isFileEntry = settings.isFileEntry !== undefined
+            ? Boolean(settings.isFileEntry)
+            : Boolean(entry && entry.type === "file");
+        var canRead = settings.canRead !== undefined
+            ? Boolean(settings.canRead)
+            : Boolean(!entry || entry.can_read !== false);
+        var canEdit = settings.canEdit !== undefined
+            ? Boolean(settings.canEdit)
+            : Boolean(entry && entry.can_edit);
+        var canOpenEditor = settings.canOpenEditor !== undefined
+            ? Boolean(settings.canOpenEditor)
+            : Boolean(canEdit || (entry && entry.can_demo_edit));
+        var renderMode = String(settings.renderMode || "").trim().toLowerCase();
+
+        return {
+            download: settings.canDownload !== undefined
+                ? Boolean(settings.canDownload)
+                : Boolean(isFileEntry && !(entry && entry.is_trash_item)),
+            print: settings.canPrint !== undefined
+                ? Boolean(settings.canPrint)
+                : Boolean(isFileEntry && canRead && isPrintablePreviewRenderMode(renderMode)),
+            edit: settings.canEditAction !== undefined
+                ? Boolean(settings.canEditAction)
+                : Boolean(isFileEntry && canOpenEditor && renderMode !== "unsupported"),
+            delete: settings.canDelete !== undefined
+                ? Boolean(settings.canDelete)
+                : Boolean(isFileEntry && canEdit),
+            urlShare: settings.canUrlShare !== undefined
+                ? Boolean(settings.canUrlShare)
+                : Boolean(isFileEntry && canEdit && settings.urlShareApiUrl),
+        };
+    }
+
+    function syncHandriveActionVisibility(buttons, visibility) {
+        var actionButtons = buttons || {};
+        var actionVisibility = visibility || {};
+        Object.keys(actionButtons).forEach(function (actionName) {
+            var button = actionButtons[actionName];
+            if (!button) {
+                return;
+            }
+            button.hidden = actionVisibility[actionName] !== true;
+        });
+    }
+
     function setPreviewActionTargets(options) {
         // Preview action buttons follow the selected entry rather than the currently visible HTML,
         // which keeps download/edit/delete targets correct across cached preview renders.
@@ -185,14 +245,33 @@
         var previewCanPrint = Boolean(settings.previewCanPrint);
 
         var isFileEntry = Boolean(isPreviewableFileEntry(entry));
-        var canDownload = Boolean(isFileEntry && !(entry && entry.is_trash_item));
         var canRead = Boolean(entry && entry.can_read !== false);
         var canEdit = Boolean(entry && entry.can_edit);
         var canOpenEditor = Boolean(entry && (entry.can_edit || entry.can_demo_edit));
         var canEditPreview = previewRenderMode !== "unsupported";
-        var canPrintPreview = previewRenderMode !== "unsupported" && previewRenderMode !== "media_video";
+        var canPrintPreview = isPrintablePreviewRenderMode(previewRenderMode);
+        var actionVisibility = getHandriveActionVisibility({
+            entry: entry,
+            isFileEntry: isFileEntry,
+            canRead: canRead,
+            canEdit: canEdit,
+            canOpenEditor: canOpenEditor,
+            canPrint: isFileEntry && canRead && previewCanPrint && canPrintPreview,
+            canEditAction: isFileEntry && canOpenEditor && canEditPreview && isEditableHandriveFileEntry(entry),
+            canDelete: isFileEntry && canEdit,
+            canUrlShare: isFileEntry && canEdit && Boolean(urlShareApiUrl),
+            urlShareApiUrl: urlShareApiUrl,
+            renderMode: previewRenderMode,
+        });
+        syncHandriveActionVisibility({
+            download: previewDownloadButton,
+            print: previewPrintButton,
+            edit: previewEditButton,
+            delete: previewDeleteButton,
+            urlShare: previewUrlShareButton,
+        }, actionVisibility);
         if (previewDownloadButton) {
-            if (!canDownload) {
+            if (!actionVisibility.download) {
                 previewDownloadButton.hidden = true;
                 previewDownloadButton.removeAttribute("href");
             } else {
@@ -207,16 +286,11 @@
         }
 
         if (previewPrintButton) {
-            previewPrintButton.hidden = !(isFileEntry && canRead && previewCanPrint && canPrintPreview);
+            previewPrintButton.hidden = !actionVisibility.print;
         }
 
         if (previewEditButton) {
-            previewEditButton.hidden = !(
-                isFileEntry &&
-                canOpenEditor &&
-                canEditPreview &&
-                isEditableHandriveFileEntry(entry)
-            );
+            previewEditButton.hidden = !actionVisibility.edit;
             if (!previewEditButton.hidden) {
                 previewEditButton.onclick = function (event) {
                     event.preventDefault();
@@ -235,11 +309,11 @@
         }
 
         if (previewDeleteButton) {
-            previewDeleteButton.hidden = !(isFileEntry && canEdit);
+            previewDeleteButton.hidden = !actionVisibility.delete;
         }
 
         if (previewUrlShareButton) {
-            previewUrlShareButton.hidden = !(isFileEntry && canEdit && urlShareApiUrl);
+            previewUrlShareButton.hidden = !actionVisibility.urlShare;
         }
     }
 
@@ -247,10 +321,13 @@
         cancelScrollIntoView: cancelPreviewScrollIntoView,
         getPreviewImageElement: getPreviewImageElement,
         getPreviewImageMinZoom: getPreviewImageMinZoom,
+        getHandriveActionVisibility: getHandriveActionVisibility,
+        isPrintablePreviewRenderMode: isPrintablePreviewRenderMode,
         scrollPreviewIntoViewIfPortrait: scrollPreviewIntoViewIfPortrait,
         setPreviewActionTargets: setPreviewActionTargets,
         setPreviewPlaceholder: setPreviewPlaceholder,
         setPreviewVisibility: setPreviewVisibility,
+        syncHandriveActionVisibility: syncHandriveActionVisibility,
         syncPreviewImageZoom: syncPreviewImageZoom,
     };
 })();

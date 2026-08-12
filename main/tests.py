@@ -6815,6 +6815,10 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("editor.renderer.setPadding(getEditorFontSize() * 1.5);", editor_js)
         self.assertIn("editor.setFontSize(value + \"px\");\n                syncEditorHorizontalPadding();", editor_js)
         self.assertIn("function syncEditorCompositionLineHeight()", editor_js)
+        self.assertIn("function getRenderedEditorLine(row)", editor_js)
+        self.assertIn("function getRenderedEditorColumnLeft(line, column)", editor_js)
+        self.assertIn("function syncRenderedEditorCursor()", editor_js)
+        self.assertIn('cursor.style.transform = "translate(" + left + "px, " + top + "px)";', editor_js)
         self.assertIn(
             '"--handrive-code-editor-composition-line-height",',
             editor_js,
@@ -6877,7 +6881,7 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("const foldColumnLeft = textOriginLeft - (fontSize * 0.875);", editor_js)
         self.assertIn("toggle.style.left = foldColumnLeft + \"px\";", editor_js)
         self.assertIn("function getRowPosition(row, column)", editor_js)
-        self.assertNotIn("editor.renderer.textToScreenCoordinates(row", editor_js)
+        self.assertIn("editor.renderer.textToScreenCoordinates(row, 0)", editor_js)
         self.assertIn("function applyCollapsedCodeFolds(foldRanges)", editor_js)
         self.assertIn('session.addFold(', editor_js)
         self.assertIn("collapsedFoldStarts.add(row);", editor_js)
@@ -7012,11 +7016,18 @@ class HandriveStyleSourceTests(TestCase):
         self.assertNotIn("syncCompositionInputPadding", editor_js)
         self.assertNotIn("hasWideCompositionCharacter", editor_js)
         self.assertIn("function syncCompositionInputMetrics()", editor_js)
+        self.assertIn("const editorStyle = window.getComputedStyle(host);", editor_js)
+        self.assertIn('"--handrive-code-editor-composition-offset-x"', editor_js)
+        self.assertIn('aceTextInput.style.margin = "0 0 0 " + gutterMarginLeft + "px";', editor_js)
         self.assertIn('"compositionstart",\n                scheduleCompositionInputMetrics,', editor_js)
         self.assertIn('"compositionupdate",\n                scheduleCompositionInputMetrics,', editor_js)
         self.assertIn('aceTextInput.addEventListener("compositionend"', editor_js)
         self.assertTrue(code_font.is_file())
         self.assertIn('font-family: "HanDrive Code";', handrive_css)
+        self.assertIn(
+            'url("../../../fonts/d2coding/HanDriveCode-Regular.woff2")',
+            handrive_css,
+        )
         self.assertIn('font-family: "HanDrive Code", var(--handrive-code-font-family);', handrive_css)
         self.assertIn('fontFamily: editorFontFamily,', editor_js)
         self.assertIn('document.fonts.load(getEditorFontSize() + \'px "HanDrive Code"\')', editor_js)
@@ -7034,23 +7045,27 @@ class HandriveStyleSourceTests(TestCase):
             "outline: 0;",
             "box-shadow: none;",
             "background: transparent;",
+            "color: transparent !important;",
+            "caret-color: transparent;",
             "height: var(--handrive-code-editor-composition-line-height);",
             "line-height: var(--handrive-code-editor-composition-line-height);",
             "max-height: var(--handrive-code-editor-composition-line-height);",
-            "margin: 0;",
+            "margin: 0 0 0 var(--handrive-code-editor-composition-offset-x);",
             "padding: 0;",
-            "font-family: var(--site-font-body);",
-            "letter-spacing: normal;",
+            "font-family: inherit;",
+            "letter-spacing: inherit;",
+            "word-spacing: inherit;",
+            "text-align: center;",
         ):
             self.assertIn(declaration, composition_css)
 
         cjk_start = handrive_css.index("body .handrive-code-editor .ace_cjk {")
         cjk_end = handrive_css.index("}", cjk_start)
         cjk_css = handrive_css[cjk_start:cjk_end]
-        self.assertIn("display: inline;", cjk_css)
-        self.assertIn("font-family: var(--site-font-body);", cjk_css)
-        self.assertIn("text-align: left;", cjk_css)
-        self.assertNotIn("width: max-content !important;", cjk_css)
+        self.assertIn("display: inline-block;", cjk_css)
+        self.assertIn("width: max-content !important;", cjk_css)
+        self.assertIn("font-family: inherit;", cjk_css)
+        self.assertIn("text-align: center;", cjk_css)
 
         composition_placeholder_start = handrive_css.index(
             "body .handrive-code-editor .ace_composition_placeholder {"
@@ -7059,8 +7074,11 @@ class HandriveStyleSourceTests(TestCase):
         composition_placeholder_css = handrive_css[
             composition_placeholder_start:composition_placeholder_end
         ]
-        self.assertIn("font-family: var(--site-font-body);", composition_placeholder_css)
-        self.assertIn("letter-spacing: normal;", composition_placeholder_css)
+        self.assertIn("color: inherit !important;", composition_placeholder_css)
+        self.assertIn("font-family: inherit;", composition_placeholder_css)
+        self.assertIn("letter-spacing: inherit;", composition_placeholder_css)
+        self.assertIn("word-spacing: inherit;", composition_placeholder_css)
+        self.assertIn("text-align: center;", composition_placeholder_css)
 
         shadow_start = handrive_css.index(
             "body .handrive-code-editor.is-horizontally-scrolled .ace_gutter.ace_gutter-left::after {"
@@ -8090,10 +8108,33 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn("hydrateSpreadsheetPreviews(previewContent).catch(alertError);", page_js)
         self.assertNotIn('id="handrive-list-preview-spreadsheet-save-btn"', list_template)
         self.assertNotIn("handrive-view-spreadsheet-save-btn", view_template)
-        self.assertIn("{% if doc_can_show_edit %}", view_template)
-        self.assertNotIn("doc_can_show_edit and not doc_is_spreadsheet_file", view_template)
+        self.assertIn('data-doc-can-show-edit="{{ doc_edit_visibility }}"', view_template)
+        self.assertNotIn("{% if doc_can_show_edit %}", view_template)
         self.assertNotIn("!isSpreadsheetPreview", preview_helpers_js)
         self.assertIn("previewSpreadsheetSaveButton.hidden = true;", preview_helpers_js)
+        self.assertIn("function getHandriveActionVisibility(options)", preview_helpers_js)
+        self.assertIn("function syncHandriveActionVisibility(buttons, visibility)", preview_helpers_js)
+        self.assertIn("syncViewActionTargets(null, root.dataset.docRenderMode || \"\")", page_js)
+
+    def test_handrive_preview_print_visibility_uses_printable_render_modes(self):
+        base_dir = Path(settings.BASE_DIR)
+        preview_helpers_js = (base_dir / "static/js/handrive/preview_helpers.js").read_text(encoding="utf-8")
+        page_js = (base_dir / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        handrive_views = (base_dir / "main/handrive_views.py").read_text(encoding="utf-8")
+
+        for render_mode in ("markdown", "plain_text", "media_image", "office", "pdf"):
+            self.assertIn(f'"{render_mode}"', preview_helpers_js)
+        printable_modes_start = preview_helpers_js.index("var printablePreviewRenderModes")
+        printable_modes_end = preview_helpers_js.index("]);", printable_modes_start) + 3
+        printable_modes_block = preview_helpers_js[printable_modes_start:printable_modes_end]
+        for render_mode in ("media_audio", "media_video", "media_3d", "unsupported"):
+            self.assertNotIn(f'"{render_mode}"', printable_modes_block)
+        self.assertIn("function isPrintablePreviewRenderMode(renderMode)", preview_helpers_js)
+        self.assertIn("isPrintablePreviewRenderMode: isPrintablePreviewRenderMode", preview_helpers_js)
+        self.assertIn("isPrintablePreviewRenderMode(state.activePreviewRenderMode)", page_js)
+        self.assertIn("DOCS_PRINTABLE_RENDER_MODES = frozenset({", handrive_views)
+        self.assertIn("def is_handrive_printable_render_mode(render_mode: str | None) -> bool:", handrive_views)
+        self.assertIn("doc_can_print = is_handrive_printable_render_mode(render_profile[\"mode\"])", handrive_views)
 
     def test_handrive_spreadsheet_worker_handles_full_xlsx_and_formula_structure_changes(self):
         base_dir = Path(settings.BASE_DIR)
@@ -22271,7 +22312,26 @@ class HandriveAccessRuleTests(TestCase):
         html = response.content.decode("utf-8")
         self.assertIn('class="handrive-media handrive-media-video"', html)
         self.assertIn("<video", html)
-        self.assertNotIn('id="handrive-print-btn"', html)
+        self.assertIn('id="handrive-print-btn"', html)
+        self.assertIn('id="handrive-print-btn" aria-label=', html)
+        self.assertIn('title="인쇄" hidden', html)
+
+    def test_docs_view_hides_print_button_for_audio_file(self):
+        editor = self.create_scoped_handrive_user("audio_viewer")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive" / "users" / editor.username
+        (handrive_root / "sample.mp3").write_bytes(b"ID3")
+        self.client.force_login(editor)
+
+        response = self.client.get(
+            reverse("main:handrive_view_lang", kwargs={"ui_lang": "ko", "doc_path": f"users/{editor.username}/sample.mp3"})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode("utf-8")
+        self.assertIn('class="handrive-media handrive-media-audio"', html)
+        self.assertIn("<audio", html)
+        self.assertIn('id="handrive-print-btn"', html)
+        self.assertIn('title="인쇄" hidden', html)
 
     def test_docs_api_preview_renders_audio_preview_for_media_file(self):
         handrive_root = Path(settings.MEDIA_ROOT) / "docs"
@@ -22369,7 +22429,8 @@ class HandriveAccessRuleTests(TestCase):
         self.assertIn(f"/handrive/api/download?path=users/{editor.username}/sample.stl", html)
         self.assertIn("vendor/three/0.164.1/examples/jsm/loaders/STLLoader.js", html)
         self.assertIn("js/handrive/model_preview.js", html)
-        self.assertNotIn('id="handrive-print-btn"', html)
+        self.assertIn('id="handrive-print-btn"', html)
+        self.assertIn('title="인쇄" hidden', html)
 
     def test_docs_view_renders_html_live_with_structured_css_and_js(self):
         editor = self.create_scoped_handrive_user("html_structured_viewer")

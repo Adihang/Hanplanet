@@ -87,3 +87,14 @@ sync-client/*.exe
 sync-client/*.msi
 sync-client/popup-preview
 sync-client/cmd/installer/*.exe
+
+# Minecraft plugin and mod sources are maintained outside this repository.
+/minecraft-account-link-plugin/
+/minecraft-fabric-bridge/
+/minecraft-sapling-replant/
+/minecraft-simplyswords-config-fix/
+/minecraft-status-plugin/
+/scripts/build_hanplanet_fabric_bridge.sh
+/scripts/build_hanplanet_sapling_replant.sh
+/scripts/build_minecraft_account_link_plugin.sh
+/scripts/build_minecraft_status_plugin.sh

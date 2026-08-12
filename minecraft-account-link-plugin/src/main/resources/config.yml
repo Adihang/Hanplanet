@@ -1,4 +1,0 @@
-api-url: "http://127.0.0.1:8000/api/minecraft/link/complete"
-shared-secret: ""
-connect-timeout-ms: 3000
-request-timeout-ms: 6000

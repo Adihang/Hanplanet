@@ -144,7 +144,7 @@ flowchart TD
 | Map collab server | HanDrive 지도 뷰어 실시간 협업, presence/admin endpoint | [`map-collab-server/Dockerfile`](./map-collab-server/Dockerfile), [`map-collab-server/server.js`](./map-collab-server/server.js), [`map-collab-server/network/websocket.js`](./map-collab-server/network/websocket.js) |
 | Wargame PHP | `wargame.hanplanet.com` 전용 PHP 앱, 문제/플래그/SQLite 격리. Docker에서는 PHP built-in server `:8090` | [`Wargame/Dockerfile`](./Wargame/Dockerfile), [`Wargame/docker-entrypoint.sh`](./Wargame/docker-entrypoint.sh), [`Wargame/README.md`](./Wargame/README.md) |
 | Ollama | `/api/chat/`, `/ai/v1/*`의 LLM 백엔드 | [`config/settings.py`](./config/settings.py), [`ai/views.py`](./ai/views.py) |
-| Minecraft/Paper | `mc.hanplanet.com` 상태 페이지, 콘솔 API, BlueMap 프록시 | [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh), [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py), [`minecraft-status-plugin/`](./minecraft-status-plugin/) |
+| Minecraft/Paper | `mc.hanplanet.com` 상태 페이지, 콘솔 API, BlueMap 프록시 | [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh), [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py), 플러그인 소스는 `/Users/imhanbyeol/Development/minecraft-plugin` 외부 작업공간 |
 | Nginx | Docker ingress reverse proxy, static/media alias, access log JSON, `/ai/` long-streaming proxy, Git/Game/Map/Wargame/Minecraft/BlueMap 라우팅 | [`docker/nginx/default.conf`](./docker/nginx/default.conf), [`docker-compose.yml`](./docker-compose.yml) |
 | Cloudflare Tunnel | 공개 도메인 -> Docker Nginx 라우팅. 호스트 launchd 또는 컨테이너 profile 둘 다 가능 | `~/.cloudflared/config.yml`, [`docker/cloudflared/config.yml.example`](./docker/cloudflared/config.yml.example) |
 
@@ -290,7 +290,7 @@ OpenAI-compatible API가 필요한 외부 도구는 `/ai/v1/*`를 사용합니�
 - Django view/API: [`main/views.py`](./main/views.py)
 - 상태 작성 스크립트: [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py)
 - 서버 실행 스크립트: [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh)
-- 플러그인: [`minecraft-status-plugin/`](./minecraft-status-plugin/)
+- 플러그인 소스/빌드: `/Users/imhanbyeol/Development/minecraft-plugin`
 
 ## 기술 스택
 
@@ -525,7 +525,7 @@ HTTP URL이 아니라 Node 서버 내부 프로토콜로 정의된 부분:
 | [`Wargame/`](./Wargame/) | `wargame.hanplanet.com` 전용 PHP/SQLite 앱. Dockerfile과 launchd Apache 설정을 모두 보유 |
 | [`sync-client/`](./sync-client/) | HanDrive 동기화 클라이언트 |
 | [`HanHarness/`](./HanHarness/) | HanDrive CLI/HanHarness 소스 및 패키징 트리 |
-| [`minecraft-status-plugin/`](./minecraft-status-plugin/) | Minecraft Paper 상태 전송 플러그인 |
+| `/Users/imhanbyeol/Development/minecraft-plugin` | Minecraft 플러그인·Fabric 모드 소스와 빌드 작업공간 |
 | [`deploy/`](./deploy/) | launchd plist, Docker stack launchd plist, helper script |
 | [`deploy/hpmail/`](./deploy/hpmail/) | Postfix/Dovecot map 생성과 메일 배포 설정 |
 | [`nginx/`](./nginx/) | 네이티브 launchd 운영용 nginx 설정 |
@@ -688,8 +688,8 @@ Docker 운영에서도 [`deploy/launchd/com.hanplanet.docker-stack.plist`](./dep
 | --- | --- |
 | [`HanHarness/`](./HanHarness/) | HanDrive CLI/HanHarness 소스, docs, packaging, tests |
 | [`.openharness/`](./.openharness/) | OpenHarness local memory/plugins/skills |
-| [`minecraft-status-plugin/`](./minecraft-status-plugin/) | Paper plugin 빌드 산출물 |
-| [`scripts/build_minecraft_status_plugin.sh`](./scripts/build_minecraft_status_plugin.sh) | Minecraft 상태 플러그인 빌드 |
+| `/Users/imhanbyeol/Development/minecraft-plugin/minecraft-status-plugin` | Paper plugin 빌드 산출물 |
+| `/Users/imhanbyeol/Development/minecraft-plugin/scripts/build_minecraft_status_plugin.sh` | Minecraft 상태 플러그인 빌드 |
 | [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh) | Paper 서버 실행 래퍼 |
 | [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py) | status JSON 생성기 |
 
@@ -794,7 +794,7 @@ Docker 운영에서도 [`deploy/launchd/com.hanplanet.docker-stack.plist`](./dep
 3. 네이티브 launchd 운영일 때는 [`nginx/nginx.autorun.conf`](./nginx/nginx.autorun.conf) 의 `mc.hanplanet.com` server block
 4. [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py)
 5. [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh)
-6. [`minecraft-status-plugin/`](./minecraft-status-plugin/)
+6. `/Users/imhanbyeol/Development/minecraft-plugin/minecraft-status-plugin/`
 
 ### 공용 UI / 위젯
 
@@ -1434,7 +1434,7 @@ launchctl kickstart -k gui/$(id -u)/com.hanplanet.minecraft-status
 | [`scripts/update_cloudflare_ddns.py`](./scripts/update_cloudflare_ddns.py) | HPmail/Minecraft용 Cloudflare DNS A record 갱신 |
 | [`scripts/run_minecraft_server.sh`](./scripts/run_minecraft_server.sh) | Paper 서버 실행 및 console FIFO 구성 |
 | [`scripts/write_minecraft_status.py`](./scripts/write_minecraft_status.py) | Minecraft status JSON 생성 |
-| [`scripts/build_minecraft_status_plugin.sh`](./scripts/build_minecraft_status_plugin.sh) | Minecraft status plugin 빌드 |
+| `/Users/imhanbyeol/Development/minecraft-plugin/scripts/build_minecraft_status_plugin.sh` | Minecraft status plugin 빌드 |
 
 ## 이 프로젝트에서 주의할 점
 

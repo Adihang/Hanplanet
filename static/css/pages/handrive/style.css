@@ -1,6 +1,8 @@
 @font-face {
     font-family: "HanDrive Code";
-    src: url("../../fonts/d2coding/HanDriveCode-Regular.woff2") format("woff2");
+    /* This stylesheet is nested one level below css/common.  Walk out of
+       css/pages/handrive so the editor font is served from /static/fonts. */
+    src: url("../../../fonts/d2coding/HanDriveCode-Regular.woff2") format("woff2");
     font-style: normal;
     font-weight: 400;
     font-display: swap;
@@ -9682,6 +9684,7 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .handrive-code-editor {
     --handrive-code-editor-gutter-offset: 0px;
     --handrive-code-editor-line-number-scroll-padding: 0px;
+    --handrive-code-editor-composition-offset-x: 5px;
     --handrive-code-editor-composition-line-height: 1em;
     position: absolute;
     inset: 0;
@@ -9766,48 +9769,58 @@ body .handrive-code-editor .ace_gutter-cell {
 }
 
 body .handrive-code-editor .ace_text-input.ace_composition {
-    /* Keep the composition text on the same metrics as rendered Korean code. */
+    /* Keep the IME surface on the same metrics and origin as the Ace text layer. */
     box-sizing: border-box;
     border: 0;
     border-radius: 0;
     outline: 0;
     box-shadow: none;
     background: transparent;
-    color: inherit;
+    /* Ace renders the composition token below.  Showing both layers causes
+       the input glyph and the fixed-width token to overlap and then drift. */
+    color: transparent !important;
+    caret-color: transparent;
     font: inherit;
-    font-family: var(--site-font-body);
+    font-family: inherit;
     font-variant-ligatures: none;
-    letter-spacing: normal;
+    letter-spacing: inherit;
+    word-spacing: inherit;
     line-height: var(--handrive-code-editor-composition-line-height);
     min-height: 0;
     height: var(--handrive-code-editor-composition-line-height);
     max-height: var(--handrive-code-editor-composition-line-height);
-    /* Remove Ace's default input padding and margin so the composing glyph
-       starts on the same horizontal origin as the committed glyph. */
-    margin: 0;
+    /* Remove Ace's default padding while retaining the gutter's horizontal
+       offset so the IME token starts on the same origin as code text. */
+    margin: 0 0 0 var(--handrive-code-editor-composition-offset-x);
     padding: 0;
-    text-align: left;
+    text-align: center;
     overflow: hidden;
 }
 
-/* Chromium can render an IME update in Ace's composition token instead of
-   the textarea.  Keep that fallback token on the same Korean metrics too. */
+/* Use Ace's composition token as the single visible IME layer.  Its nested
+   CJK spans use the same natural Korean metrics as committed code, so every
+   update remains aligned without adding a gap between syllables. */
 body .handrive-code-editor .ace_composition_placeholder {
-    font-family: var(--site-font-body);
+    color: inherit !important;
+    font-family: inherit;
     font-variant-ligatures: none;
-    letter-spacing: normal;
-    text-align: left;
+    letter-spacing: inherit;
+    word-spacing: inherit;
+    text-align: center;
 }
 
-/* Use the same proportional Korean face during and after IME composition.
-   Latin code tokens keep the editor's monospace face. */
+/* Ace marks CJK and Jamo spans with a two-column inline width.  Override that
+   visual reservation with the natural glyph width; code_editor.js separately
+   aligns the caret to the rendered DOM position.  Inheriting the editor font
+   also prevents consonant-only input from falling back to a larger body font. */
 body .handrive-code-editor .ace_cjk {
-    /* Ace writes a two-column width inline on this span.  An inline box
-       ignores that width, so committed Hangul keeps the same natural advance
-       as the IME composition glyph instead of widening on commit. */
-    display: inline;
-    font-family: var(--site-font-body);
-    text-align: left;
+    display: inline-block;
+    /* The inline width written by Ace is a two-column cursor reservation.
+       Keep the glyph at its natural HanDrive Code width so Korean does not
+       acquire a visible gap between every character. */
+    width: max-content !important;
+    font-family: inherit;
+    text-align: center;
 }
 
 body .handrive-code-editor .ace_gutter-active-line,

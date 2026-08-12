@@ -135,6 +135,7 @@
         let renderedEditorHorizontalScrollState = null;
         let renderedEditorCompositionLineHeight = -1;
         let compositionInputMetricsFrame = 0;
+        let editorCursorSyncFrame = 0;
         let editorLineScrollSelectionActive = false;
         let editorLineScrollSelectionSyncFrame = 0;
         let editorLineScrollSelectionKey = "";
@@ -654,6 +655,16 @@
         }
 
         function syncEditorLineNumberGutterOffset() {
+            const gutterMarginLeft = editorGutter
+                ? Math.max(
+                    0,
+                    parseFloat(window.getComputedStyle(editorGutter).marginLeft) || 0,
+                )
+                : 0;
+            host.style.setProperty(
+                "--handrive-code-editor-composition-offset-x",
+                gutterMarginLeft + "px",
+            );
             const gutterWidth = Math.max(0, Number(editor.renderer.gutterWidth) || 0);
             if (gutterWidth === renderedEditorGutterWidth && renderedEditorGutterOffset >= 0) {
                 return;
@@ -686,20 +697,101 @@
             );
         }
 
+        function getRenderedEditorLine(row) {
+            const expectedTop = editor.renderer.textToScreenCoordinates(row, 0).pageY;
+            let closestLine = null;
+            let closestDistance = Infinity;
+            host.querySelectorAll(".ace_text-layer .ace_line").forEach(function (line) {
+                const distance = Math.abs(line.getBoundingClientRect().top - expectedTop);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestLine = line;
+                }
+            });
+            return closestLine;
+        }
+
+        function getRenderedEditorColumnLeft(line, column) {
+            if (!line) {
+                return null;
+            }
+            const walker = document.createTreeWalker(line, NodeFilter.SHOW_TEXT);
+            let remaining = Math.max(0, Number(column) || 0);
+            let lastNode = null;
+            let node;
+            while ((node = walker.nextNode())) {
+                lastNode = node;
+                const nodeLength = node.nodeValue ? node.nodeValue.length : 0;
+                if (remaining <= nodeLength) {
+                    const range = document.createRange();
+                    range.setStart(node, remaining);
+                    range.collapse(true);
+                    return range.getBoundingClientRect().left;
+                }
+                remaining -= nodeLength;
+            }
+            if (!lastNode) {
+                return line.getBoundingClientRect().left;
+            }
+            const range = document.createRange();
+            range.selectNodeContents(lastNode);
+            range.collapse(false);
+            return range.getBoundingClientRect().right;
+        }
+
+        function syncRenderedEditorCursor() {
+            editorCursorSyncFrame = 0;
+            const cursor = host.querySelector(".ace_cursor");
+            const cursorLayer = host.querySelector(".ace_cursor-layer");
+            if (!cursor || !cursorLayer || cursor.hidden || cursor.style.display === "none") {
+                return;
+            }
+            const position = editor.getCursorPosition();
+            const line = getRenderedEditorLine(position.row);
+            const pageLeft = getRenderedEditorColumnLeft(line, position.column);
+            if (pageLeft == null) {
+                return;
+            }
+            const layerRect = cursorLayer.getBoundingClientRect();
+            const left = pageLeft - layerRect.left;
+            // Ace's cursor layer already computes the row's pixel position.
+            // Reuse that vertical value and only replace the horizontal value
+            // (which is the part affected by Ace's two-column CJK metrics).
+            // Deriving both coordinates from DOM line boxes can accumulate a
+            // line-height offset after each newline while the editor scrolls.
+            const pixelPosition = editor.renderer.$cursorLayer
+                ? editor.renderer.$cursorLayer.$pixelPos
+                : null;
+            const lineRect = line ? line.getBoundingClientRect() : null;
+            const top = pixelPosition && Number.isFinite(pixelPosition.top)
+                ? pixelPosition.top
+                : lineRect
+                    ? lineRect.top - layerRect.top
+                    : 0;
+            cursor.style.transform = "translate(" + left + "px, " + top + "px)";
+        }
+
+        function scheduleRenderedEditorCursorSync() {
+            if (editorCursorSyncFrame) {
+                return;
+            }
+            editorCursorSyncFrame = window.requestAnimationFrame(syncRenderedEditorCursor);
+        }
+
         function syncCompositionInputMetrics() {
             compositionInputMetricsFrame = 0;
             if (!aceTextInput || !aceTextInput.classList.contains("ace_composition")) {
                 return;
             }
-            const bodyStyle = window.getComputedStyle(document.body);
+            const editorStyle = window.getComputedStyle(host);
             const committedCjk = host.querySelector(".ace_cjk");
             const committedStyle = committedCjk
                 ? window.getComputedStyle(committedCjk)
-                : bodyStyle;
+                : editorStyle;
             aceTextInput.style.fontFamily = (
                 committedStyle.fontFamily
-                || bodyStyle.fontFamily
-                || "sans-serif"
+                || editorStyle.fontFamily
+                || editorFontFamily
             );
             aceTextInput.style.fontSize = (
                 committedStyle.fontSize
@@ -709,13 +801,27 @@
             aceTextInput.style.fontStyle = committedStyle.fontStyle || "normal";
             aceTextInput.style.fontStretch = committedStyle.fontStretch || "normal";
             aceTextInput.style.fontVariantLigatures = "none";
-            aceTextInput.style.letterSpacing = committedStyle.letterSpacing || "normal";
-            aceTextInput.style.wordSpacing = committedStyle.wordSpacing || "normal";
+            aceTextInput.style.letterSpacing = committedStyle.letterSpacing
+                || editorStyle.letterSpacing
+                || "normal";
+            aceTextInput.style.wordSpacing = committedStyle.wordSpacing
+                || editorStyle.wordSpacing
+                || "normal";
             aceTextInput.style.lineHeight = (
                 Math.max(1, Number(editor.renderer.lineHeight) || getEditorFontSize())
                 + "px"
             );
-            aceTextInput.style.margin = "0";
+            const gutterMarginLeft = editorGutter
+                ? Math.max(
+                    0,
+                    parseFloat(window.getComputedStyle(editorGutter).marginLeft) || 0,
+                )
+                : 0;
+            host.style.setProperty(
+                "--handrive-code-editor-composition-offset-x",
+                gutterMarginLeft + "px",
+            );
+            aceTextInput.style.margin = "0 0 0 " + gutterMarginLeft + "px";
             aceTextInput.style.padding = "0";
         }
 
@@ -816,6 +922,7 @@
             syncEditorLineNumberGutterOffset();
             syncEditorCompositionLineHeight();
             syncVisibleEditorLineScrollSelection();
+            scheduleRenderedEditorCursorSync();
             scheduleCodeStructureOverlaysRender();
         }
 
@@ -923,10 +1030,12 @@
         });
         editor.selection.on("changeCursor", function () {
             syncTextareaSelection();
+            scheduleRenderedEditorCursorSync();
             scheduleEditorLineScrollSelectionSync();
         });
         editor.selection.on("changeSelection", function () {
             syncTextareaSelection();
+            scheduleRenderedEditorCursorSync();
             scheduleEditorLineScrollSelectionSync();
         });
         session.on("changeScrollTop", syncVerticalScroll);

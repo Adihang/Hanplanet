@@ -2594,6 +2594,33 @@
     const handrivePreviewHelpers = window.HandrivePreviewHelpers || {};
     const previewGetImageElement = handrivePreviewHelpers.getPreviewImageElement || function () { return null; };
     const previewGetImageMinZoom = handrivePreviewHelpers.getPreviewImageMinZoom || function () { return 0.5; };
+    const getHandriveActionVisibility = handrivePreviewHelpers.getHandriveActionVisibility || function (options) {
+        const settings = options || {};
+        const entry = settings.entry || null;
+        const isFileEntry = settings.isFileEntry !== undefined ? Boolean(settings.isFileEntry) : Boolean(entry && entry.type === "file");
+        const canRead = settings.canRead !== undefined ? Boolean(settings.canRead) : Boolean(!entry || entry.can_read !== false);
+        const canEdit = settings.canEdit !== undefined ? Boolean(settings.canEdit) : Boolean(entry && entry.can_edit);
+        const canOpenEditor = settings.canOpenEditor !== undefined ? Boolean(settings.canOpenEditor) : Boolean(canEdit || (entry && entry.can_demo_edit));
+        const renderMode = String(settings.renderMode || "").trim().toLowerCase();
+        return {
+            download: settings.canDownload !== undefined ? Boolean(settings.canDownload) : Boolean(isFileEntry && !(entry && entry.is_trash_item)),
+            print: settings.canPrint !== undefined ? Boolean(settings.canPrint) : Boolean(isFileEntry && canRead && isPrintablePreviewRenderMode(renderMode)),
+            edit: settings.canEditAction !== undefined ? Boolean(settings.canEditAction) : Boolean(isFileEntry && canOpenEditor && renderMode !== "unsupported"),
+            delete: settings.canDelete !== undefined ? Boolean(settings.canDelete) : Boolean(isFileEntry && canEdit),
+            urlShare: settings.canUrlShare !== undefined ? Boolean(settings.canUrlShare) : Boolean(isFileEntry && canEdit && settings.urlShareApiUrl),
+        };
+    };
+    const syncHandriveActionVisibility = handrivePreviewHelpers.syncHandriveActionVisibility || function (buttons, visibility) {
+        Object.keys(buttons || {}).forEach(function (actionName) {
+            const button = buttons[actionName];
+            if (button) {
+                button.hidden = visibility && visibility[actionName] === true ? false : true;
+            }
+        });
+    };
+    const isPrintablePreviewRenderMode = handrivePreviewHelpers.isPrintablePreviewRenderMode || function (renderMode) {
+        return ["markdown", "plain_text", "media_image", "office", "pdf"].indexOf(String(renderMode || "").trim().toLowerCase()) !== -1;
+    };
     const previewCancelScrollIntoView = handrivePreviewHelpers.cancelScrollIntoView || function () {};
     const previewScrollIntoViewIfPortrait = handrivePreviewHelpers.scrollPreviewIntoViewIfPortrait || function () {};
     const previewSetActionTargets = handrivePreviewHelpers.setPreviewActionTargets || function () {};
@@ -12744,8 +12771,7 @@
                 previewCanPrint: Boolean(
                     entryPath &&
                     state.activeRenderedPreviewPath === entryPath &&
-                    state.activePreviewRenderMode !== "unsupported" &&
-                    state.activePreviewRenderMode !== "media_video"
+                    isPrintablePreviewRenderMode(state.activePreviewRenderMode)
                 ),
                 urlShareApiUrl: urlShareApiUrl,
                 isPreviewableFileEntry: isPreviewableFileEntry,
@@ -21778,8 +21804,7 @@
                     !isPreviewableFileEntry(entry) ||
                     entry.can_read === false ||
                     state.activeRenderedPreviewPath !== normalizePath(entry.path, true) ||
-                    state.activePreviewRenderMode === "unsupported" ||
-                    state.activePreviewRenderMode === "media_video"
+                    !isPrintablePreviewRenderMode(state.activePreviewRenderMode)
                 ) {
                     return;
                 }
@@ -26828,6 +26853,7 @@
         const deleteApiUrl = root.dataset.deleteApiUrl;
         const urlShareApiUrl = root.dataset.urlShareApiUrl;
         const listApiUrl = root.dataset.listApiUrl || "";
+        const downloadApiUrl = root.dataset.downloadApiUrl || "";
         const previewApiUrl = root.dataset.previewApiUrl || "";
         const pdfPreviewApiUrl = root.dataset.pdfPreviewApiUrl || "";
         const scopedHomeDir = normalizePath(root.dataset.scopedHomeDir || "", true);
@@ -26843,6 +26869,8 @@
         const printButton = document.getElementById("handrive-print-btn");
         const codeToggleButton = document.getElementById("handrive-code-toggle-btn");
         const urlShareButton = document.getElementById("handrive-url-share-btn");
+        const downloadButton = document.getElementById("handrive-download-btn");
+        const editButton = document.getElementById("handrive-edit-btn");
         const contentArticle = document.querySelector(".ui-content[data-handrive-page] > article");
         const viewZoomWrap = document.getElementById("handrive-view-zoom");
         const viewZoomOutButton = document.getElementById("handrive-view-zoom-out");
@@ -26857,6 +26885,62 @@
         let viewCodeViewActive = false;
         const viewRenderedCache = new Map();
         const viewSourceCache = new Map();
+
+        function syncViewActionTargets(entry, renderMode) {
+            const hasEntry = Boolean(entry);
+            const actionEntry = entry || {
+                type: "file",
+                path: currentDocPath,
+                can_read: root.dataset.docCanRead !== "0",
+                can_edit: root.dataset.docCanEdit === "1",
+                can_demo_edit: root.dataset.docCanDemoEdit === "1",
+                is_trash_item: false,
+            };
+            const activeRenderMode = String(renderMode || root.dataset.docRenderMode || "").trim().toLowerCase();
+            const canRead = hasEntry ? actionEntry.can_read !== false : root.dataset.docCanRead !== "0";
+            const canEdit = hasEntry ? Boolean(actionEntry.can_edit) : root.dataset.docCanEdit === "1";
+            const canOpenEditor = hasEntry
+                ? Boolean(actionEntry.can_edit || actionEntry.can_demo_edit)
+                : root.dataset.docCanEdit === "1" || root.dataset.docCanDemoEdit === "1";
+            const canEditAction = hasEntry
+                ? Boolean(
+                    canOpenEditor &&
+                    actionEntry.can_show_edit !== false &&
+                    activeRenderMode !== "unsupported" &&
+                    activeRenderMode !== "media_3d"
+                )
+                : root.dataset.docCanShowEdit === "1";
+            const actionVisibility = getHandriveActionVisibility({
+                entry: actionEntry,
+                isFileEntry: true,
+                canRead: canRead,
+                canEdit: canEdit,
+                canOpenEditor: canOpenEditor,
+                canPrint: hasEntry
+                    ? canRead && isPrintablePreviewRenderMode(activeRenderMode)
+                    : root.dataset.docCanPrint === "1",
+                canEditAction: canEditAction,
+                canDelete: hasEntry ? Boolean(actionEntry.can_delete) : root.dataset.docCanDelete === "1",
+                canUrlShare: hasEntry
+                    ? Boolean(canEdit && urlShareApiUrl)
+                    : Boolean(root.dataset.docCanEdit === "1" && urlShareApiUrl),
+                urlShareApiUrl: urlShareApiUrl,
+                renderMode: activeRenderMode,
+            });
+            syncHandriveActionVisibility({
+                download: downloadButton,
+                print: printButton,
+                edit: editButton,
+                delete: deleteButton,
+                urlShare: urlShareButton,
+            }, actionVisibility);
+            if (downloadButton && hasEntry && actionEntry.share_download_url) {
+                downloadButton.href = actionEntry.share_download_url;
+            } else if (downloadButton && hasEntry && downloadApiUrl) {
+                const downloadQuery = new URLSearchParams({ path: actionEntry.path || currentDocPath }).toString();
+                downloadButton.href = appendSharedQuery(downloadApiUrl + "?" + downloadQuery);
+            }
+        }
 
         const viewMediaNavExtensions = new Set([
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".avif", ".tiff", ".tif", ".ico",
@@ -27301,6 +27385,7 @@
 
                 updateViewNavButtons(viewNavSiblings, currentDocPath);
                 syncViewCodeToggleButton();
+                syncViewActionTargets(entry, newRenderMode);
                 if (navOptions.autoplay) {
                     playFirstPreviewMediaElement(contentArticle);
                 }
@@ -27362,6 +27447,7 @@
             );
         }
         syncViewCodeToggleButton();
+        syncViewActionTargets(null, root.dataset.docRenderMode || "");
 
         if (contentArticle && contentArticle.classList.contains("handrive-js")) {
             applyHandriveCodeHighlighting(contentArticle, "handrive-js");

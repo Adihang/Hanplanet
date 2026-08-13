@@ -175,10 +175,10 @@ MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상�
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
 PROMINENCE_META_TITLE = "Prominence II Server | Hanplanet"
-PROMINENCE_META_DESCRIPTION_KO = "Prominence II: Hasturian Era v4.0.0 1.20.1 Fabric 서버 접속 정보와 한국어 클라이언트 모드팩, Dynmap 월드 지도를 제공합니다."
-PROMINENCE_META_DESCRIPTION_EN = "Prominence II: Hasturian Era v4.0.0 1.20.1 Fabric server information, a Korean client modpack, and a Dynmap world map."
+PROMINENCE_META_DESCRIPTION_KO = "Prominence II: Hasturian Era v4.0.1hf 1.20.1 Fabric 서버 접속 정보와 한국어 클라이언트 모드팩, Dynmap 월드 지도를 제공합니다."
+PROMINENCE_META_DESCRIPTION_EN = "Prominence II: Hasturian Era v4.0.1hf 1.20.1 Fabric server information, a Korean client modpack, and a Dynmap world map."
 PROMINENCE_CURSEFORGE_URL = "https://www.curseforge.com/minecraft/modpacks/prominence-2-hasturian-era"
-PROMINENCE_KOREAN_PATCH_URL = "https://moru.gg/ko/modpack/prominence-2-hasturian-era"
+PROMINENCE_KOREAN_PATCH_URL = "https://moru.gg/ko/pack/49788bed-e4a5-426d-b957-47e59b073fb0"
 PROMINENCE_PLAYER_HEAD_URL_TEMPLATE = "https://mc-heads.net/avatar/{uuid}/24.png"
 PROMINENCE_STATUS_HOST = os.getenv(
     "PROMINENCE_STATUS_HOST",

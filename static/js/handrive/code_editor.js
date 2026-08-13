@@ -113,6 +113,15 @@
         const Range = window.ace.require("ace/range").Range;
         const session = editor.getSession();
         const editorGutter = host.querySelector(".ace_gutter");
+        const aceUserAgent = window.ace.require("ace/lib/useragent");
+        // Chromium/Edge on Windows can keep the native IME textarea on a
+        // stale fixed-width/fixed-line-height metric while a Korean syllable
+        // is being committed.  Ace's rendered composition marker follows the
+        // actual text layer and avoids applying that metric a second time.
+        const useTextareaForIME = aceUserAgent && aceUserAgent.isWin
+            ? false
+            : !(aceUserAgent && aceUserAgent.isMobile)
+                && !(aceUserAgent && aceUserAgent.isIE);
         let syncingFromEditor = false;
         let applyingTextareaValue = false;
         let editorInputSyncFrame = 0;
@@ -165,6 +174,7 @@
             showGutter: true,
             showLineNumbers: true,
             showPrintMargin: false,
+            useTextareaForIME: useTextareaForIME,
             wrap: false,
         });
         syncEditorHorizontalPadding();
@@ -698,10 +708,23 @@
         }
 
         function getRenderedEditorLine(row) {
-            const expectedTop = editor.renderer.textToScreenCoordinates(row, 0).pageY;
+            const screenCoordinates = editor.renderer.textToScreenCoordinates(row, 0);
+            const pageScrollY = window.scrollY || window.pageYOffset || 0;
+            // Ace returns page coordinates while DOMRects are viewport
+            // coordinates.  Keeping both in the same coordinate space is
+            // important on browsers that retain a page scroll while the
+            // editor is focused (notably Windows Chromium/Edge).
+            const expectedTop = Number(screenCoordinates.pageY) - pageScrollY;
+            const visibleLines = Array.from(host.querySelectorAll(".ace_text-layer .ace_line"));
+            const screenPosition = session.documentToScreenPosition(row, 0);
+            const layerConfig = editor.renderer.layerConfig || {};
+            const lineIndex = Number(screenPosition.row) - Number(layerConfig.firstRowScreen || 0);
+            if (lineIndex >= 0 && lineIndex < visibleLines.length) {
+                return visibleLines[lineIndex];
+            }
             let closestLine = null;
             let closestDistance = Infinity;
-            host.querySelectorAll(".ace_text-layer .ace_line").forEach(function (line) {
+            visibleLines.forEach(function (line) {
                 const distance = Math.abs(line.getBoundingClientRect().top - expectedTop);
                 if (distance < closestDistance) {
                     closestDistance = distance;
@@ -709,6 +732,33 @@
                 }
             });
             return closestLine;
+        }
+
+        function getRangeHorizontalEdge(range, edge) {
+            if (!range) {
+                return null;
+            }
+            const rects = range.getClientRects();
+            if (rects && rects.length) {
+                const rect = edge === "right" ? rects[rects.length - 1] : rects[0];
+                return edge === "right" ? rect.right : rect.left;
+            }
+            const rect = range.getBoundingClientRect();
+            return edge === "right" ? rect.right : rect.left;
+        }
+
+        function getViewportScale(element, axis) {
+            if (!element) {
+                return 1;
+            }
+            const rect = element.getBoundingClientRect();
+            const layoutSize = axis === "y" ? element.offsetHeight : element.offsetWidth;
+            const viewportSize = axis === "y" ? rect.height : rect.width;
+            if (!(layoutSize > 0) || !(viewportSize > 0)) {
+                return 1;
+            }
+            const scale = viewportSize / layoutSize;
+            return Number.isFinite(scale) && scale > 0 ? scale : 1;
         }
 
         function getRenderedEditorColumnLeft(line, column) {
@@ -726,7 +776,7 @@
                     const range = document.createRange();
                     range.setStart(node, remaining);
                     range.collapse(true);
-                    return range.getBoundingClientRect().left;
+                    return getRangeHorizontalEdge(range, "left");
                 }
                 remaining -= nodeLength;
             }
@@ -736,7 +786,29 @@
             const range = document.createRange();
             range.selectNodeContents(lastNode);
             range.collapse(false);
-            return range.getBoundingClientRect().right;
+            return getRangeHorizontalEdge(range, "right");
+        }
+
+        function getRenderedEditorCursorGeometry() {
+            const position = editor.getCursorPosition();
+            const line = getRenderedEditorLine(position.row);
+            const pageLeft = getRenderedEditorColumnLeft(line, position.column);
+            if (pageLeft == null) {
+                return null;
+            }
+            const cursorLayer = host.querySelector(".ace_cursor-layer");
+            const layerRect = cursorLayer ? cursorLayer.getBoundingClientRect() : null;
+            const lineRect = line ? line.getBoundingClientRect() : null;
+            // The line box is the browser's final painted row position. Use
+            // it for Y instead of Ace's cached lineHeight: Windows can keep a
+            // stale IME/font metric there for one render after a newline.
+            const top = lineRect ? lineRect.top : null;
+            return {
+                left: pageLeft,
+                top: top,
+                lineHeight: Number(editor.renderer.lineHeight) || 20,
+                layerRect: layerRect,
+            };
         }
 
         function syncRenderedEditorCursor() {
@@ -746,29 +818,47 @@
             if (!cursor || !cursorLayer || cursor.hidden || cursor.style.display === "none") {
                 return;
             }
-            const position = editor.getCursorPosition();
-            const line = getRenderedEditorLine(position.row);
-            const pageLeft = getRenderedEditorColumnLeft(line, position.column);
-            if (pageLeft == null) {
+            const geometry = getRenderedEditorCursorGeometry();
+            if (!geometry || !geometry.layerRect || geometry.top == null) {
                 return;
             }
-            const layerRect = cursorLayer.getBoundingClientRect();
-            const left = pageLeft - layerRect.left;
             // Ace's cursor layer already computes the row's pixel position.
             // Reuse that vertical value and only replace the horizontal value
             // (which is the part affected by Ace's two-column CJK metrics).
-            // Deriving both coordinates from DOM line boxes can accumulate a
-            // line-height offset after each newline while the editor scrolls.
-            const pixelPosition = editor.renderer.$cursorLayer
-                ? editor.renderer.$cursorLayer.$pixelPos
-                : null;
-            const lineRect = line ? line.getBoundingClientRect() : null;
-            const top = pixelPosition && Number.isFinite(pixelPosition.top)
-                ? pixelPosition.top
-                : lineRect
-                    ? lineRect.top - layerRect.top
-                    : 0;
+            const left = (geometry.left - geometry.layerRect.left)
+                / getViewportScale(cursorLayer, "x");
+            const top = (geometry.top - geometry.layerRect.top)
+                / getViewportScale(cursorLayer, "y");
+            // Ace uses left/top instead of transforms when its Windows
+            // renderer does not enable CSS transforms. Clear those native
+            // offsets before applying our single coordinate translation;
+            // otherwise the same row/column is painted twice (2x movement).
+            cursor.style.left = "0px";
+            cursor.style.top = "0px";
             cursor.style.transform = "translate(" + left + "px, " + top + "px)";
+        }
+
+        function syncCompositionInputPosition() {
+            if (!aceTextInput || !aceTextInput.classList.contains("ace_composition")) {
+                return;
+            }
+            const geometry = getRenderedEditorCursorGeometry();
+            const offsetParent = aceTextInput.offsetParent;
+            if (!geometry || geometry.top == null || !offsetParent) {
+                return;
+            }
+            const parentRect = offsetParent.getBoundingClientRect();
+            const inputStyle = window.getComputedStyle(aceTextInput);
+            const marginLeft = parseFloat(inputStyle.marginLeft) || 0;
+            // Windows IME starts with an empty composition event and lets Ace
+            // position the visible textarea using its fixed-width character
+            // metric.  Align that native surface to the actual DOM caret so a
+            // CJK character or newline cannot move it by two columns/rows.
+            const left = (geometry.left - parentRect.left)
+                / getViewportScale(offsetParent, "x") - marginLeft;
+            const top = (geometry.top - parentRect.top)
+                / getViewportScale(offsetParent, "y");
+            aceTextInput.style.transform = "translate(" + left + "px, " + top + "px)";
         }
 
         function scheduleRenderedEditorCursorSync() {
@@ -823,6 +913,7 @@
             );
             aceTextInput.style.margin = "0 0 0 " + gutterMarginLeft + "px";
             aceTextInput.style.padding = "0";
+            syncCompositionInputPosition();
         }
 
         function scheduleCompositionInputMetrics() {
@@ -921,6 +1012,7 @@
             syncEditorLineNumberScrollPadding();
             syncEditorLineNumberGutterOffset();
             syncEditorCompositionLineHeight();
+            syncCompositionInputPosition();
             syncVisibleEditorLineScrollSelection();
             scheduleRenderedEditorCursorSync();
             scheduleCodeStructureOverlaysRender();
@@ -1139,11 +1231,21 @@
         const adapter = {
             editor: editor,
             getCursorScreenPosition: function () {
+                const renderedPosition = getRenderedEditorCursorGeometry();
+                if (renderedPosition) {
+                    return {
+                        left: renderedPosition.left,
+                        top: renderedPosition.top,
+                        lineHeight: renderedPosition.lineHeight,
+                    };
+                }
                 const cursor = editor.getCursorPosition();
                 const position = editor.renderer.textToScreenCoordinates(cursor.row, cursor.column);
+                const pageScrollX = window.scrollX || window.pageXOffset || 0;
+                const pageScrollY = window.scrollY || window.pageYOffset || 0;
                 return {
-                    left: Number(position.pageX) - (window.scrollX || window.pageXOffset || 0),
-                    top: Number(position.pageY) - (window.scrollY || window.pageYOffset || 0),
+                    left: Number(position.pageX) - pageScrollX,
+                    top: Number(position.pageY) - pageScrollY,
                     lineHeight: Number(editor.renderer.lineHeight) || 20,
                 };
             },

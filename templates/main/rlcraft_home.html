@@ -430,6 +430,37 @@
         background: #050505;
     }
 
+    .rlcraft-map-unavailable {
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background: var(--handrive-surface-muted);
+        text-align: center;
+    }
+
+    .rlcraft-map-unavailable-content {
+        display: grid;
+        gap: 6px;
+        max-width: 520px;
+    }
+
+    .rlcraft-map-unavailable-label,
+    .rlcraft-map-unavailable-detail {
+        margin: 0;
+    }
+
+    .rlcraft-map-unavailable-label {
+        color: var(--handrive-text-stronger);
+        font-size: 16px;
+        font-weight: 800;
+    }
+
+    .rlcraft-map-unavailable-detail {
+        color: var(--handrive-text-muted);
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
     .rlcraft-detail-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
@@ -824,6 +855,7 @@
         flex: 0 1 auto;
         min-width: 0;
         margin: 0;
+        margin-left: auto;
         color: var(--handrive-text-muted);
         font-size: 13px;
         line-height: 1.2;
@@ -1162,11 +1194,20 @@
             <section class="rlcraft-panel minecraft-panel rlcraft-server-panel" aria-labelledby="rlcraft-server-title">
                 <div class="minecraft-panel-heading">
                     <h2 class="minecraft-panel-title" id="rlcraft-server-title">{{ rlcraft_server_panel_title }}</h2>
-                    <p class="rlcraft-server-subtitle">Prominence II: Hasturian Era v4.0.0</p>
+                    <p class="rlcraft-server-subtitle">DeceasedCraft Beta 5.10.17</p>
                 </div>
+                {% if rlcraft_map_url %}
                 <section class="rlcraft-map-embed-section" aria-label="{{ rlcraft_map_title }}">
                     <iframe class="rlcraft-map-embed" src="{{ rlcraft_map_url }}" title="{{ rlcraft_map_title }}" loading="lazy" allowfullscreen referrerpolicy="same-origin"></iframe>
                 </section>
+                {% else %}
+                <section class="rlcraft-map-embed-section rlcraft-map-unavailable" aria-label="{{ rlcraft_map_title }}">
+                    <div class="rlcraft-map-unavailable-content">
+                        <p class="rlcraft-map-unavailable-label">{{ rlcraft_map_unavailable_label }}</p>
+                        <p class="rlcraft-map-unavailable-detail">{{ rlcraft_map_unavailable_detail }}</p>
+                    </div>
+                </section>
+                {% endif %}
                 <div class="rlcraft-detail-grid">
                     <div class="rlcraft-field">
                         <div class="rlcraft-field-heading">
@@ -1231,7 +1272,7 @@
             </ol>
             <div class="rlcraft-install-actions">
                 <a class="rlcraft-action rlcraft-action-primary" href="{{ rlcraft_curseforge_url }}" target="_blank" rel="noopener">{{ rlcraft_curseforge_label }}</a>
-                <a class="rlcraft-action" href="{{ rlcraft_korean_patch_url }}" target="_blank" rel="noopener">{{ rlcraft_download_label }}</a>
+                <a class="rlcraft-action" href="{{ rlcraft_resource_pack_url }}" download>{{ rlcraft_resource_pack_label }}</a>
             </div>
             <p class="rlcraft-side-note">{{ rlcraft_license_note }}</p>
         </div>
@@ -1305,6 +1346,7 @@
             loading: '{{ rlcraft_status_loading_label|escapejs }}',
             failed: '{{ rlcraft_status_failed_label|escapejs }}',
             offlineServer: '{{ rlcraft_server_offline_label|escapejs }}',
+            active: '{{ rlcraft_server_active_label|escapejs }}',
             empty: '{{ rlcraft_players_empty_label|escapejs }}',
             detailTitle: '{{ rlcraft_player_detail_title|escapejs }}',
             detailStatus: '{{ rlcraft_player_detail_status_label|escapejs }}',
@@ -1377,7 +1419,7 @@
                 '<select class="rlcraft-player-edit-select" name="gamemode" aria-label="' + escapeHtml(labels.gameMode) + '">' +
                 '<option value=""></option>' +
                 gameModeOptions.map(function (mode) {
-                    return '<option value="' + escapeHtml(mode) + '">' + escapeHtml(mode.charAt(0).toUpperCase() + mode.slice(1)) + '</option>';
+                    return '<option value="' + escapeHtml(mode) + '"' + (mode === 'survival' ? ' selected' : '') + '>' + escapeHtml(mode.charAt(0).toUpperCase() + mode.slice(1)) + '</option>';
                 }).join('') +
                 '</select>' +
                 '<button class="rlcraft-player-edit-button" type="submit">' + escapeHtml(labels.apply) + '</button>' +

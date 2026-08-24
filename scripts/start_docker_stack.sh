@@ -81,10 +81,25 @@ if [ -f .env ] && grep -q "$HDD_MOUNT" .env; then
 fi
 
 if ! "$COLIMA_BIN" status >/dev/null 2>&1; then
+  # A macOS reboot can leave Lima's pid/socket files behind even though the
+  # VM is no longer running. Clear that stale runtime before the first start
+  # attempt so launchd does not spend a full retry cycle exposing a partial
+  # Docker stack.
+  log "Colima is not running; clearing stale VM runtime state"
+  "$COLIMA_BIN" stop --force >/dev/null 2>&1 || true
   start_colima
 fi
 
 log "starting Docker Compose services"
-"$DOCKER_BIN" compose up -d --remove-orphans
+# Containers with restart: unless-stopped may come back as soon as Docker
+# becomes available after a reboot. Keep the old nginx instance down while
+# Compose waits for Django's healthcheck, otherwise Cloudflare can observe a
+# transient 502 from nginx before the upstream is ready.
+existing_nginx_container="$("$DOCKER_BIN" compose ps -q nginx 2>/dev/null || true)"
+if [ -n "$existing_nginx_container" ]; then
+  log "stopping existing nginx until the Compose health gate is satisfied"
+  "$DOCKER_BIN" compose stop nginx >/dev/null
+fi
+"$DOCKER_BIN" compose up -d --remove-orphans --wait --wait-timeout 180
 "$DOCKER_BIN" compose ps
 log "Docker Compose services started"

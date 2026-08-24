@@ -242,7 +242,9 @@ def _draw_video_icon() -> Image.Image:
             (20.5 * SCALE, 15.5 * SCALE),
             (13.0 * SCALE, 20.2 * SCALE),
         ],
-        fill="#ffffff",
+        # Cut the play mark out of the film frame so the list surface shows
+        # through it, matching the transparent perforations above.
+        fill=(0, 0, 0, 0),
     )
     return icon
 

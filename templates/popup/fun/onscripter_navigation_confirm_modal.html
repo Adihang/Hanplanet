@@ -1,0 +1,6 @@
+{% load template_utils %}
+{% include_trimmed 'partials/ui_i18n.html' key='onscripter_list_confirm_title' as onscripter_list_confirm_title %}
+{% include_trimmed 'partials/ui_i18n.html' key='onscripter_list_confirm_message' as onscripter_list_confirm_message %}
+{% include_trimmed 'partials/ui_i18n.html' key='onscripter_list_confirm_cancel' as onscripter_list_confirm_cancel %}
+{% include_trimmed 'partials/ui_i18n.html' key='onscripter_list_confirm_confirm' as onscripter_list_confirm_confirm %}
+{% include "popup/handrive/_confirm_modal.html" with modal_id="onscripter-list-confirm-modal" backdrop_id="onscripter-list-confirm-modal-backdrop" title_id="onscripter-list-confirm-title" message_id="onscripter-list-confirm-message" cancel_button_id="onscripter-list-confirm-cancel-btn" confirm_button_id="onscripter-list-confirm-confirm-btn" title_text=onscripter_list_confirm_title message_text=onscripter_list_confirm_message cancel_text=onscripter_list_confirm_cancel confirm_text=onscripter_list_confirm_confirm %}

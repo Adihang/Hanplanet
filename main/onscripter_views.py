@@ -539,10 +539,15 @@ def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
         "main:onscripter_game_index_lang",
         kwargs={"ui_lang": resolved_lang, "game_slug": game.slug},
     )
+    onscripter_index_url = reverse(
+        "main:onscripter_index_lang",
+        kwargs={"ui_lang": resolved_lang},
+    )
     context = {
         "page_title": game.title,
         "loading_label": "게임 리소스를 준비하고 있습니다...",
         "index_url": index_url,
+        "onscripter_index_url": onscripter_index_url,
         "engine_js_url": _onscripter_asset_url_for_path(engine_js_path, resolved_lang),
         "engine_wasm_url": _onscripter_asset_url_for_path(engine_wasm_path, resolved_lang),
         "jszip_url": _onscripter_asset_url_for_path(jszip_path, resolved_lang),
@@ -550,6 +555,7 @@ def onscripter_player(request, ui_lang=None, game_slug="haruuru"):
         "meta_og_title": _game_meta_title(game),
         "meta_description": game.description_en if resolved_lang == "en" else game.description_ko,
         "sub_category": "game",
+        "hide_global_nav": True,
     }
     context["meta_og_description"] = context["meta_description"]
     thumbnail_url = _game_thumbnail_url(game, resolved_lang)

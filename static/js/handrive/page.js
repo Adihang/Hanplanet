@@ -526,6 +526,32 @@
     const lazyScriptLoadPromises = Object.create(null);
     const lazyStylesheetLoadPromises = Object.create(null);
 
+    function waitForLazyScriptGlobal(globalName, timeoutMs) {
+        const name = String(globalName || "").trim();
+        if (!name) {
+            return Promise.resolve(null);
+        }
+        if (window[name]) {
+            return Promise.resolve(window[name]);
+        }
+        const timeout = Math.max(1000, Number(timeoutMs) || 10000);
+        const startedAt = Date.now();
+        return new Promise(function (resolve, reject) {
+            function poll() {
+                if (window[name]) {
+                    resolve(window[name]);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeout) {
+                    reject(new Error("Required script global is unavailable: " + name));
+                    return;
+                }
+                window.setTimeout(poll, 50);
+            }
+            poll();
+        });
+    }
+
     function loadLazyScriptOnce(scriptUrl, globalName) {
         const url = String(scriptUrl || "").trim();
         if (globalName && window[globalName]) {
@@ -541,15 +567,26 @@
             const existingScript = Array.prototype.slice.call(document.scripts || []).find(function (candidate) {
                 return candidate && candidate.getAttribute("src") === url;
             });
-            if (existingScript && (globalName ? window[globalName] : true)) {
-                resolve(globalName ? window[globalName] : existingScript);
+            if (existingScript) {
+                if (!globalName) {
+                    resolve(existingScript);
+                    return;
+                }
+                waitForLazyScriptGlobal(globalName).then(resolve, reject);
                 return;
             }
             const script = document.createElement("script");
             script.src = url;
             script.async = false;
             script.onload = function () {
-                resolve(globalName ? window[globalName] : script);
+                if (!globalName) {
+                    resolve(script);
+                    return;
+                }
+                // video_player.js intentionally waits for videojs when the
+                // browser finishes the two dynamic scripts in a different
+                // order. Do not resolve the loader before that global exists.
+                waitForLazyScriptGlobal(globalName).then(resolve, reject);
             };
             script.onerror = function () {
                 delete lazyScriptLoadPromises[url];
@@ -2627,6 +2664,9 @@
     const previewSetPlaceholder = handrivePreviewHelpers.setPreviewPlaceholder || function () {};
     const previewSetVisibility = handrivePreviewHelpers.setPreviewVisibility || function () {};
     const previewSyncImageZoom = handrivePreviewHelpers.syncPreviewImageZoom || function () {};
+    const handriveSyncImageZoomPan = handrivePreviewHelpers.syncImageZoomPan || function () {};
+    const previewBindImageZoomPan = handrivePreviewHelpers.bindImageZoomPan || function () { return null; };
+    const previewAdjustImageZoomAt = handrivePreviewHelpers.adjustImageZoomAt || function () {};
     const handrivePreviewModalZoom = window.HanplanetPreviewModalZoom || {};
     const handriveModalHelpers = window.HandriveModalHelpers || {};
     const modalSetFolderCreateModalOpen = handriveModalHelpers.setFolderCreateModalOpen || function () {};
@@ -3341,19 +3381,71 @@
         if (!container || !(container instanceof Element)) {
             return;
         }
-        if (!container.querySelector("video.video-js")) {
+        const videoElements = Array.prototype.slice.call(
+            container.querySelectorAll("video.video-js:not([data-vjs-initialized])")
+        );
+        if (!videoElements.length) {
             return;
         }
-        await loadVideoPlayerStack();
-        if (
-            !window.HandriveVideoPlayer ||
-            typeof window.HandriveVideoPlayer.init !== "function"
-        ) {
+        let videoPlayerApi;
+        try {
+            videoPlayerApi = await loadVideoPlayerStack();
+        } catch (error) {
+            // Video.js/플러그인 CDN 장애가 미리보기 전체를 빈 공간으로
+            // 만들지 않도록, 서버가 심어 둔 src/controls native player를
+            // 즉시 표시한다. 원인은 콘솔과 전용 이벤트에 남긴다.
+            console.error("HanDrive preview video player load failed; using native fallback.", error);
+            videoElements.forEach(function (videoElement) {
+                videoElement.controls = true;
+                videoElement.classList.add("handrive-video-native-fallback");
+                if (!videoElement.getAttribute("src") && videoElement.dataset.fallbackSrc) {
+                    videoElement.setAttribute("src", videoElement.dataset.fallbackSrc);
+                }
+                if (!videoElement.getAttribute("type") && videoElement.dataset.fallbackType) {
+                    videoElement.setAttribute("type", videoElement.dataset.fallbackType);
+                }
+            });
             return;
         }
-        container.querySelectorAll("video.video-js:not([data-vjs-initialized])").forEach(function (videoElement) {
-            window.HandriveVideoPlayer.init(videoElement);
-        });
+        if (!videoPlayerApi || typeof videoPlayerApi.init !== "function") {
+            videoPlayerApi = await waitForLazyScriptGlobal("HandriveVideoPlayer", 10000);
+        }
+        if (!videoPlayerApi || typeof videoPlayerApi.init !== "function") {
+            console.error("HanDrive preview video player API is unavailable; using native fallback.");
+            videoElements.forEach(function (videoElement) {
+                videoElement.controls = true;
+                videoElement.classList.add("handrive-video-native-fallback");
+            });
+            return;
+        }
+        for (let index = 0; index < videoElements.length; index += 1) {
+            const videoElement = videoElements[index];
+            let lastError = null;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+                if (!videoElement.isConnected || videoElement.dataset.vjsInitialized) {
+                    break;
+                }
+                try {
+                    videoPlayerApi.init(videoElement);
+                    lastError = null;
+                    break;
+                } catch (error) {
+                    lastError = error;
+                    // A browser may finish loading Video.js and its companion
+                    // plugin on adjacent tasks. Retry after that task boundary
+                    // instead of leaving a raw, invisible preview element.
+                    try {
+                        delete videoElement.dataset.vjsInitialized;
+                    } catch (_) {}
+                    await new Promise(function (resolve) {
+                        window.setTimeout(resolve, 80 * (attempt + 1));
+                    });
+                }
+            }
+            if (lastError) {
+                throw lastError;
+            }
+        }
     }
 
     function hydrateModelPreviews(container) {
@@ -5637,7 +5729,11 @@
     ]);
     const handriveCodeStructureStates = new WeakMap();
     const handriveCodeLineNumberScrollBindings = new WeakMap();
+    const handriveCodeViewerSearchStatesByElement = new WeakMap();
     const HANDRIVE_CODE_LINE_SELECTION_HIGHLIGHT_NAME = "handrive-code-line-selection";
+    const handriveCodeViewerSearchStates = new Set();
+    let handriveCodeViewerSearchDocumentBound = false;
+    let handriveCodeViewerSearchHoveredHost = null;
 
     function resolveHandriveCodeStructureRenderClass(targetElement, renderClass) {
         const candidates = String(renderClass || "")
@@ -5717,6 +5813,45 @@
             node: lastEntry.node,
             offset: lastEntry.node.data.length,
         };
+    }
+
+    function getHandriveCodeTextOffset(codeNode, container, offset) {
+        if (!codeNode || !container || !codeNode.contains(container)) {
+            return null;
+        }
+        try {
+            const probe = document.createRange();
+            probe.selectNodeContents(codeNode);
+            probe.setEnd(container, offset);
+            return probe.toString().length;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    function captureHandriveCodeViewerSelection(state) {
+        if (!state || state.searchQuery || !state.codeNode || !window.getSelection) {
+            return null;
+        }
+        const selection = window.getSelection();
+        const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+        if (!range || range.collapsed || !state.codeNode.contains(range.commonAncestorContainer)) {
+            return null;
+        }
+        const start = getHandriveCodeTextOffset(
+            state.codeNode,
+            range.startContainer,
+            range.startOffset,
+        );
+        const end = getHandriveCodeTextOffset(
+            state.codeNode,
+            range.endContainer,
+            range.endOffset,
+        );
+        if (!Number.isInteger(start) || !Number.isInteger(end) || end <= start) {
+            return null;
+        }
+        return { start: start, end: end };
     }
 
     function buildHandriveCodeTextRange(entries, startOffset, endOffset) {
@@ -5869,6 +6004,82 @@
         return isHandriveDocumentScrollContainer(scrollContainer)
             ? (window.scrollX || window.pageXOffset || 0)
             : (Number(scrollContainer.scrollLeft) || 0);
+    }
+
+    function captureHandriveCodeViewerScrollPosition(state) {
+        const pre = state && state.codeNode ? state.codeNode.parentElement : null;
+        const scrollContainer = getHandriveCodeLineScrollContainer(pre);
+        if (!scrollContainer) {
+            return null;
+        }
+        const anchor = state && state.codeNode ? state.codeNode : pre;
+        const anchorRect = anchor && typeof anchor.getBoundingClientRect === "function"
+            ? anchor.getBoundingClientRect()
+            : null;
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            return {
+                container: scrollContainer,
+                top: window.scrollY || window.pageYOffset || 0,
+                left: window.scrollX || window.pageXOffset || 0,
+                anchor: anchor,
+                anchorTop: anchorRect ? anchorRect.top : null,
+                anchorLeft: anchorRect ? anchorRect.left : null,
+            };
+        }
+        return {
+            container: scrollContainer,
+            top: Number(scrollContainer.scrollTop) || 0,
+            left: Number(scrollContainer.scrollLeft) || 0,
+            anchor: anchor,
+            anchorTop: anchorRect ? anchorRect.top : null,
+            anchorLeft: anchorRect ? anchorRect.left : null,
+        };
+    }
+
+    function restoreHandriveCodeViewerScrollPosition(snapshot) {
+        if (!snapshot || !snapshot.container || !snapshot.container.isConnected) {
+            return;
+        }
+        const scrollContainer = snapshot.container;
+        const anchor = snapshot.anchor;
+        if (
+            anchor
+            && anchor.isConnected
+            && Number.isFinite(snapshot.anchorTop)
+            && Number.isFinite(snapshot.anchorLeft)
+            && typeof anchor.getBoundingClientRect === "function"
+        ) {
+            const currentRect = anchor.getBoundingClientRect();
+            const topDelta = currentRect.top - snapshot.anchorTop;
+            const leftDelta = currentRect.left - snapshot.anchorLeft;
+            if (Math.abs(topDelta) > 0.1 || Math.abs(leftDelta) > 0.1) {
+                if (isHandriveDocumentScrollContainer(scrollContainer)) {
+                    window.scrollTo(
+                        (window.scrollX || window.pageXOffset || 0) + leftDelta,
+                        (window.scrollY || window.pageYOffset || 0) + topDelta,
+                    );
+                } else {
+                    scrollContainer.scrollLeft += leftDelta;
+                    scrollContainer.scrollTop += topDelta;
+                }
+            }
+            return;
+        }
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            window.scrollTo(snapshot.left, snapshot.top);
+            return;
+        }
+        scrollContainer.scrollTop = snapshot.top;
+        scrollContainer.scrollLeft = snapshot.left;
+    }
+
+    function restoreHandriveCodeViewerScrollPositionOnNextFrame(snapshot) {
+        if (typeof window.requestAnimationFrame !== "function") {
+            return;
+        }
+        window.requestAnimationFrame(function () {
+            restoreHandriveCodeViewerScrollPosition(snapshot);
+        });
     }
 
     function updateHandriveCodeLineNumberScrollPadding(lineNumbers, isHorizontallyScrolled) {
@@ -6361,6 +6572,17 @@
         });
         state.renderedSelectedLineIndexes = new Set(state.selectedLineIndexes);
         syncHandriveCodeTextSelectionHighlight();
+        const viewerSearchState = handriveCodeViewerSearchStatesByElement.get(pre.parentElement);
+        if (viewerSearchState && viewerSearchState.codeNode === codeNode) {
+            viewerSearchState.baseHtml = codeNode.innerHTML;
+            if (
+                viewerSearchState.searchOpen
+                || viewerSearchState.searchQuery
+                || viewerSearchState.selectedQuery
+            ) {
+                applyHandriveCodeViewerSearchMarkup(viewerSearchState);
+            }
+        }
     }
 
     function applyHandriveLineNumbers(targetElement, renderClass) {
@@ -6432,6 +6654,7 @@
                 });
             }
             renderHandriveCodeStructure(codeNode, state);
+            bindHandriveCodeViewerSearch(targetElement, codeNode);
             pre.classList.add("handrive-line-numbered-code");
         });
     }
@@ -6574,6 +6797,616 @@
         targetElement.replaceChildren(pre);
         applyHandriveLineNumbers(targetElement, sourceRenderClass);
         return sourceRenderClass;
+    }
+
+    let handriveCodeViewerUnicodeWordCharacterRegexp = null;
+    try {
+        handriveCodeViewerUnicodeWordCharacterRegexp = new RegExp("[\\p{L}\\p{N}_]", "u");
+    } catch (error) {
+        handriveCodeViewerUnicodeWordCharacterRegexp = /[\w\d]/;
+    }
+
+    function escapeHandriveCodeViewerSearchRegExp(value) {
+        return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    function isHandriveCodeViewerWordCharacter(value) {
+        if (!value) {
+            return false;
+        }
+        return handriveCodeViewerUnicodeWordCharacterRegexp.test(value);
+    }
+
+    function findHandriveCodeViewerSearchMatches(source, query, options) {
+        const needle = String(query || "");
+        if (!needle) {
+            return [];
+        }
+        const settings = options || {};
+        const pattern = settings.regexp
+            ? needle
+            : escapeHandriveCodeViewerSearchRegExp(needle);
+        const baseFlags = settings.caseSensitive ? "g" : "gi";
+        let matcher = null;
+        try {
+            matcher = new RegExp(pattern, baseFlags + "u");
+        } catch (error) {
+            try {
+                matcher = new RegExp(pattern, baseFlags);
+            } catch (nestedError) {
+                return null;
+            }
+        }
+
+        const matches = [];
+        let match = null;
+        while ((match = matcher.exec(source)) !== null) {
+            const start = match.index;
+            const end = start + match[0].length;
+            if (end <= start) {
+                matcher.lastIndex = start + 1;
+                continue;
+            }
+            if (
+                settings.wholeWords
+                && (isHandriveCodeViewerWordCharacter(source[start - 1])
+                    || isHandriveCodeViewerWordCharacter(source[end]))
+            ) {
+                continue;
+            }
+            matches.push({ start: start, end: end });
+            if (matches.length >= 10000) {
+                break;
+            }
+        }
+        return matches;
+    }
+
+    function restoreHandriveCodeViewerSearchMarkup(state) {
+        if (!state || !state.codeNode) {
+            return;
+        }
+        state.codeNode.innerHTML = state.baseHtml;
+        state.matchElements = [];
+    }
+
+    function getHandriveCodeViewerSearchViewport(state) {
+        const pre = state && state.codeNode ? state.codeNode.parentElement : null;
+        const scrollContainer = getHandriveCodeLineScrollContainer(pre);
+        if (isHandriveDocumentScrollContainer(scrollContainer)) {
+            return {
+                top: 0,
+                bottom: Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0),
+            };
+        }
+        const rect = scrollContainer && typeof scrollContainer.getBoundingClientRect === "function"
+            ? scrollContainer.getBoundingClientRect()
+            : null;
+        if (!rect) {
+            return {
+                top: 0,
+                bottom: Math.max(0, window.innerHeight || document.documentElement.clientHeight || 0),
+            };
+        }
+        return {
+            top: rect.top,
+            bottom: rect.bottom,
+        };
+    }
+
+    function findNearestHandriveCodeViewerSearchMatchIndex(state) {
+        if (!state || !state.matchElements || !state.matchElements.length) {
+            return -1;
+        }
+        const viewport = getHandriveCodeViewerSearchViewport(state);
+        let nearestVisibleIndex = -1;
+        let nearestVisibleDistance = Infinity;
+        let firstMatchBelowViewport = -1;
+        let lastMatchAboveViewport = -1;
+        state.matchElements.forEach(function (element, index) {
+            if (!element || typeof element.getBoundingClientRect !== "function") {
+                return;
+            }
+            const rect = element.getBoundingClientRect();
+            if (rect.bottom > viewport.top && rect.top < viewport.bottom) {
+                const distance = Math.abs(rect.top - viewport.top);
+                if (distance < nearestVisibleDistance) {
+                    nearestVisibleDistance = distance;
+                    nearestVisibleIndex = index;
+                }
+            } else if (rect.top >= viewport.bottom && firstMatchBelowViewport < 0) {
+                firstMatchBelowViewport = index;
+            } else if (rect.bottom <= viewport.top) {
+                lastMatchAboveViewport = index;
+            }
+        });
+        if (nearestVisibleIndex >= 0) {
+            return nearestVisibleIndex;
+        }
+        if (firstMatchBelowViewport >= 0) {
+            return firstMatchBelowViewport;
+        }
+        if (lastMatchAboveViewport >= 0) {
+            return lastMatchAboveViewport;
+        }
+        return 0;
+    }
+
+    function updateHandriveCodeViewerSearchCounter(state) {
+        if (!state || !state.counter) {
+            return;
+        }
+        const query = state.searchQuery || state.selectedQuery;
+        const count = state.matches.length;
+        const current = query && count
+            ? Math.max(1, state.currentMatchIndex + 1)
+            : 0;
+        // Keep the same text format as Ace's native search counter.  The
+        // counter remains present even before a query is entered.
+        state.counter.textContent = String(current) + " of " + String(count);
+    }
+
+    function applyHandriveCodeViewerSearchMarkup(state) {
+        if (!state || !state.codeNode) {
+            return;
+        }
+        const preservedSelection = captureHandriveCodeViewerSelection(state);
+        state.isApplyingMarkup = true;
+        try {
+            restoreHandriveCodeViewerSearchMarkup(state);
+            const query = state.searchQuery || state.selectedQuery;
+            const options = state.searchQuery
+                ? state.options
+                : { caseSensitive: true, regexp: false, wholeWords: false };
+            const sourceText = state.codeNode.textContent || "";
+            const selectionRange = state.options.searchInSelection && state.selectionRange
+                ? state.selectionRange
+                : null;
+            const searchSource = selectionRange
+                ? sourceText.slice(selectionRange.start, selectionRange.end)
+                : sourceText;
+            const sourceMatches = query
+                ? (findHandriveCodeViewerSearchMatches(searchSource, query, options) || [])
+                : [];
+            state.matches = selectionRange
+                ? sourceMatches.map(function (match) {
+                    return {
+                        start: match.start + selectionRange.start,
+                        end: match.end + selectionRange.start,
+                    };
+                })
+                : sourceMatches;
+            state.currentMatchIndex = state.matches.length
+                ? Math.max(0, Math.min(state.currentMatchIndex, state.matches.length - 1))
+                : -1;
+            updateHandriveCodeViewerSearchCounter(state);
+            if (!state.matches.length) {
+                state.selectNearestMatch = false;
+                if (state.searchElement) {
+                    state.searchElement.classList.toggle("ace_nomatch", Boolean(query));
+                }
+                return;
+            }
+
+            const entries = buildHandriveCodeTextOffsetMap(state.codeNode);
+            for (let index = state.matches.length - 1; index >= 0; index -= 1) {
+                const match = state.matches[index];
+                const start = resolveHandriveCodeTextPosition(entries, match.start);
+                const end = resolveHandriveCodeTextPosition(entries, match.end);
+                if (!start || !end) {
+                    continue;
+                }
+                const range = document.createRange();
+                try {
+                    range.setStart(start.node, start.offset);
+                    range.setEnd(end.node, end.offset);
+                    const marker = document.createElement("span");
+                    marker.className = "handrive-code-search-match";
+                    marker.appendChild(range.extractContents());
+                    range.insertNode(marker);
+                } catch (error) {
+                    // A malformed/overlapping range should not prevent the rest of
+                    // the viewer from rendering or searching.
+                }
+            }
+            state.matchElements = Array.from(
+                state.codeNode.querySelectorAll(".handrive-code-search-match")
+            );
+            if (state.selectNearestMatch) {
+                state.currentMatchIndex = findNearestHandriveCodeViewerSearchMatchIndex(state);
+                state.selectNearestMatch = false;
+                updateHandriveCodeViewerSearchCounter(state);
+            }
+            state.matchElements.forEach(function (element, index) {
+                element.classList.toggle("is-current", index === state.currentMatchIndex);
+            });
+            if (state.searchElement) {
+                state.searchElement.classList.remove("ace_nomatch");
+            }
+        } finally {
+            if (preservedSelection && window.getSelection) {
+                const entries = buildHandriveCodeTextOffsetMap(state.codeNode);
+                const start = resolveHandriveCodeTextPosition(entries, preservedSelection.start);
+                const end = resolveHandriveCodeTextPosition(entries, preservedSelection.end);
+                if (start && end) {
+                    try {
+                        const selection = window.getSelection();
+                        const range = document.createRange();
+                        range.setStart(start.node, start.offset);
+                        range.setEnd(end.node, end.offset);
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    } catch (error) {
+                        // Selection restoration is best effort; search markers
+                        // remain useful even where a browser disallows it.
+                    }
+                }
+            }
+            state.isApplyingMarkup = false;
+        }
+    }
+
+    function moveHandriveCodeViewerSearchMatch(state, direction) {
+        if (!state || !state.matches.length) {
+            return;
+        }
+        const count = state.matches.length;
+        state.currentMatchIndex = (state.currentMatchIndex + direction + count) % count;
+        applyHandriveCodeViewerSearchMarkup(state);
+        const current = state.matchElements[state.currentMatchIndex];
+        if (current && typeof current.scrollIntoView === "function") {
+            current.scrollIntoView({ block: "center", inline: "nearest" });
+        }
+    }
+
+    function closeHandriveCodeViewerSearch(state) {
+        if (!state) {
+            return;
+        }
+        const scrollSnapshot = captureHandriveCodeViewerScrollPosition(state);
+        state.searchOpen = false;
+        state.searchQuery = "";
+        state.currentMatchIndex = -1;
+        state.selectionRange = null;
+        if (state.field) {
+            state.field.value = "";
+        }
+        if (state.searchElement) {
+            state.searchElement.hidden = true;
+        }
+        applyHandriveCodeViewerSearchMarkup(state);
+        restoreHandriveCodeViewerScrollPosition(scrollSnapshot);
+        restoreHandriveCodeViewerScrollPositionOnNextFrame(scrollSnapshot);
+    }
+
+    function openHandriveCodeViewerSearch(state) {
+        if (!state || !state.searchElement) {
+            return;
+        }
+        const scrollSnapshot = captureHandriveCodeViewerScrollPosition(state);
+        state.searchOpen = true;
+        if (!state.searchQuery && state.selectedQuery) {
+            state.searchQuery = state.selectedQuery;
+            state.field.value = state.selectedQuery;
+            state.currentMatchIndex = -1;
+            state.selectNearestMatch = true;
+        }
+        state.searchElement.hidden = false;
+        applyHandriveCodeViewerSearchMarkup(state);
+        state.field.focus({ preventScroll: true });
+        if (state.field.value) {
+            state.field.select();
+        }
+        restoreHandriveCodeViewerScrollPosition(scrollSnapshot);
+        restoreHandriveCodeViewerScrollPositionOnNextFrame(scrollSnapshot);
+    }
+
+    function createHandriveCodeViewerSearchButton(action, label) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = action === "close" ? "ace_searchbtn_close" : "ace_searchbtn";
+        if (action === "prev" || action === "next" || action === "findAll") {
+            button.setAttribute("action", action === "prev" ? "findPrev" : action === "next" ? "findNext" : "findAll");
+        }
+        button.setAttribute("aria-label", label);
+        button.title = label;
+        return button;
+    }
+
+    function bindHandriveCodeViewerSearch(targetElement, codeNode) {
+        if (!targetElement || !codeNode) {
+            return null;
+        }
+        ensureHandriveCodeViewerSearchDocumentBindings();
+        let state = handriveCodeViewerSearchStatesByElement.get(targetElement);
+        if (state && state.codeNode === codeNode && state.searchElement && state.searchElement.isConnected) {
+            return state;
+        }
+        if (state) {
+            if (state.searchHost && state.searchHost.isConnected) {
+                state.searchHost.remove();
+            } else if (state.searchElement && state.searchElement.isConnected) {
+                state.searchElement.remove();
+            }
+            handriveCodeViewerSearchStates.delete(state);
+        }
+        const scrollContainer = getHandriveCodeLineScrollContainer(codeNode.parentElement);
+        const searchParent = scrollContainer && !isHandriveDocumentScrollContainer(scrollContainer)
+            ? scrollContainer
+            : targetElement;
+        const searchHost = document.createElement("div");
+        searchHost.className = "handrive-code-search-host handrive-code-search-wrapper";
+        const searchElement = document.createElement("div");
+        searchElement.className = "ace_search handrive-code-view-search";
+        searchElement.hidden = true;
+        const searchForm = document.createElement("form");
+        searchForm.className = "ace_search_form";
+        const field = document.createElement("input");
+        field.type = "text";
+        field.className = "ace_search_field";
+        field.autocomplete = "off";
+        field.spellcheck = false;
+        field.placeholder = textByLang("찾기", "Find");
+        field.setAttribute("aria-label", textByLang("찾기", "Find"));
+        const previous = createHandriveCodeViewerSearchButton("prev", textByLang("이전 찾기", "Find previous"));
+        const next = createHandriveCodeViewerSearchButton("next", textByLang("다음 찾기", "Find next"));
+        const findAll = createHandriveCodeViewerSearchButton("findAll", textByLang("모두 찾기", "Find all"));
+        searchForm.append(field, previous, next, findAll);
+        const close = createHandriveCodeViewerSearchButton("close", textByLang("닫기", "Close"));
+        const options = document.createElement("div");
+        options.className = "ace_search_options";
+        const counter = document.createElement("span");
+        counter.className = "ace_search_counter";
+        counter.setAttribute("aria-live", "polite");
+        // Ace places the counter before its option buttons so the counter
+        // stays on the left and the controls remain grouped on the right.
+        options.appendChild(counter);
+        const optionButtons = [
+            ["toggleRegexpMode", ".*", textByLang("정규식 검색", "Regular expression search")],
+            ["toggleCaseSensitive", "Aa", textByLang("대/소문자 구분", "Match case")],
+            ["toggleWholeWords", "\\b", textByLang("단어 단위 검색", "Match whole word")],
+            ["searchInSelection", "S", textByLang("선택 영역에서 검색", "Search in selection")],
+        ];
+        optionButtons.forEach(function (definition) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "ace_button";
+            button.setAttribute("action", definition[0]);
+            button.setAttribute("aria-label", definition[1]);
+            button.title = definition[1];
+            button.setAttribute("aria-pressed", "false");
+            button.textContent = definition[1];
+            button.dataset.handriveSearchLabel = definition[2];
+            button.title = definition[2];
+            button.setAttribute("aria-label", definition[2]);
+            options.appendChild(button);
+        });
+        searchElement.append(searchForm, close, options);
+        searchHost.appendChild(searchElement);
+        searchParent.insertBefore(searchHost, searchParent.firstChild);
+
+        state = {
+            codeNode: codeNode,
+            currentMatchIndex: -1,
+            field: field,
+            matchElements: [],
+            matches: [],
+            options: {
+                caseSensitive: false,
+                regexp: false,
+                wholeWords: false,
+                searchInSelection: false,
+            },
+            searchHost: searchHost,
+            searchElement: searchElement,
+            searchOpen: false,
+            searchQuery: "",
+            selectedQuery: "",
+            selectionRange: null,
+            selectNearestMatch: false,
+            isApplyingMarkup: false,
+            targetElement: targetElement,
+            baseHtml: codeNode.innerHTML,
+            counter: counter,
+        };
+        handriveCodeViewerSearchStatesByElement.set(targetElement, state);
+        handriveCodeViewerSearchStates.add(state);
+        targetElement.classList.add("handrive-code-search-host");
+        targetElement.addEventListener("pointerenter", function () {
+            handriveCodeViewerSearchHoveredHost = targetElement;
+        });
+        searchForm.addEventListener("submit", function (event) {
+            event.preventDefault();
+            moveHandriveCodeViewerSearchMatch(state, event.shiftKey ? -1 : 1);
+        });
+        field.addEventListener("input", function () {
+            state.searchQuery = field.value;
+            state.selectedQuery = "";
+            state.currentMatchIndex = -1;
+            state.selectNearestMatch = Boolean(state.searchQuery);
+            applyHandriveCodeViewerSearchMarkup(state);
+        });
+        field.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                moveHandriveCodeViewerSearchMatch(state, event.shiftKey ? -1 : 1);
+            } else if (event.key === "Tab") {
+                event.preventDefault();
+                moveHandriveCodeViewerSearchMatch(state, event.shiftKey ? -1 : 1);
+            } else if (event.key === "Escape") {
+                event.preventDefault();
+                closeHandriveCodeViewerSearch(state);
+            }
+        });
+        previous.addEventListener("click", function () {
+            moveHandriveCodeViewerSearchMatch(state, -1);
+        });
+        next.addEventListener("click", function () {
+            moveHandriveCodeViewerSearchMatch(state, 1);
+        });
+        findAll.addEventListener("click", function () {
+            if (state.searchQuery) {
+                state.currentMatchIndex = -1;
+                state.selectNearestMatch = true;
+                applyHandriveCodeViewerSearchMarkup(state);
+            }
+        });
+        close.addEventListener("click", function () {
+            closeHandriveCodeViewerSearch(state);
+        });
+        options.addEventListener("click", function (event) {
+            const button = event.target instanceof Element
+                ? event.target.closest(".ace_button[action]")
+                : null;
+            if (!button) {
+                return;
+            }
+            const action = button.getAttribute("action");
+            if (action === "toggleRegexpMode") {
+                state.options.regexp = !state.options.regexp;
+            } else if (action === "toggleCaseSensitive") {
+                state.options.caseSensitive = !state.options.caseSensitive;
+            } else if (action === "toggleWholeWords") {
+                state.options.wholeWords = !state.options.wholeWords;
+            } else if (action === "searchInSelection") {
+                state.options.searchInSelection = !state.options.searchInSelection;
+            } else {
+                return;
+            }
+            button.classList.toggle("checked", Boolean(state.options[
+                action === "toggleRegexpMode" ? "regexp"
+                    : action === "toggleCaseSensitive" ? "caseSensitive"
+                        : action === "toggleWholeWords" ? "wholeWords" : "searchInSelection"
+            ]));
+            button.setAttribute("aria-pressed", button.classList.contains("checked") ? "true" : "false");
+            applyHandriveCodeViewerSearchMarkup(state);
+        });
+        return state;
+    }
+
+    function getHandriveCodeViewerSearchHostFromEvent(event) {
+        const eventTarget = event && event.target instanceof Element
+            ? event.target
+            : null;
+        const activeElement = document.activeElement instanceof Element
+            ? document.activeElement
+            : null;
+        // Never hijack the editor's own Ctrl/Cmd+F, even when the pointer is
+        // still hovering a viewer that was searched earlier.
+        if (
+            (eventTarget && eventTarget.closest(".handrive-code-editor"))
+            || (activeElement && activeElement.closest(".handrive-code-editor"))
+        ) {
+            return null;
+        }
+        const eventHost = eventTarget
+            ? eventTarget.closest(".handrive-code-search-host")
+            : null;
+        if (eventHost && handriveCodeViewerSearchStatesByElement.has(eventHost)) {
+            return handriveCodeViewerSearchStatesByElement.get(eventHost);
+        }
+        if (
+            handriveCodeViewerSearchHoveredHost
+            && handriveCodeViewerSearchHoveredHost.isConnected
+            && handriveCodeViewerSearchStatesByElement.has(handriveCodeViewerSearchHoveredHost)
+        ) {
+            return handriveCodeViewerSearchStatesByElement.get(handriveCodeViewerSearchHoveredHost);
+        }
+        return Array.from(handriveCodeViewerSearchStates).find(function (candidate) {
+            return candidate.targetElement && candidate.targetElement.isConnected;
+        }) || null;
+    }
+
+    function syncHandriveCodeViewerSelectedText() {
+        const selection = window.getSelection ? window.getSelection() : null;
+        const range = selection && selection.rangeCount ? selection.getRangeAt(0) : null;
+        handriveCodeViewerSearchStates.forEach(function (state) {
+            if (!state.targetElement || !state.targetElement.isConnected) {
+                if (state.searchHost && state.searchHost.isConnected) {
+                    state.searchHost.remove();
+                } else if (state.searchElement && state.searchElement.isConnected) {
+                    state.searchElement.remove();
+                }
+                handriveCodeViewerSearchStates.delete(state);
+                return;
+            }
+            if (state.isApplyingMarkup) {
+                return;
+            }
+            const isInsideCode = Boolean(
+                range
+                && !range.collapsed
+                && state.codeNode.contains(range.commonAncestorContainer)
+            );
+            const isSearchFieldFocused = Boolean(
+                state.searchOpen
+                && state.searchElement
+                && state.searchElement.contains(document.activeElement)
+            );
+            if (!isInsideCode && isSearchFieldFocused) {
+                return;
+            }
+            const selectedText = isInsideCode ? String(selection.toString() || "") : "";
+            const nextSelectedQuery = selectedText.trim() ? selectedText : "";
+            const nextSelectionRange = isInsideCode
+                ? {
+                    start: getHandriveCodeTextOffset(state.codeNode, range.startContainer, range.startOffset),
+                    end: getHandriveCodeTextOffset(state.codeNode, range.endContainer, range.endOffset),
+                }
+                : null;
+            const hasSelectionRangeChanged = Boolean(
+                nextSelectionRange
+                && (
+                    !state.selectionRange
+                    || nextSelectionRange.start !== state.selectionRange.start
+                    || nextSelectionRange.end !== state.selectionRange.end
+                )
+            ) || Boolean(state.selectionRange) !== Boolean(nextSelectionRange);
+            if (nextSelectedQuery === state.selectedQuery && !hasSelectionRangeChanged) {
+                return;
+            }
+            state.selectedQuery = nextSelectedQuery;
+            state.selectionRange = nextSelectionRange
+                && Number.isInteger(nextSelectionRange.start)
+                && Number.isInteger(nextSelectionRange.end)
+                ? nextSelectionRange
+                : null;
+            if (!state.searchQuery) {
+                state.currentMatchIndex = state.selectedQuery ? 0 : -1;
+                applyHandriveCodeViewerSearchMarkup(state);
+            }
+        });
+    }
+
+    function ensureHandriveCodeViewerSearchDocumentBindings() {
+        if (handriveCodeViewerSearchDocumentBound) {
+            return;
+        }
+        handriveCodeViewerSearchDocumentBound = true;
+        document.addEventListener("selectionchange", syncHandriveCodeViewerSelectedText);
+        document.addEventListener("keydown", function (event) {
+            const key = String(event.key || "").toLowerCase();
+            const isFindShortcut = key === "f"
+                && (event.ctrlKey || event.metaKey)
+                && !event.altKey
+                && !event.shiftKey;
+            if (isFindShortcut && !event.defaultPrevented) {
+                const state = getHandriveCodeViewerSearchHostFromEvent(event);
+                if (state) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    openHandriveCodeViewerSearch(state);
+                    return;
+                }
+            }
+            if (key === "escape") {
+                handriveCodeViewerSearchStates.forEach(function (state) {
+                    if (state.searchOpen) {
+                        closeHandriveCodeViewerSearch(state);
+                    }
+                });
+            }
+        }, true);
     }
 
     function getHandriveCodeToggleLabel(isCodeView) {
@@ -11683,6 +12516,9 @@
                 clearPreviewBodyHeightStyles(previewBody);
                 return;
             }
+            // Landscape uses an explicit side-pane height, so a portrait
+            // loading lock must not survive an orientation/layout change.
+            previewPortraitLoadingHeightLocked = false;
             const previewHead = previewPanel.querySelector(".handrive-list-preview-head");
             const height = getListSideBodyHeight(previewHead);
             previewBody.style.height = height + "px";
@@ -14619,16 +15455,38 @@
             );
         }
 
+        function isPreviewVideoPlaying() {
+            if (!previewContent) return false;
+            const playerElement = previewContent.querySelector(".video-js");
+            if (playerElement && playerElement.classList.contains("vjs-playing")) {
+                return true;
+            }
+            const videoElement = previewContent.querySelector("video");
+            return Boolean(videoElement && !videoElement.paused && !videoElement.ended);
+        }
+
+        function hidePreviewNavButtons() {
+            if (!previewNavPrevBtn || !previewNavNextBtn) return;
+            previewNavPrevBtn.hidden = true;
+            previewNavNextBtn.hidden = true;
+            if (previewNavBgPrev) previewNavBgPrev.hidden = true;
+            if (previewNavBgNext) previewNavBgNext.hidden = true;
+            setPreviewNavBackgroundVisible(false);
+            previewNavPrevBtn._navTarget = null;
+            previewNavNextBtn._navTarget = null;
+        }
+
         async function updatePreviewNavButtons(entry) {
             if (!previewNavPrevBtn || !previewNavNextBtn) return;
+            if (previewPanel) {
+                previewPanel.classList.toggle("is-preview-media-playing", isPreviewVideoPlaying());
+            }
+            if (isPreviewVideoPlaying()) {
+                hidePreviewNavButtons();
+                return;
+            }
             if (!entry || !isMediaNavEntry(entry)) {
-                previewNavPrevBtn.hidden = true;
-                previewNavNextBtn.hidden = true;
-                if (previewNavBgPrev) previewNavBgPrev.hidden = true;
-                if (previewNavBgNext) previewNavBgNext.hidden = true;
-                setPreviewNavBackgroundVisible(false);
-                previewNavPrevBtn._navTarget = null;
-                previewNavNextBtn._navTarget = null;
+                hidePreviewNavButtons();
                 return;
             }
             const siblingDir = getParentPath(entry.path) || state.currentDir;
@@ -14641,13 +15499,14 @@
                 } catch (error) {}
             }
             if (!siblings.length) {
-                previewNavPrevBtn.hidden = true;
-                previewNavNextBtn.hidden = true;
-                if (previewNavBgPrev) previewNavBgPrev.hidden = true;
-                if (previewNavBgNext) previewNavBgNext.hidden = true;
-                setPreviewNavBackgroundVisible(false);
-                previewNavPrevBtn._navTarget = null;
-                previewNavNextBtn._navTarget = null;
+                hidePreviewNavButtons();
+                return;
+            }
+            // Sibling loading above is asynchronous; playback may have started
+            // while it was in flight. Never reveal navigation controls again in
+            // that race window.
+            if (isPreviewVideoPlaying()) {
+                hidePreviewNavButtons();
                 return;
             }
             const currentPath = normalizePath(entry.path, true);
@@ -14679,6 +15538,30 @@
                     previewNavNextBtn.classList.remove("is-revealing");
                 }, 180);
             }
+        }
+
+        function syncPreviewNavPlaybackState() {
+            const isPlaying = isPreviewVideoPlaying();
+            if (previewPanel) {
+                previewPanel.classList.toggle("is-preview-media-playing", isPlaying);
+            }
+            if (isPlaying) {
+                hidePreviewNavButtons();
+                return;
+            }
+            const activePath = normalizePath(state.activePreviewPath || "", true);
+            const activeEntry = activePath ? state.entryByPath.get(activePath) : null;
+            if (activeEntry) {
+                updatePreviewNavButtons(activeEntry).catch(function () {});
+            } else {
+                hidePreviewNavButtons();
+            }
+        }
+
+        if (previewContent) {
+            ["play", "playing", "pause", "ended", "emptied"].forEach(function (eventName) {
+                previewContent.addEventListener(eventName, syncPreviewNavPlaybackState, true);
+            });
         }
 
         function navigateToPreviewEntry(entry, options) {
@@ -14845,8 +15728,8 @@
             return getPathZoomExtension(state.activePreviewPath || "");
         }
 
-        function syncPreviewImageZoom() {
-            previewSyncImageZoom(previewContent, previewZoomWrap, state.previewImageZoom);
+        function syncPreviewImageZoom(options) {
+            previewSyncImageZoom(previewContent, previewZoomWrap, state.previewImageZoom, options);
         }
 
         function getPreviewFrameElements() {
@@ -15054,7 +15937,22 @@
 
         function setPreviewImageZoom(nextZoom) {
             const minZoom = getPreviewImageMinZoom();
-            state.previewImageZoom = Math.max(minZoom, Math.min(3, Number(nextZoom) || 1));
+            const context = arguments.length > 1 ? arguments[1] : null;
+            const boundedZoom = Math.max(minZoom, Math.min(4, Number(nextZoom) || 1));
+            // Gesture binding already adjusts around its focal point.  Buttons
+            // have no pointer context, so use the preview centre for them.
+            if (!context || context.inputType === "button") {
+                previewAdjustImageZoomAt(previewContent, boundedZoom, context || {}, {
+                    getImageWrap: function () {
+                        return previewContent
+                            ? previewContent.querySelector(".handrive-media-image-wrap")
+                            : null;
+                    },
+                    min: minZoom,
+                    max: 4,
+                });
+            }
+            state.previewImageZoom = boundedZoom;
             syncPreviewImageZoom();
         }
 
@@ -15102,6 +16000,20 @@
 
         function releasePreviewBodyHeightWhenRendered(renderMode) {
             const normalizedRenderMode = String(renderMode || "");
+            if (normalizedRenderMode === "media_video") {
+                // Keep the portrait loading frame locked while Video.js chooses
+                // a native tech and attaches its metadata. On Android/Windows
+                // that work can span several tasks; releasing the lock here
+                // lets the flex preview collapse while the player is still
+                // becoming measurable, which looks like a loaded player that
+                // suddenly disappeared. The next preview render, explicit
+                // close, or layout-mode change releases the lock normally.
+                if (previewPortraitLoadingHeightLocked) {
+                    return;
+                }
+                releasePreviewBodyHeightAfterNextPaint();
+                return;
+            }
             if (normalizedRenderMode !== "media_image") {
                 releasePreviewBodyHeightAfterNextPaint();
                 return;
@@ -21939,12 +22851,22 @@
 
         if (previewContent) {
             previewContent.addEventListener("click", openClickedImagePictureInPicture);
-
-            bindHanplanetZoomGesture(previewContent, getListPreviewZoomGestureOptions());
+            previewBindImageZoomPan(previewContent, Object.assign({}, getListPreviewZoomGestureOptions(), {
+                getImageWrap: function () {
+                    return previewContent.querySelector(".handrive-media-image-wrap");
+                },
+                shouldHandle: function () {
+                    return isListPreviewImageZoomContent();
+                },
+            }));
         }
 
         if (previewBody) {
-            bindHanplanetZoomGesture(previewBody, getListPreviewZoomGestureOptions());
+            const previewBodyZoomOptions = getListPreviewZoomGestureOptions();
+            previewBodyZoomOptions.shouldHandle = function () {
+                return !isListPreviewImageZoomContent();
+            };
+            bindHanplanetZoomGesture(previewBody, previewBodyZoomOptions);
             previewBody.addEventListener("wheel", handleListPreviewBodyWheel, { passive: false });
         }
 
@@ -27166,7 +28088,7 @@
             renderCurrentViewCodeSource(sourcePayload);
         }
 
-        function syncViewImageZoom() {
+        function syncViewImageZoom(options) {
             const imageWrap = contentArticle
                 ? contentArticle.querySelector(".handrive-media-image-wrap")
                 : null;
@@ -27177,11 +28099,7 @@
             if (!hasImage || !imageWrap) {
                 return;
             }
-            imageWrap.style.transform = "scale(" + String(viewImageZoom) + ")";
-            if (contentArticle) {
-                contentArticle.scrollLeft = 0;
-                contentArticle.scrollTop = 0;
-            }
+            handriveSyncImageZoomPan(contentArticle, imageWrap, viewImageZoom, options);
         }
 
         function getViewImageMinZoom() {
@@ -27199,7 +28117,20 @@
 
         function setViewImageZoom(nextZoom) {
             const minZoom = getViewImageMinZoom();
-            viewImageZoom = Math.max(minZoom, Math.min(3, Number(nextZoom) || 1));
+            const context = arguments.length > 1 ? arguments[1] : null;
+            const boundedZoom = Math.max(minZoom, Math.min(4, Number(nextZoom) || 1));
+            if (!context || context.inputType === "button") {
+                previewAdjustImageZoomAt(contentArticle, boundedZoom, context || {}, {
+                    getImageWrap: function () {
+                        return contentArticle
+                            ? contentArticle.querySelector(".handrive-media-image-wrap")
+                            : null;
+                    },
+                    min: minZoom,
+                    max: 4,
+                });
+            }
+            viewImageZoom = boundedZoom;
             syncViewImageZoom();
         }
 
@@ -27220,8 +28151,11 @@
             const extension = getViewZoomExtension(pathValue);
             if (getViewImageElement()) {
                 viewImageZoom = 1;
-                syncViewImageZoom();
+                syncViewImageZoom({ resetPan: true });
                 return;
+            }
+            if (contentArticle) {
+                contentArticle.classList.remove("handrive-image-zoom-pan-surface");
             }
             if (contentArticle) {
                 if (!isHandriveTextCodeZoomExtension(extension)) {
@@ -27514,24 +28448,36 @@
 
         const isTextArticle = contentArticle && !contentArticle.classList.contains("handrive-media");
         if (contentArticle && (isTextArticle || (contentArticle.classList.contains("handrive-media") && getViewImageElement()))) {
-            bindHanplanetZoomGesture(contentArticle, {
+            const viewZoomOptions = {
                 min: function () {
                     return contentArticle.classList.contains("handrive-media") ? getViewImageMinZoom() : 8;
                 },
                 max: function () {
-                    return contentArticle.classList.contains("handrive-media") ? 3 : 40;
+                    return contentArticle.classList.contains("handrive-media") ? 4 : 40;
                 },
                 getValue: function () {
                     return contentArticle.classList.contains("handrive-media") ? viewImageZoom : viewTextFontSize;
                 },
                 setValue: function (value) {
                     if (contentArticle.classList.contains("handrive-media")) {
-                        setViewImageZoom(value);
+                        setViewImageZoom(value, arguments.length > 1 ? arguments[1] : null);
                         return;
                     }
                     setViewTextFontSize(value);
                 },
-            });
+            };
+            if (contentArticle.classList.contains("handrive-media") && getViewImageElement()) {
+                previewBindImageZoomPan(contentArticle, Object.assign({}, viewZoomOptions, {
+                    getImageWrap: function () {
+                        return contentArticle.querySelector(".handrive-media-image-wrap");
+                    },
+                    shouldHandle: function () {
+                        return Boolean(contentArticle.querySelector(".handrive-media-image-wrap"));
+                    },
+                }));
+            } else {
+                bindHanplanetZoomGesture(contentArticle, viewZoomOptions);
+            }
         }
 
         if (urlShareButton && urlShareApiUrl && currentDocPath) {

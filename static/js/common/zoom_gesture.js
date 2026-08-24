@@ -125,6 +125,15 @@
         if (!event || event.defaultPrevented) {
             return false;
         }
+        if (typeof settings.shouldHandle === "function") {
+            try {
+                if (settings.shouldHandle(event) === false) {
+                    return false;
+                }
+            } catch (error) {
+                return false;
+            }
+        }
         if (!(event.ctrlKey || event.metaKey)) {
             return false;
         }
@@ -196,6 +205,15 @@
             if (!event || !event.touches || event.touches.length < 2) {
                 return;
             }
+            if (typeof settings.shouldHandle === "function") {
+                try {
+                    if (settings.shouldHandle(event) === false) {
+                        return;
+                    }
+                } catch (error) {
+                    return;
+                }
+            }
             const distance = getTouchDistance(event.touches);
             if (!distance) {
                 return;
@@ -216,6 +234,15 @@
         function movePinch(event) {
             if (!pinchActive || !event || !event.touches || event.touches.length < 2) {
                 return;
+            }
+            if (typeof settings.shouldHandle === "function") {
+                try {
+                    if (settings.shouldHandle(event) === false) {
+                        return;
+                    }
+                } catch (error) {
+                    return;
+                }
             }
             const distance = getTouchDistance(event.touches);
             if (!distance || !pinchStartDistance) {
@@ -245,6 +272,19 @@
             if (!pinchActive) {
                 return;
             }
+            if (typeof settings.shouldHandle === "function") {
+                try {
+                    if (settings.shouldHandle(event) === false) {
+                        pinchActive = false;
+                        pinchStartDistance = 0;
+                        return;
+                    }
+                } catch (error) {
+                    pinchActive = false;
+                    pinchStartDistance = 0;
+                    return;
+                }
+            }
             if (event && event.touches && event.touches.length >= 2) {
                 startPinch(event);
                 return;
@@ -254,6 +294,15 @@
         }
 
         function startGesture(event) {
+            if (typeof settings.shouldHandle === "function") {
+                try {
+                    if (settings.shouldHandle(event) === false) {
+                        return;
+                    }
+                } catch (error) {
+                    return;
+                }
+            }
             const context = {
                 inputType: "gesture-start",
                 originalEvent: event,
@@ -265,6 +314,15 @@
         }
 
         function changeGesture(event) {
+            if (typeof settings.shouldHandle === "function") {
+                try {
+                    if (settings.shouldHandle(event) === false) {
+                        return;
+                    }
+                } catch (error) {
+                    return;
+                }
+            }
             const scale = Number(event && event.scale) || 1;
             const context = {
                 inputType: "gesture",

@@ -9,6 +9,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import tarfile
 import time
 import uuid as uuid_lib
 import zipfile
@@ -1358,6 +1359,51 @@ class DataBackupRetentionTests(TestCase):
                 ],
             )
 
+    def test_daily_archive_excludes_user_handrive_files_but_keeps_other_media(self):
+        scheduler = import_module("main.access_log_scheduler")
+        with TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            media_root = root / "media"
+            repos_root = root / "forgejo-repos"
+            backup_root = root / "backups"
+            (media_root / "HanDrive" / "users" / "alice").mkdir(parents=True)
+            (media_root / "HanDrive" / "users" / "alice" / "private.txt").write_text(
+                "private",
+                encoding="utf-8",
+            )
+            (media_root / "HanDrive" / "guest").mkdir(parents=True)
+            (media_root / "HanDrive" / "guest" / "sample.md").write_text(
+                "sample",
+                encoding="utf-8",
+            )
+            (media_root / "uploads").mkdir(parents=True)
+            (media_root / "uploads" / "avatar.png").write_bytes(b"avatar")
+            (repos_root / "owner" / "repo.git").mkdir(parents=True)
+            (repos_root / "owner" / "repo.git" / "HEAD").write_text(
+                "ref: refs/heads/main\n",
+                encoding="utf-8",
+            )
+
+            with override_settings(
+                MEDIA_ROOT=str(media_root),
+                FORGEJO_REPOS_ROOT=str(repos_root),
+            ):
+                archive_path = scheduler._create_data_backup_archive(
+                    backup_root,
+                    date(2026, 3, 12),
+                )
+
+            self.assertIsNotNone(archive_path)
+            with tarfile.open(archive_path, "r:gz") as archive:
+                names = set(archive.getnames())
+
+            self.assertNotIn("media/HanDrive/users", names)
+            self.assertNotIn("media/HanDrive/users/alice", names)
+            self.assertNotIn("media/HanDrive/users/alice/private.txt", names)
+            self.assertIn("media/HanDrive/guest/sample.md", names)
+            self.assertIn("media/uploads/avatar.png", names)
+            self.assertIn("forgejo-repos/owner/repo.git/HEAD", names)
+
 
 class StorageProfileDiscModeTests(TestCase):
     def test_disc_mode_prefers_env_over_secret(self):
@@ -1418,6 +1464,38 @@ class StorageProfileDiscModeTests(TestCase):
 
 
 class HandriveHlsThumbnailTests(TestCase):
+    def test_uncached_mkv_preview_does_not_emit_blocking_faststart_url(self):
+        handrive_views = import_module("main.handrive_views")
+        handrive_hls = import_module("main.handrive_hls")
+
+        with TemporaryDirectory() as tmp_dir:
+            source = Path(tmp_dir) / "sample.mkv"
+            source.write_bytes(b"placeholder")
+            cache_root = Path(tmp_dir) / "hls-cache"
+            request = RequestFactory().get("/")
+
+            with override_settings(HANDRIVE_HLS_CACHE_ROOT=str(cache_root)):
+                html = handrive_views.render_handrive_media_safely(
+                    source,
+                    "users/test/sample.mkv",
+                    request=request,
+                )
+
+            self.assertNotIn("data-faststart-url=", html)
+            cache_dir = cache_root / handrive_hls.get_cache_key(source)
+            cache_dir.mkdir(parents=True)
+            (cache_dir / "faststart-v2.mp4").write_bytes(b"cached")
+
+            with override_settings(HANDRIVE_HLS_CACHE_ROOT=str(cache_root)):
+                cached_html = handrive_views.render_handrive_media_safely(
+                    source,
+                    "users/test/sample.mkv",
+                    request=request,
+                )
+
+            self.assertIn("data-faststart-url=", cached_html)
+            self.assertIn('data-faststart-ready="1"', cached_html)
+
     def test_video_player_defers_hls_until_playback_or_explicit_quality_request(self):
         video_js = (Path(settings.BASE_DIR) / "static/js/handrive/video_player.js").read_text(encoding="utf-8")
         page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
@@ -1447,6 +1525,17 @@ class HandriveHlsThumbnailTests(TestCase):
         after_bind = setup_body[setup_body.index("bindPlayIntentHandlers();"):]
         self.assertNotIn("fetchHlsStatus()", after_bind)
         self.assertNotIn("deferHlsKickoffUntilStartupBuffered", setup_body)
+
+    def test_preview_navigation_stays_hidden_during_video_playback(self):
+        page_js = (Path(settings.BASE_DIR) / "static/js/handrive/page.js").read_text(encoding="utf-8")
+        handrive_css = (Path(settings.BASE_DIR) / "static/css/pages/handrive/style.css").read_text(encoding="utf-8")
+
+        self.assertIn("function isPreviewVideoPlaying()", page_js)
+        self.assertIn("function hidePreviewNavButtons()", page_js)
+        self.assertIn("syncPreviewNavPlaybackState", page_js)
+        self.assertIn('previewContent.addEventListener(eventName, syncPreviewNavPlaybackState, true);', page_js)
+        self.assertIn(".handrive-list-preview.is-preview-media-playing .handrive-preview-nav-btn", handrive_css)
+        self.assertIn(".handrive-list-preview.is-preview-media-playing .handrive-preview-nav-bg", handrive_css)
 
     def test_video_player_does_not_reload_or_play_before_resume_point_is_ready(self):
         video_js = (Path(settings.BASE_DIR) / "static/js/handrive/video_player.js").read_text(encoding="utf-8")
@@ -2341,6 +2430,14 @@ class LanguageUrlRoutingTests(TestCase):
                 )
 
                 self.assertEqual(response.status_code, 200)
+                self.assertTrue(response.context["hide_global_nav"])
+                self.assertEqual(response.context["onscripter_index_url"], "/ko/sub/onscripter")
+                self.assertContains(response, 'id="onscripter_game_list"', html=False)
+                self.assertContains(response, 'href="/ko/sub/onscripter"', html=False)
+                self.assertContains(response, 'aria-label="게임 목록"', html=False)
+                self.assertContains(response, 'id="onscripter-list-confirm-modal"', html=False)
+                self.assertContains(response, 'onscripter/navigation.js', html=False)
+                self.assertNotContains(response, 'class="navbar ui-nav"', html=False)
                 self.assertEqual(response.context["meta_title"], expected_title)
                 self.assertEqual(response.context["meta_og_title"], expected_title)
                 self.assertEqual(response.context["meta_description"], expected_description)
@@ -2465,7 +2562,7 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'id="rlcraftPlayerPanelToggle"', html=False)
         self.assertContains(response, 'id="rlcraftPageDivider"', html=False)
         self.assertContains(response, 'role="separator"', html=False)
-        self.assertContains(response, '<p class="rlcraft-server-subtitle">Prominence II: Hasturian Era v4.0.0</p>', html=False)
+        self.assertContains(response, '<p class="rlcraft-server-subtitle">DeceasedCraft Beta 5.10.17</p>', html=False)
         self.assertNotContains(response, "RPG 성장과 탐험을 위한", html=False)
         self.assertLess(content.index("rlcraft-player-panel"), content.index("rlcraft-modpack-panel"))
         self.assertContains(response, 'id="rlcraftModpackPanel"', html=False)
@@ -2475,11 +2572,10 @@ class LanguageUrlRoutingTests(TestCase):
         self.assertContains(response, 'id="rlcraftModpackModal" class="handrive-help-modal rlcraft-modpack-modal" hidden', html=False)
         self.assertNotContains(response, 'class="rlcraft-side-content"', html=False)
         self.assertContains(response, PROMINENCE_CURSEFORGE_URL, html=False)
-        self.assertContains(response, PROMINENCE_KOREAN_PATCH_URL, html=False)
-        self.assertContains(response, "CurseForge에서 설치", html=False)
-        self.assertContains(response, "한국어 패치 안내", html=False)
+        self.assertNotContains(response, "한국어 패치 안내", html=False)
+        self.assertContains(response, "DeceasedCraft 설치", html=False)
         self.assertNotContains(response, "Hanplanet_Prominence_II_v3.9.27_ko.zip", html=False)
-        self.assertContains(response, "CurseForge의 공식 Prominence II: Hasturian Era 페이지", html=False)
+        self.assertContains(response, "CurseForge의 공식 DeceasedCraft 페이지", html=False)
         self.assertContains(response, "const statusUrl = '/rlcraft", html=False)
 
     def test_prominence_player_head_url_uses_java_uuid(self):
@@ -9206,13 +9302,14 @@ class HandriveStyleSourceTests(TestCase):
         self.assertIn('_write_icon("video", _draw_video_icon())', icon_generator)
         self.assertIn('icon = _canvas_from_source(*SOURCE_ICONS["image"])', icon_generator)
         self.assertIn('for index in range(5):', icon_generator)
+        self.assertIn('fill=(0, 0, 0, 0)', icon_generator)
         self.assertIn('_scale_box((10, 13, 22, 21))', icon_generator)
         self.assertIn('(14.4 * SCALE, 14.5 * SCALE)', icon_generator)
         self.assertIn('if extension == ".sql":\n        return "sql"', handrive_views)
         self.assertIn('type-sql.png?v=icon-source-20260721-4', handrive_css)
         self.assertNotIn("data:image/svg+xml", markdown_folder_icon_block)
         self.assertIn('type-folder-image.png?v=icon-source-20260721-4', markdown_folder_icon_block)
-        self.assertIn('type-video.png?v=video-film-20260722-1', handrive_css)
+        self.assertIn('type-video.png?v=video-film-20260813-1', handrive_css)
         self.assertNotIn("transform: scale", type_icon_block)
         self.assertNotIn("transform: scaleX", type_icon_block)
         self.assertNotIn("background-size: 115%", type_icon_block)
@@ -19534,7 +19631,7 @@ class HandriveAccessRuleTests(TestCase):
         self.assertTrue(payload["is_url_only"])
         self.assertEqual(payload["owner_username"], "url_share_api_editor")
         self.assertEqual(payload["share_allowed_users"], [])
-        self.assertRegex(payload["share_slug"], r"^[A-Za-z0-9_-]{22}$")
+        self.assertRegex(payload["share_slug"], r"^[A-Za-z0-9_-]{16}$")
         self.assertNotIn("public", payload["share_slug"].lower())
         self.assertIn("/handrive/api/download?", payload["share_download_url"])
         self.assertNotIn("path", parse_qs(urlparse(payload["share_download_url"]).query))
@@ -19605,7 +19702,7 @@ class HandriveAccessRuleTests(TestCase):
         child_share_url = child_entry["share_url"]
         child_download_url = child_entry["share_download_url"]
         child_share_token = urlparse(child_share_url).path.rstrip("/").split("/")[-1]
-        self.assertRegex(child_share_token, r"^[A-Za-z0-9_-]{22}$")
+        self.assertRegex(child_share_token, r"^[A-Za-z0-9_-]{16}$")
         self.assertNotIn("secret-report", child_share_url)
         self.assertNotIn("secret-report", child_download_url)
         self.assertIn("share_item=", child_download_url)
@@ -19624,8 +19721,10 @@ class HandriveAccessRuleTests(TestCase):
     def test_share_token_pattern_keeps_existing_43_character_links_compatible(self):
         handrive_views = import_module("main.handrive_views")
 
+        self.assertTrue(handrive_views.HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch("a" * 16))
         self.assertTrue(handrive_views.HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch("a" * 22))
         self.assertTrue(handrive_views.HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch("a" * 43))
+        self.assertFalse(handrive_views.HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch("a" * 15))
         self.assertFalse(handrive_views.HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch("a" * 21))
         self.assertFalse(handrive_views.HANDRIVE_SHARE_TOKEN_PATTERN.fullmatch("a" * 44))
 
@@ -20548,6 +20647,38 @@ class HandriveAccessRuleTests(TestCase):
             },
         )
         self.assertEqual(download_response.status_code, 200)
+
+    def test_superuser_switch_video_preview_emits_playable_fallback_and_admin_query(self):
+        admin_user = self.user_model.objects.create_user(
+            username="handrive_admin_preview_switcher",
+            password="pw123456",
+            is_staff=True,
+            is_superuser=True,
+        )
+        target_user = self.create_scoped_handrive_user("handrive_admin_preview_target")
+        handrive_root = Path(settings.MEDIA_ROOT) / "HanDrive"
+        self.client.force_login(admin_user)
+
+        for extension in (".mp4", ".mkv"):
+            relative_path = f"users/{target_user.username}/clip{extension}"
+            (handrive_root / "users" / target_user.username / f"clip{extension}").write_bytes(b"video")
+            response = self.client.post(
+                f"{reverse('main:handrive_api_preview')}?handrive_user={target_user.username}",
+                data=json.dumps({"path": relative_path}),
+                content_type="application/json",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload.get("render_mode"), "media_video")
+            html = payload.get("html", "")
+            # A failed lazy Video.js load must still leave a native playable
+            # element rather than a video tag with only data-* URLs.
+            self.assertIn(' controls ', html)
+            encoded_path = relative_path.replace("/", "%2F")
+            self.assertIn(f'src="/handrive/api/download?path={encoded_path}&amp;handrive_user={target_user.username}"', html)
+            self.assertIn(f'data-fallback-src="/handrive/api/download?path={encoded_path}&amp;handrive_user={target_user.username}"', html)
+            self.assertIn(f"handrive_user={target_user.username}", html)
 
     def test_hls_manifest_and_playlist_keep_admin_switch_query(self):
         admin_user = self.user_model.objects.create_user(

@@ -90,12 +90,7 @@
         var imageElement = previewGetImageElement(previewContent);
         if (imageElement && !imageElement.complete) {
             imageElement.addEventListener("load", function () {
-                var wrap = previewContent
-                    ? previewContent.querySelector(".handrive-media-image-wrap")
-                    : null;
-                if (wrap) {
-                    wrap.style.transform = "scale(" + String(state.previewImageZoom) + ")";
-                }
+                syncPreviewImageZoom();
                 if (previewZoomWrap) {
                     previewZoomWrap.hidden = false;
                 }

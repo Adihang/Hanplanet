@@ -29,6 +29,7 @@
         sql: "handrive-sql",
     };
     let acePathsConfigured = false;
+    let aceSearchboxLoadPromise = null;
 
     function normalizeExtension(extension) {
         const value = String(extension || "").trim().toLowerCase();
@@ -60,6 +61,34 @@
     function isDarkTheme() {
         return document.body.classList.contains("theme-dark")
             || document.documentElement.classList.contains("theme-dark");
+    }
+
+    function loadAceSearchbox() {
+        if (aceSearchboxLoadPromise) {
+            return aceSearchboxLoadPromise;
+        }
+        aceSearchboxLoadPromise = new Promise(function (resolve, reject) {
+            if (
+                !window.ace
+                || !window.ace.config
+                || typeof window.ace.config.loadModule !== "function"
+            ) {
+                reject(new Error("Ace searchbox loader is unavailable"));
+                return;
+            }
+            try {
+                window.ace.config.loadModule("ace/ext/searchbox", function (module) {
+                    if (module && typeof module.Search === "function") {
+                        resolve(module);
+                        return;
+                    }
+                    reject(new Error("Ace searchbox module failed to load"));
+                });
+            } catch (error) {
+                reject(error);
+            }
+        });
+        return aceSearchboxLoadPromise;
     }
 
     function create(options) {
@@ -150,6 +179,7 @@
         let editorLineScrollSelectionKey = "";
         let editorLineScrollSelectionRanges = [];
         let editorLineScrollSelectionMarkerIds = [];
+        let aceSearchboxSyncFrame = 0;
         const collapsedFoldStarts = new Set();
         const codeStructure = window.HandriveCodeStructure;
 
@@ -168,6 +198,7 @@
             fontSize: "16px",
             highlightActiveLine: true,
             highlightGutterLine: true,
+            highlightSelectedWord: true,
             placeholder: textarea.getAttribute("placeholder") || "",
             scrollPastEnd: 0.15,
             showFoldWidgets: false,
@@ -179,6 +210,41 @@
         });
         syncEditorHorizontalPadding();
         editor.setValue(String(textarea.value || ""), -1);
+
+        // Keep Ace's marker lifecycle, but search the exact selected substring
+        // even when it is adjacent to other characters.
+        const nativeSelectionHighlightRegexp = editor.$getSelectionHighLightRegexp;
+        if (typeof nativeSelectionHighlightRegexp === "function") {
+            editor.$getSelectionHighLightRegexp = function () {
+                const range = this.getSelectionRange();
+                if (range.isEmpty() || range.isMultiLine()) {
+                    return;
+                }
+                const line = this.session.getLine(range.start.row);
+                const needle = line.substring(range.start.column, range.end.column);
+                if (needle.length > 5000 || !needle) {
+                    return;
+                }
+                if (
+                    !this.$search
+                    || typeof this.$search.$assembleRegExp !== "function"
+                ) {
+                    return nativeSelectionHighlightRegexp.call(this);
+                }
+                const regexp = this.$search.$assembleRegExp({
+                    // Selected text is an exact substring, not necessarily a
+                    // standalone word.  Do not reject occurrences that have
+                    // another character immediately before or after them.
+                    wholeWord: false,
+                    caseSensitive: true,
+                    needle: needle,
+                });
+                if (!regexp) {
+                    return;
+                }
+                return regexp;
+            };
+        }
 
         function getEditorFontSize() {
             return Math.max(1, parseFloat(editor.getOption("fontSize")) || 16);
@@ -1093,6 +1159,216 @@
             scheduleCodeStructureOverlaysRender();
         }
 
+        function syncAceSearchboxAppearance() {
+            aceSearchboxSyncFrame = 0;
+            const searchBox = editor.searchBox;
+            if (!searchBox || !searchBox.element) {
+                return;
+            }
+            const element = searchBox.element;
+            element.classList.add("handrive-ace-search");
+            element.classList.toggle(
+                "is-replace-open",
+                Boolean(searchBox.replaceOption && searchBox.replaceOption.checked),
+            );
+            if (searchBox.replaceOption) {
+                searchBox.replaceOption.classList.toggle(
+                    "is-replace-open",
+                    Boolean(searchBox.replaceOption.checked),
+                );
+            }
+            if (!element.dataset.handriveSearchBound) {
+                element.addEventListener("click", function (event) {
+                    if (
+                        event.target instanceof Element
+                        && event.target.closest(
+                            '[action="toggleReplace"],'
+                            + '[action="toggleRegexpMode"],'
+                            + '[action="toggleCaseSensitive"],'
+                            + '[action="toggleWholeWords"],'
+                            + '[action="searchInSelection"]',
+                        )
+                    ) {
+                        window.setTimeout(scheduleAceSearchboxAppearanceSync, 0);
+                    }
+                });
+                element.addEventListener("keydown", function (event) {
+                    if (
+                        event.key !== "Tab"
+                        || event.ctrlKey
+                        || event.altKey
+                        || event.metaKey
+                        || !(event.target instanceof HTMLInputElement)
+                        || !event.target.classList.contains("ace_search_field")
+                    ) {
+                        return;
+                    }
+                    const action = event.shiftKey ? "findPrev" : "findNext";
+                    const button = element.querySelector('[action="' + action + '"]');
+                    if (!button) {
+                        return;
+                    }
+                    event.preventDefault();
+                    button.click();
+                    event.target.select();
+                });
+                element.dataset.handriveSearchBound = "true";
+            }
+            const isEnglish = document.documentElement.lang === "en";
+            if (searchBox.searchInput) {
+                searchBox.searchInput.placeholder = isEnglish ? "Find" : "찾기";
+                searchBox.searchInput.setAttribute(
+                    "aria-label",
+                    isEnglish ? "Find" : "찾기",
+                );
+            }
+            if (searchBox.replaceInput) {
+                searchBox.replaceInput.placeholder = isEnglish ? "Replace with" : "바꾸기";
+                searchBox.replaceInput.setAttribute(
+                    "aria-label",
+                    isEnglish ? "Replace with" : "바꾸기",
+                );
+            }
+            if (searchBox.replaceOption) {
+                searchBox.replaceOption.setAttribute(
+                    "aria-label",
+                    isEnglish ? "Toggle replace" : "바꾸기 행 표시",
+                );
+                searchBox.replaceOption.removeAttribute("title");
+                searchBox.replaceOption.setAttribute(
+                    "aria-expanded",
+                    String(Boolean(searchBox.replaceOption.checked)),
+                );
+            }
+            if (
+                typeof searchBox.findAll === "function"
+                && !searchBox.__handriveFindAllKeepsOpen
+            ) {
+                const originalFindAll = searchBox.findAll;
+                searchBox.findAll = function () {
+                    const originalHide = this.hide;
+                    this.hide = function () {};
+                    try {
+                        return originalFindAll.apply(this, arguments);
+                    } finally {
+                        this.hide = originalHide;
+                        this.active = true;
+                        if (this.element) {
+                            this.element.style.display = "";
+                        }
+                    }
+                };
+                searchBox.__handriveFindAllKeepsOpen = true;
+            }
+            const actionLabels = isEnglish
+                ? {
+                    findPrev: "Find previous",
+                    findNext: "Find next",
+                    findAll: "Find all",
+                    replace: "Replace",
+                    replaceAll: "Replace all",
+                    regexp: "Regular expression search",
+                    caseSensitive: "Match case",
+                    wholeWords: "Match whole word",
+                    searchSelection: "Search in selection",
+                }
+                : {
+                    findPrev: "이전 찾기",
+                    findNext: "다음 찾기",
+                    findAll: "모두 찾기",
+                    replace: "바꾸기",
+                    replaceAll: "모두 바꾸기",
+                    regexp: "정규식 검색",
+                    caseSensitive: "대/소문자 구분",
+                    wholeWords: "단어 단위 검색",
+                    searchSelection: "선택 영역에서 검색",
+                };
+            const searchActionLabels = {
+                findPrev: actionLabels.findPrev,
+                findNext: actionLabels.findNext,
+                findAll: actionLabels.findAll,
+                replaceAndFindNext: actionLabels.replace,
+                replaceAll: actionLabels.replaceAll,
+                toggleRegexpMode: actionLabels.regexp,
+                toggleCaseSensitive: actionLabels.caseSensitive,
+                toggleWholeWords: actionLabels.wholeWords,
+                searchInSelection: actionLabels.searchSelection,
+            };
+            Object.keys(searchActionLabels).forEach(function (action) {
+                const button = element.querySelector('[action="' + action + '"]');
+                const label = searchActionLabels[action];
+                if (!button || !label) {
+                    return;
+                }
+                button.setAttribute("aria-label", label);
+                button.setAttribute("title", label);
+            });
+            const toggleStates = {
+                toggleRegexpMode: searchBox.regExpOption,
+                toggleCaseSensitive: searchBox.caseSensitiveOption,
+                toggleWholeWords: searchBox.wholeWordOption,
+                searchInSelection: searchBox.searchOption,
+            };
+            Object.keys(toggleStates).forEach(function (action) {
+                const button = element.querySelector('[action="' + action + '"]');
+                const option = toggleStates[action];
+                if (!button || !option) {
+                    return;
+                }
+                button.setAttribute("aria-pressed", String(Boolean(option.checked)));
+            });
+            const findAllButton = element.querySelector('[action="findAll"]');
+            if (findAllButton) {
+                findAllButton.textContent = actionLabels.findAll;
+            }
+            const replaceButton = element.querySelector('[action="replaceAndFindNext"]');
+            if (replaceButton) {
+                replaceButton.textContent = actionLabels.replace;
+            }
+            const replaceAllButton = element.querySelector('[action="replaceAll"]');
+            if (replaceAllButton) {
+                replaceAllButton.textContent = actionLabels.replaceAll;
+            }
+        }
+
+        function scheduleAceSearchboxAppearanceSync() {
+            if (aceSearchboxSyncFrame) {
+                return;
+            }
+            aceSearchboxSyncFrame = window.requestAnimationFrame(syncAceSearchboxAppearance);
+        }
+
+        function openAceSearch() {
+            loadAceSearchbox().then(function (module) {
+                module.Search(editor, false);
+                const searchBox = editor.searchBox;
+                if (!searchBox) {
+                    return;
+                }
+                if (searchBox.replaceOption) {
+                    searchBox.replaceOption.checked = false;
+                    if (typeof searchBox.$syncOptions === "function") {
+                        searchBox.$syncOptions();
+                    }
+                }
+                scheduleAceSearchboxAppearanceSync();
+                window.setTimeout(function () {
+                    scheduleAceSearchboxAppearanceSync();
+                    const input = searchBox.searchInput;
+                    if (input && typeof input.focus === "function") {
+                        input.focus();
+                        if (typeof input.select === "function") {
+                            input.select();
+                        }
+                    }
+                }, 0);
+            }).catch(function (error) {
+                if (window.console && typeof window.console.warn === "function") {
+                    window.console.warn("Unable to open Ace find and replace", error);
+                }
+            });
+        }
+
         function scheduleTextareaInputSync() {
             if (applyingTextareaValue || editorInputSyncFrame) {
                 return;
@@ -1177,6 +1453,20 @@
                 || event.isComposing
                 || (event.target instanceof Element && event.target.closest(".ace_search"))
             ) {
+                return;
+            }
+            const key = String(event.key || "").toLowerCase();
+            const hasCommandModifier = event.ctrlKey || event.metaKey;
+            const isFindShortcut = key === "f"
+                && hasCommandModifier
+                && !event.altKey
+                && !event.shiftKey;
+            const isReplaceShortcut = (key === "h" && hasCommandModifier && !event.altKey)
+                || (key === "f" && event.metaKey && event.altKey && !event.shiftKey);
+            if (isFindShortcut || isReplaceShortcut) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                openAceSearch();
                 return;
             }
             if (

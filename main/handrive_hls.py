@@ -10,7 +10,7 @@
 각 캐시 항목(cache_key 디렉터리)에는 다음 파일들이 생성된다:
   status.json        — 트랜스코딩 상태/진행률 + 완성된 기능 플래그
   poster.jpg         — 대표 썸네일 (5초 지점 프레임)
-  faststart.mp4      — moov-앞배치 MP4 복사본 (mp4/mov/m4v에만)
+  faststart-v2.mp4   — moov-앞배치 MP4 복사본 (MKV 오디오 포함)
   sprite.jpg         — 썸네일 스프라이트 (6초 간격 프레임 타일)
   sprite.vtt         — 썸네일 VTT (스프라이트 좌표 매핑)
   {quality}/         — HLS 세그먼트 디렉터리 (360p, 480p, 720p, 1080p)
@@ -67,6 +67,9 @@ _job_queue: queue.Queue = queue.Queue()
 _workers_started = False
 _queued: set[str] = set()   # 큐 중복 방지
 _lock = threading.Lock()
+_faststart_locks: dict[str, threading.Lock] = {}
+_faststart_locks_guard = threading.Lock()
+_FASTSTART_FILENAME = "faststart-v2.mp4"
 
 
 def _ensure_workers() -> None:
@@ -93,7 +96,7 @@ def _reset_stale_statuses() -> None:
                 _write_status(cache_dir, "error", 0)
                 logger.info("[HLS] stale 상태 초기화: %s", cache_dir.name)
         except Exception:
-            pass
+            logger.warning("[HLS] stale status reset failed: %s", status_file, exc_info=True)
 
 
 def _worker_loop() -> None:
@@ -125,6 +128,7 @@ def _read_status_dict(cache_dir: Path) -> dict:
     try:
         return json.loads(_status_path(cache_dir).read_text(encoding="utf-8"))
     except Exception:
+        logger.debug("[HLS] status file unavailable: %s", cache_dir, exc_info=True)
         return {}
 
 
@@ -160,6 +164,7 @@ def get_status(cache_key: str) -> dict:
                 return {"status": "not_started", "progress": 0}
         return data
     except Exception:
+        logger.warning("[HLS] status parse failed: %s", p, exc_info=True)
         return {"status": "error", "progress": 0}
 
 
@@ -210,8 +215,31 @@ def ensure_first_frame_poster(src: Path, cache_key: str) -> Path | None:
 
 
 def get_faststart_path(cache_key: str) -> Path | None:
-    p = _hls_cache_root() / cache_key / "faststart.mp4"
+    p = _hls_cache_root() / cache_key / _FASTSTART_FILENAME
     return p if p.exists() else None
+
+
+def ensure_faststart_path(file_path: Path, cache_key: str) -> Path | None:
+    """MKV 등 컨테이너를 브라우저 호환 MP4로 한 번만 빠르게 remux한다."""
+    if file_path.suffix.lower() not in (".mkv", ".mp4", ".mov", ".m4v"):
+        return get_faststart_path(cache_key)
+
+    existing = get_faststart_path(cache_key)
+    if existing:
+        return existing
+
+    with _faststart_locks_guard:
+        lock = _faststart_locks.setdefault(cache_key, threading.Lock())
+    with lock:
+        existing = get_faststart_path(cache_key)
+        if existing:
+            return existing
+        cache_dir = _hls_cache_root() / cache_key
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+        return get_faststart_path(cache_key) if _make_faststart(file_path, cache_dir) else None
 
 
 def get_sprite_path(cache_key: str) -> Path | None:
@@ -257,6 +285,7 @@ def _probe_video_info(file_path: Path) -> tuple[int, float]:
         duration = float(data.get("format", {}).get("duration", 0) or 0)
         return height, duration
     except Exception:
+        logger.warning("[HLS] ffprobe failed: %s", file_path, exc_info=True)
         return 720, 0.0
 
 
@@ -308,7 +337,7 @@ def _transcode_all(file_path: Path, cache_key: str) -> None:
             _write_status(cache_dir, "transcoding", 2, poster=True)
 
         # ② FastStart MP4 복사본
-        faststart_ok = _make_faststart(file_path, cache_dir)
+        faststart_ok = bool(ensure_faststart_path(file_path, cache_key))
         st = _read_status_dict(cache_dir)
         _write_status(cache_dir, "transcoding", 5,
                       poster=st.get("poster", False),
@@ -461,28 +490,58 @@ def _make_poster(src: Path, cache_dir: Path, seek_seconds: str = "5") -> bool:
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=60)
+        if r.returncode != 0:
+            logger.warning(
+                "[HLS] poster ffmpeg failed path=%s returncode=%s stderr=%s",
+                src,
+                r.returncode,
+                (r.stderr or b"").decode("utf-8", "replace")[-1200:],
+            )
         return r.returncode == 0
     except Exception:
+        logger.warning("[HLS] poster generation failed: %s", src, exc_info=True)
         return False
 
 
 def _make_faststart(src: Path, cache_dir: Path) -> bool:
-    """moov atom을 파일 앞으로 이동한 MP4 복사본 생성. mp4/mov/m4v에만 적용."""
-    if src.suffix.lower() not in (".mp4", ".mov", ".m4v"):
+    """브라우저 호환 MP4 복사본 생성. MKV는 오디오를 AAC로 함께 mux한다."""
+    if src.suffix.lower() not in (".mkv", ".mp4", ".mov", ".m4v"):
         return False
-    out = cache_dir / "faststart.mp4"
+    out = cache_dir / _FASTSTART_FILENAME
+    fd, tmp_name = tempfile.mkstemp(dir=cache_dir, prefix=".faststart-", suffix=".mp4")
+    os.close(fd)
+    tmp_out = Path(tmp_name)
+    is_mkv = src.suffix.lower() == ".mkv"
     cmd = [
         _ffmpeg(), "-y",
         "-i", str(src),
-        "-c", "copy",
+        "-map", "0:v:0?", "-map", "0:a:0?",
+        "-c:v", "copy",
+        "-c:a", "aac" if is_mkv else "copy",
+        "-b:a", "192k" if is_mkv else "0",
         "-movflags", "+faststart",
-        str(out),
+        str(tmp_out),
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=600)
-        return r.returncode == 0
-    except Exception:
+        if r.returncode == 0:
+            os.replace(tmp_out, out)
+            return True
+        logger.warning(
+            "[HLS] faststart ffmpeg failed path=%s returncode=%s stderr=%s",
+            src,
+            r.returncode,
+            (r.stderr or b"").decode("utf-8", "replace")[-1200:],
+        )
         return False
+    except Exception:
+        logger.warning("[HLS] faststart generation failed: %s", src, exc_info=True)
+        return False
+    finally:
+        try:
+            tmp_out.unlink()
+        except OSError:
+            pass
 
 
 def _make_thumbnail_sprite(src: Path, cache_dir: Path, duration: float) -> bool:
@@ -515,8 +574,15 @@ def _make_thumbnail_sprite(src: Path, cache_dir: Path, duration: float) -> bool:
     try:
         r = subprocess.run(cmd, capture_output=True, timeout=300)
         if r.returncode != 0:
+            logger.warning(
+                "[HLS] thumbnail ffmpeg failed path=%s returncode=%s stderr=%s",
+                src,
+                r.returncode,
+                (r.stderr or b"").decode("utf-8", "replace")[-1200:],
+            )
             return False
     except Exception:
+        logger.warning("[HLS] thumbnail sprite generation failed: %s", src, exc_info=True)
         return False
 
     # Python에서 VTT 생성

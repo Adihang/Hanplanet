@@ -177,9 +177,15 @@ HANDRIVE_GOOGLE_DRIVE_URL_PREFIX = "google-drive"
 HANDRIVE_TRASH_PUBLIC_SEGMENT = "trash"
 HANDRIVE_URL_ID_SEPARATOR = "~"
 GOOGLE_DRIVE_SELECTED_ITEM_LIMIT = 300
-HANDRIVE_SHARE_TOKEN_BYTES = 16
+# Keep newly generated opaque share tokens compact while retaining enough
+# entropy for unguessable URLs.  Twelve random bytes encode to sixteen
+# URL-safe characters.  The resolver below continues accepting the previous
+# 22/43-character formats so existing shared links remain valid.
+HANDRIVE_SHARE_TOKEN_BYTES = 12
 HANDRIVE_SHARE_ITEM_QUERY_PARAM = "share_item"
-HANDRIVE_SHARE_TOKEN_PATTERN = re.compile(r"^(?:[A-Za-z0-9_-]{22}|[A-Za-z0-9_-]{43})$")
+HANDRIVE_SHARE_TOKEN_PATTERN = re.compile(
+    r"^(?:[A-Za-z0-9_-]{16}|[A-Za-z0-9_-]{22}|[A-Za-z0-9_-]{43})$"
+)
 MINECRAFT_SSO_PUBLIC_HOST = "mc.hanplanet.com"
 MINECRAFT_SSO_QUERY_PARAM = "minecraft_sso"
 MINECRAFT_SSO_FAILED_VALUE = "failed"
@@ -3668,12 +3674,29 @@ def render_handrive_media_safely(
         try:
             from main import handrive_hls as hls
             cache_key = hls.get_cache_key(source_path)
+            # FastStart URL은 실제 캐시가 있을 때만 전달한다. MKV 캐시가
+            # 없는 상태에서 이 URL을 넣으면 브라우저가 미리보기 metadata를
+            # 요청하는 순간 Django가 동기 remux를 수행해 플레이어가 빈
+            # 상태로 멈춘다. 캐시가 없는 MKV는 video_player가 HLS 변환을
+            # 백그라운드로 시작하고 완료 후 manifest로 전환한다.
             if hls.get_faststart_path(cache_key):
-                hls_faststart_attr = f' data-faststart-url="{hls_faststart_url}"'
+                hls_faststart_attr = (
+                    f' data-faststart-url="{hls_faststart_url}"'
+                    ' data-faststart-ready="1"'
+                )
             if hls.get_sprite_vtt_path(cache_key):
                 hls_thumbnail_vtt_attr = f' data-thumbnail-vtt-url="{hls_thumbnail_vtt_url}"'
-        except OSError:
-            pass
+        except OSError as exc:
+            # Google/Git virtual files intentionally use a display-only Path
+            # and therefore have no HLS cache on disk. Keep that expected case
+            # quiet, but leave real cache/read failures visible in the server
+            # log instead of silently dropping every HLS attribute.
+            if source_path.exists():
+                logger.warning(
+                    "HanDrive HLS cache probe failed path=%s",
+                    relative_path,
+                    exc_info=True,
+                )
 
         # ── 사이드카 자막 ────────────────────────────────────────────────
         track_html = ""
@@ -3692,12 +3715,17 @@ def render_handrive_media_safely(
                     f' label="{escape(vtt_info["label"])}">'
                 )
         except Exception:
-            pass
+            logger.warning(
+                "HanDrive sidecar subtitle discovery failed path=%s",
+                relative_path,
+                exc_info=True,
+            )
 
         return mark_safe(
             '<div class="handrive-media-wrap handrive-media-video-wrap">'
             '<video class="video-js handrive-media-element handrive-media-video-element"'
-            ' preload="metadata" playsinline webkit-playsinline x-webkit-airplay="allow"'
+            f' src="{source_url}" type="{mime}"'
+            ' controls preload="metadata" playsinline webkit-playsinline x-webkit-airplay="allow"'
             f' data-fallback-src="{source_url}" data-fallback-type="{mime}"'
             f' data-filename="{escape(source_path.name)}"'
             f' data-hls-manifest-url="{hls_manifest_url}"'
@@ -3711,7 +3739,9 @@ def render_handrive_media_safely(
         )
     return mark_safe(
         '<div class="handrive-media-wrap handrive-media-audio-wrap">'
-        f'<audio class="handrive-media-element handrive-media-audio-element" src="{source_url}" controls preload="metadata"></audio>'
+        f'<audio class="handrive-media-element handrive-media-audio-element" src="{source_url}"'
+        f' type="{escape(mimetypes.guess_type(source_path.name)[0] or "audio/mpeg")}"'
+        ' controls preload="metadata"></audio>'
         "</div>"
     )
 

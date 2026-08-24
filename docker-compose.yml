@@ -69,8 +69,8 @@ x-django-volumes: &django-volumes
   - "${HANPLANET_BACKUP_VOLUME:-backup_data}:/data/backups"
   - "${HANPLANET_OFFICE_FONTS_VOLUME:-./.local/office-preview-fonts}:${HANPLANET_OFFICE_FONTS_ROOT:-/usr/local/share/fonts/hanplanet-office}:ro"
   - "${MINECRAFT_SERVER_VOLUME:-/Users/imhanbyeol/Development/minecraft-fabric}:/Users/imhanbyeol/Development/minecraft-fabric"
-  - "${PROMINENCE_SERVER_VOLUME:-/Users/imhanbyeol/Development/rlcraft}:/Users/imhanbyeol/Development/rlcraft:ro"
-  - "${PROMINENCE_CONSOLE_INPUT_VOLUME:-/Users/imhanbyeol/Development/rlcraft/run/console.in}:/Users/imhanbyeol/Development/rlcraft/run/console.in"
+  - "${PROMINENCE_SERVER_VOLUME:-/Users/imhanbyeol/Development/deceasedcraft}:/Users/imhanbyeol/Development/deceasedcraft:ro"
+  - "${PROMINENCE_CONSOLE_INPUT_VOLUME:-/Users/imhanbyeol/Development/deceasedcraft/run/console.in}:/Users/imhanbyeol/Development/deceasedcraft/run/console.in"
   - "staticfiles_data:/app/staticfiles"
   - "${HANPLANET_DOCKER_SECRETS_DIR:-./.local/docker-secrets}:/run/hanplanet-secrets:ro"
 

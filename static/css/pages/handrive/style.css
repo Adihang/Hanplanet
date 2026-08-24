@@ -25,6 +25,8 @@ body.ui-page {
     --handrive-code-selection-bg: #073BA5;
     --handrive-code-selection-text: #ffffff;
     --handrive-code-line-scroll-bg: var(--handrive-selected-bg);
+    /* Keep Ace's same-word marker visibly distinct from the active selection. */
+    --handrive-code-match-bg: color-mix(in srgb, #073BA5 34%, var(--handrive-surface));
     --handrive-syntax-comment: #6a737d;
     --handrive-syntax-string: #0b7a3d;
     --handrive-syntax-number: #2f6fdb;
@@ -250,6 +252,7 @@ body.ui-page.theme-dark {
     --handrive-spreadsheet-header-text: #f2f2f2;
     --handrive-hover-soft: rgba(255, 255, 255, 0.1);
     --handrive-selected-bg: rgba(255, 255, 255, 0.18);
+    --handrive-code-match-bg: color-mix(in srgb, #60a5fa 42%, var(--handrive-surface));
     --handrive-hover: rgba(255, 255, 255, 0.13);
     --handrive-hover-strong: rgba(255, 255, 255, 0.19);
     --handrive-hover-button: rgba(255, 255, 255, 0.13);
@@ -3296,6 +3299,28 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     touch-action: pan-y;
 }
 
+/* Image preview/viewer gestures own the pointer so one-finger drag and
+   two-finger pinch do not get interpreted as page scrolling. */
+.handrive-image-zoom-pan-surface {
+    touch-action: none;
+    cursor: grab;
+}
+
+.handrive-image-zoom-pan-surface .handrive-media-image-element {
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-user-drag: none;
+}
+
+.handrive-image-zoom-pan-surface:active {
+    cursor: grabbing;
+}
+
+.handrive-image-zoom-pan-surface:active .handrive-media-image-element {
+    cursor: grabbing;
+}
+
 .handrive-list-preview-body > .handrive-list-preview-content {
     flex: 1 1 auto;
     height: 100%;
@@ -3424,6 +3449,15 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
     pointer-events: none;
 }
 
+/* JS fallback for browsers/layouts where :has() does not observe the
+   Video.js playback class during a source transition. */
+.handrive-list-preview.is-preview-media-playing .handrive-preview-nav-btn {
+    --handrive-preview-nav-offset-x: var(--handrive-preview-nav-hidden-x, 0);
+    --handrive-preview-nav-scale: 0.94;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .handrive-list-preview:has(.video-js.vjs-playing) .handrive-preview-nav-bg {
     opacity: 0;
     visibility: hidden;
@@ -3432,7 +3466,19 @@ body.handrive-page:not(.theme-dark) .handrive-list-editor-head {
         visibility 0s linear 180ms;
 }
 
+.handrive-list-preview.is-preview-media-playing .handrive-preview-nav-bg {
+    opacity: 0;
+    visibility: hidden;
+    transition:
+        opacity 180ms ease,
+        visibility 0s linear 180ms;
+}
+
 .handrive-list-preview:has(.video-js.vjs-playing) .handrive-preview-nav-bg > span {
+    opacity: 0;
+}
+
+.handrive-list-preview.is-preview-media-playing .handrive-preview-nav-bg > span {
     opacity: 0;
 }
 
@@ -5044,7 +5090,7 @@ body.theme-dark .handrive-item-type-icon.is-dir.is-github-repo::before {
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="video"]::before {
-    background-image: url("/static/media/icons/handrive/type-video.png?v=video-film-20260722-1");
+    background-image: url("/static/media/icons/handrive/type-video.png?v=video-film-20260813-1");
 }
 
 .handrive-item-type-icon.is-file.is-generic[data-file-icon="audio"]::before {
@@ -6645,8 +6691,8 @@ pre.handrive-line-numbered-code {
     width: 6px;
     background: linear-gradient(
         to right,
-        color-mix(in srgb, var(--handrive-text) 12%, transparent),
-        color-mix(in srgb, var(--handrive-text) 4%, transparent) 45%,
+        color-mix(in srgb, #000000 12%, transparent),
+        color-mix(in srgb, #000000 4%, transparent) 45%,
         transparent
     );
     content: "";
@@ -8232,6 +8278,18 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
 }
 
 .handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap {
+    /* Android/Windows can report an unsupported or delayed metadata event.
+       Keep the preview frame measurable until video_player.js can apply the
+       real aspect ratio; otherwise the portrait flex layout collapses it to
+       zero height and looks like the player disappeared. */
+    min-height: clamp(200px, 38vh, 360px);
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap[data-video-aspect-ready="1"] {
+    min-height: 0;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap {
     height: 100%;
     aspect-ratio: auto;
 }
@@ -8240,6 +8298,14 @@ body.handrive-page.theme-dark .handrive-media-pdf-element {
     height: auto !important;
     min-height: 0;
     aspect-ratio: auto;
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .video-js {
+    min-height: clamp(200px, 38vh, 360px);
+}
+
+.handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap[data-video-aspect-ready="1"] .video-js {
+    min-height: 0;
 }
 
 .handrive-list-layout.is-portrait .handrive-list-preview-content.handrive-media-3d {
@@ -8441,6 +8507,28 @@ body.handrive-page.theme-dark .handrive-media-audio-element {
     border-radius: calc(var(--handrive-radius-md) + 3px);
     overflow: hidden;
     font-size: 14px; /* site reset 충돌 방지 */
+}
+
+/* Video.js CDN이 일시적으로 실패해도 서버의 native src/controls가
+   미리보기에서 빈 공간으로 축소되지 않도록 하는 안전한 fallback. */
+.handrive-media-video-wrap > video.video-js:not([data-vjs-initialized]),
+.handrive-media-video-wrap > video.handrive-video-native-fallback {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    object-fit: contain;
+    border-radius: calc(var(--handrive-radius-md) + 3px);
+    background: #000;
+}
+
+/* MKV previews viewed through the admin user switch have no native source
+   while HLS is prepared. Keep the Video.js shell/poster at a usable height
+   instead of collapsing the wrapper before loadedmetadata arrives. */
+.handrive-media-video-wrap .video-js.is-handrive-hls-pending,
+.handrive-list-preview-content.handrive-media-video .handrive-media-video-wrap:has(.is-handrive-hls-pending) {
+    min-height: 360px;
 }
 
 /* Metadata supplies the real ratio. The inline size set by video_player.js
@@ -9628,6 +9716,20 @@ body.handrive-page.theme-dark .handrive-media-video-wrap .video-js {
 .handrive-file-extension-controls .site-custom-select.handrive-file-extension-select {
     display: inline-flex;
     align-items: center;
+    --site-custom-select-button-color: var(--handrive-text);
+    --site-custom-select-caret-color: var(--handrive-text-secondary);
+    box-sizing: border-box;
+    border: 1px solid var(--handrive-border-heavy) !important;
+    background: var(--handrive-bg) !important;
+    background-color: var(--handrive-bg) !important;
+    background-image: none !important;
+    color: var(--handrive-text) !important;
+    color-scheme: light;
+}
+
+body.handrive-page.theme-dark .handrive-file-extension-controls .site-custom-select.handrive-file-extension-select,
+body.ui-page.theme-dark .handrive-file-extension-controls .site-custom-select.handrive-file-extension-select {
+    color-scheme: dark;
 }
 
 .handrive-file-extension-controls .site-custom-select.handrive-file-extension-select .site-custom-select-button {
@@ -9739,8 +9841,8 @@ body .handrive-code-editor.is-horizontally-scrolled .ace_gutter.ace_gutter-left:
     width: 4px;
     background: linear-gradient(
         to right,
-        color-mix(in srgb, var(--handrive-text) 7%, transparent),
-        color-mix(in srgb, var(--handrive-text) 3%, transparent) 45%,
+        color-mix(in srgb, #000000 7%, transparent),
+        color-mix(in srgb, #000000 3%, transparent) 45%,
         transparent
     );
 }
@@ -9842,6 +9944,20 @@ body .handrive-code-editor .ace_gutter-cell.handrive-ace-line-scroll-selected {
 
 body .handrive-code-editor .ace_marker-layer .ace_selection {
     background: var(--handrive-selected-bg) !important;
+}
+
+/* Ace's highlightSelectedWord() renders each matching word as
+   .ace_selected-word.  The bundled themes only give that marker a faint
+   border (or an almost-white background), so make the match easy to see in
+   both themes while keeping the active selection styling separate. */
+body .handrive-code-editor .ace_marker-layer .ace_selected-word,
+body .handrive-code-editor .ace_marker-layer .ace_search-result {
+    background-color: var(--handrive-code-match-bg) !important;
+    background-image: none !important;
+    border: 0 !important;
+    border-radius: 2px;
+    box-sizing: border-box;
+    color: inherit;
 }
 
 body .handrive-code-editor .ace_marker-layer .handrive-ace-line-scroll-selected {
@@ -10033,6 +10149,685 @@ body .handrive-code-editor[data-handrive-syntax-mode="json"] .ace_variable {
 
 .handrive-code-editor .ace_fold {
     display: none !important;
+}
+
+/* Ace's stock searchbox is intentionally very small and uses a fixed light
+   palette.  Keep the search UI inside the editor's design system instead of
+   letting the extension introduce a second visual language. */
+body .handrive-code-editor .ace_search {
+    position: absolute !important;
+    z-index: 30 !important;
+    top: 8px !important;
+    right: 8px !important;
+    width: min(520px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    box-sizing: border-box;
+    margin: 0;
+    padding: 10px 10px 5px;
+    border: 1px solid var(--handrive-border-mid) !important;
+    border-radius: var(--handrive-radius-md, 10px);
+    background: var(--handrive-elevated-bg, var(--handrive-bg)) !important;
+    color: var(--handrive-text);
+    box-shadow: var(--handrive-shadow-md, 0 8px 24px rgba(0, 0, 0, 0.16));
+    font-family: var(--site-font-default, system-ui, sans-serif);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+body .handrive-code-editor .ace_search_form,
+body .handrive-code-editor .ace_replace_form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 34px;
+    margin: 0 34px 6px 0;
+    padding: 0 0 0 34px;
+    float: none;
+}
+
+body .handrive-code-editor .ace_replace_form {
+    margin-bottom: 8px;
+}
+
+body .handrive-code-editor .ace_search_field {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    height: 34px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 6px 9px;
+    border: 1px solid var(--handrive-border-mid) !important;
+    border-radius: var(--handrive-radius-sm, 8px);
+    outline: 0;
+    background: var(--handrive-bg) !important;
+    color: var(--handrive-text-stronger) !important;
+    font: inherit;
+    line-height: 1.35;
+    box-shadow: none;
+}
+
+body .handrive-code-editor .ace_search_field::placeholder {
+    color: var(--handrive-text-faint);
+    opacity: 1;
+}
+
+body .handrive-code-editor .ace_search_field:focus {
+    border-color: var(--theme-accent-strong, var(--handrive-search-border-focus)) !important;
+    box-shadow: inset 0 0 0 1px var(--theme-accent-strong, var(--handrive-search-border-focus));
+}
+
+body .handrive-code-editor .ace_searchbtn,
+body .handrive-code-editor .ace_button {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    height: 30px;
+    box-sizing: border-box;
+    margin: 0;
+    border: 1px solid var(--ui-btn-base-border, var(--handrive-border-mid)) !important;
+    border-radius: var(--handrive-radius-sm, 8px);
+    background: var(--ui-btn-base-bg, var(--handrive-surface-muted)) !important;
+    color: var(--ui-btn-base-color, var(--handrive-text)) !important;
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+    text-decoration: none;
+    transition: var(--ui-btn-transition, background-color 120ms ease, color 120ms ease, border-color 120ms ease);
+    user-select: none;
+}
+
+body .handrive-code-editor .ace_searchbtn:hover,
+body .handrive-code-editor .ace_searchbtn:focus-visible,
+body .handrive-code-editor .ace_button:hover,
+body .handrive-code-editor .ace_button:focus-visible {
+    border-color: var(--ui-btn-hover-border, var(--handrive-border-strong)) !important;
+    background: var(--ui-btn-hover-bg, var(--handrive-hover-soft)) !important;
+    color: var(--ui-btn-hover-color, var(--handrive-text-stronger)) !important;
+    outline: 0;
+}
+
+body .handrive-code-editor .ace_searchbtn:active,
+body .handrive-code-editor .ace_button:active {
+    border-color: var(--ui-btn-active-border, var(--handrive-border-strong)) !important;
+    background: var(--ui-btn-active-bg, var(--handrive-hover)) !important;
+}
+
+body .handrive-code-editor .ace_searchbtn[action="findPrev"],
+body .handrive-code-editor .ace_searchbtn[action="findNext"],
+body .handrive-code-editor .ace_searchbtn[action="findAll"],
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleRegexpMode"],
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleCaseSensitive"],
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleWholeWords"],
+body .handrive-code-editor .ace_search_options .ace_button[action="searchInSelection"] {
+    border: 0 !important;
+}
+
+body .handrive-code-editor .ace_search_options .ace_button.checked:not([action="toggleReplace"]) {
+    border: 0 !important;
+    background: var(--ui-btn-active-bg, var(--handrive-hover)) !important;
+    color: var(--ui-btn-active-color, var(--handrive-text-stronger)) !important;
+}
+
+body .handrive-code-editor .ace_searchbtn.prev,
+body .handrive-code-editor .ace_searchbtn.next {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    overflow: hidden;
+    color: var(--handrive-text-muted) !important;
+    font-size: 0;
+    line-height: 0;
+    vertical-align: middle;
+}
+
+body .handrive-code-editor .ace_searchbtn.prev::before,
+body .handrive-code-editor .ace_searchbtn.next::before {
+    display: none;
+    content: none;
+}
+
+body .handrive-code-editor .ace_searchbtn.prev::after,
+body .handrive-code-editor .ace_searchbtn.next::after {
+    display: block;
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    box-sizing: border-box;
+    margin: 0;
+    background-color: currentColor;
+    content: "";
+    position: relative;
+    top: 0;
+    left: 0;
+    transform: none;
+}
+
+body .handrive-code-editor .ace_searchbtn.prev::after {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m13 4.5-7.5 7.5 7.5 7.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m13 4.5-7.5 7.5 7.5 7.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+body .handrive-code-editor .ace_searchbtn.next::after {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 4.5 7.5 7.5L7 19.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 4.5 7.5 7.5L7 19.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+body .handrive-code-editor .ace_searchbtn[action="findAll"],
+body .handrive-code-editor .ace_replace_form .ace_searchbtn {
+    min-width: 66px;
+    padding: 0 9px;
+    white-space: nowrap;
+}
+
+body .handrive-code-editor .ace_searchbtn[action="findAll"] {
+    width: 32px;
+    min-width: 32px;
+    height: 30px;
+    padding: 0;
+    font-size: 0;
+    line-height: 0;
+    white-space: normal;
+}
+
+body .handrive-code-editor .ace_searchbtn[action="findAll"]::before {
+    display: block;
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    content: "";
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.2'/%3E%3Cpath d='m20.5 20.5-4.8-4.8'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.2'/%3E%3Cpath d='m20.5 20.5-4.8-4.8'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+
+body .handrive-code-editor .ace_searchbtn_close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--handrive-popup-close-size, 34px);
+    height: var(--handrive-popup-close-size, 34px);
+    min-width: var(--handrive-popup-close-size, 34px);
+    min-height: var(--handrive-popup-close-size, 34px);
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border: 0 !important;
+    border-radius: var(--handrive-popup-close-radius, 50%);
+    background: var(--site-modal-close-bg, transparent) !important;
+    color: var(--site-modal-close-color, var(--handrive-text-secondary, currentColor)) !important;
+    cursor: pointer;
+    font-size: 0;
+    line-height: 1;
+    translate: 0 0;
+    transition: background-color 0.15s ease, color 0.15s ease, translate 0.15s ease;
+}
+
+body .handrive-code-editor .ace_searchbtn_close::before {
+    display: block;
+    width: var(--handrive-popup-close-icon-size, 18px);
+    height: var(--handrive-popup-close-icon-size, 18px);
+    background-color: currentColor;
+    content: "";
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 5l10 10M15 5 5 15'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 5l10 10M15 5 5 15'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+
+body .handrive-code-editor .ace_searchbtn_close:hover,
+body .handrive-code-editor .ace_searchbtn_close:focus-visible {
+    background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06))) !important;
+    color: var(--site-modal-close-hover-color, var(--handrive-text-stronger)) !important;
+    outline: 0;
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+body .handrive-code-editor .ace_searchbtn_close:active {
+    background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06))) !important;
+    color: var(--site-modal-close-hover-color, var(--handrive-text-stronger)) !important;
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
+body .handrive-code-editor .ace_search_options {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 30px;
+    margin: 0;
+    padding: 0;
+    color: var(--handrive-text-muted);
+    text-align: initial;
+}
+
+body .handrive-code-editor .ace_search_options .ace_button {
+    float: none !important;
+    min-width: 30px;
+    padding: 0 7px;
+    font-size: 12px;
+}
+
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"] {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 1;
+    display: inline-flex;
+    width: 28px;
+    min-width: 28px;
+    height: 34px;
+    box-sizing: border-box;
+    border: 0 !important;
+    border-radius: var(--handrive-radius-sm, 8px);
+    background: transparent !important;
+    color: var(--handrive-text-muted) !important;
+    padding: 0;
+    font-size: 0;
+}
+
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"]::after {
+    display: none;
+    content: none !important;
+}
+
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"]::before {
+    width: 8px;
+    height: 8px;
+    box-sizing: border-box;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    content: "";
+    transform: rotate(-135deg) translate(-1px, -1px);
+}
+
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"]:not(.is-replace-open)::before {
+    transform: rotate(45deg) translate(-1px, -1px);
+}
+
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"]:hover,
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"]:focus-visible,
+body .handrive-code-editor .ace_search_options .ace_button[action="toggleReplace"]:active {
+    border-color: transparent !important;
+    background: transparent !important;
+    color: var(--handrive-text-stronger) !important;
+    outline: 0;
+}
+
+body .handrive-code-editor .ace_search_counter {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0 auto 0 0;
+    padding: 0;
+    color: var(--handrive-text-muted);
+    font-size: 12px;
+    line-height: 30px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+body .handrive-code-editor .ace_search_form.ace_nomatch,
+body .handrive-code-editor .ace_replace_form.ace_nomatch,
+body .handrive-code-search-host .ace_search.ace_nomatch {
+    outline: 0 !important;
+}
+
+@media (max-width: 560px) {
+    body .handrive-code-editor .ace_search {
+        top: 5px !important;
+        right: 5px !important;
+        width: calc(100% - 10px);
+        max-width: calc(100% - 10px);
+        padding: 8px 8px 5px;
+    }
+
+    body .handrive-code-editor .ace_search_form,
+    body .handrive-code-editor .ace_replace_form {
+        margin-right: 32px;
+    }
+
+}
+
+/* Read-only code viewers use the same Ace search vocabulary without an Ace
+   editing surface.  Keep this box sticky inside the viewer's scroll area so
+   find controls remain available while the source is scrolled. */
+body .handrive-code-search-host {
+    position: relative;
+}
+
+body .handrive-code-search-host .ace_search {
+    position: sticky !important;
+    top: 8px !important;
+    z-index: 30 !important;
+    width: min(520px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    box-sizing: border-box;
+    margin: 8px 8px 8px auto;
+    padding: 10px 10px 5px;
+    border: 1px solid var(--handrive-border-mid) !important;
+    border-radius: var(--handrive-radius-md, 10px);
+    background: var(--handrive-elevated-bg, var(--handrive-bg)) !important;
+    color: var(--handrive-text);
+    box-shadow: var(--handrive-shadow-md, 0 8px 24px rgba(0, 0, 0, 0.16));
+    font-family: var(--site-font-default, system-ui, sans-serif);
+    font-size: 13px;
+    line-height: 1.35;
+}
+
+body .handrive-code-search-host .ace_search_form {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    height: 34px;
+    margin: 0 34px 6px 0;
+    padding: 0;
+}
+
+body .handrive-code-search-host .ace_search_field {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+    height: 34px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 6px 9px;
+    border: 1px solid var(--handrive-border-mid) !important;
+    border-radius: var(--handrive-radius-sm, 8px);
+    outline: 0;
+    background: var(--handrive-bg) !important;
+    color: var(--handrive-text-stronger) !important;
+    font: inherit;
+    line-height: 1.35;
+}
+
+body .handrive-code-search-host .ace_search_field::placeholder {
+    color: var(--handrive-text-faint);
+    opacity: 1;
+}
+
+body .handrive-code-search-host .ace_search_field:focus {
+    border-color: var(--theme-accent-strong, var(--handrive-search-border-focus)) !important;
+    box-shadow: inset 0 0 0 1px var(--theme-accent-strong, var(--handrive-search-border-focus));
+}
+
+body .handrive-code-search-host .ace_searchbtn,
+body .handrive-code-search-host .ace_button {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0 7px;
+    border: 0 !important;
+    border-radius: var(--handrive-radius-sm, 8px);
+    background: transparent !important;
+    color: var(--handrive-text-muted) !important;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    text-decoration: none;
+    transition: var(--ui-btn-transition, background-color 120ms ease, color 120ms ease);
+    user-select: none;
+}
+
+body .handrive-code-search-host .ace_searchbtn:hover,
+body .handrive-code-search-host .ace_searchbtn:focus-visible,
+body .handrive-code-search-host .ace_button:hover,
+body .handrive-code-search-host .ace_button:focus-visible,
+body .handrive-code-search-host .ace_button.checked {
+    background: var(--ui-btn-hover-bg, var(--handrive-hover-soft)) !important;
+    color: var(--ui-btn-hover-color, var(--handrive-text-stronger)) !important;
+    outline: 0;
+}
+
+body .handrive-code-search-host .ace_searchbtn.prev,
+body .handrive-code-search-host .ace_searchbtn.next,
+body .handrive-code-search-host .ace_searchbtn[action="findPrev"],
+body .handrive-code-search-host .ace_searchbtn[action="findNext"] {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findPrev"]::before,
+body .handrive-code-search-host .ace_searchbtn[action="findNext"]::before {
+    display: block;
+    width: 16px;
+    height: 16px;
+    background-color: currentColor;
+    content: "";
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findPrev"]::before {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m13 4.5-7.5 7.5 7.5 7.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m13 4.5-7.5 7.5 7.5 7.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findNext"]::before {
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 4.5 7.5 7.5L7 19.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 4.5 7.5 7.5L7 19.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findAll"] {
+    width: 30px;
+    min-width: 30px;
+    padding: 0;
+    font-size: 0;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findAll"]::before {
+    display: block;
+    width: 18px;
+    height: 18px;
+    background-color: currentColor;
+    content: "";
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.2'/%3E%3Cpath d='m20.5 20.5-4.8-4.8'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.2'/%3E%3Cpath d='m20.5 20.5-4.8-4.8'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+
+body .handrive-code-search-host .ace_searchbtn_close {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--handrive-popup-close-size, 34px);
+    height: var(--handrive-popup-close-size, 34px);
+    min-width: var(--handrive-popup-close-size, 34px);
+    border: 0 !important;
+    border-radius: var(--handrive-popup-close-radius, 50%);
+    background: transparent !important;
+    color: var(--handrive-text-secondary, currentColor) !important;
+    cursor: pointer;
+    font-size: 0;
+}
+
+body .handrive-code-search-host .ace_searchbtn_close::before {
+    display: block;
+    width: var(--handrive-popup-close-icon-size, 18px);
+    height: var(--handrive-popup-close-icon-size, 18px);
+    background-color: currentColor;
+    content: "";
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 5l10 10M15 5 5 15'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 5l10 10M15 5 5 15'/%3E%3C/svg%3E") center / 18px 18px no-repeat;
+}
+
+body .handrive-code-search-host .ace_search_options {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-height: 30px;
+    margin: 0;
+    padding: 0;
+}
+
+body .handrive-code-search-host .ace_search_counter {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0 auto 0 0;
+    color: var(--handrive-text-muted);
+    font-size: 12px;
+    line-height: 30px;
+    text-align: left;
+    white-space: nowrap;
+}
+
+/* Keep the viewer's find-only box visually identical to the editor's Ace
+   search box.  The replace row is not rendered by the viewer at all. */
+body .handrive-code-search-host .ace_search {
+    margin: 0 8px 8px auto;
+}
+
+body .handrive-code-search-host .ace_search_form {
+    float: none;
+    padding: 0;
+}
+
+body .handrive-code-search-host .ace_search_field {
+    box-shadow: none;
+}
+
+body .handrive-code-search-host .ace_searchbtn,
+body .handrive-code-search-host .ace_button {
+    min-width: 34px;
+    border: 1px solid var(--ui-btn-base-border, var(--handrive-border-mid)) !important;
+    background: var(--ui-btn-base-bg, var(--handrive-surface-muted)) !important;
+    color: var(--ui-btn-base-color, var(--handrive-text)) !important;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+body .handrive-code-search-host .ace_searchbtn:hover,
+body .handrive-code-search-host .ace_searchbtn:focus-visible,
+body .handrive-code-search-host .ace_button:hover,
+body .handrive-code-search-host .ace_button:focus-visible {
+    border-color: var(--ui-btn-hover-border, var(--handrive-border-strong)) !important;
+    background: var(--ui-btn-hover-bg, var(--handrive-hover-soft)) !important;
+    color: var(--ui-btn-hover-color, var(--handrive-text-stronger)) !important;
+    outline: 0;
+}
+
+body .handrive-code-search-host .ace_searchbtn:active,
+body .handrive-code-search-host .ace_button:active,
+body .handrive-code-search-host .ace_button.checked {
+    border-color: var(--ui-btn-active-border, var(--handrive-border-strong)) !important;
+    background: var(--ui-btn-active-bg, var(--handrive-hover)) !important;
+    color: var(--ui-btn-active-color, var(--handrive-text-stronger)) !important;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findPrev"],
+body .handrive-code-search-host .ace_searchbtn[action="findNext"],
+body .handrive-code-search-host .ace_searchbtn[action="findAll"],
+body .handrive-code-search-host .ace_search_options .ace_button {
+    border: 0 !important;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findPrev"],
+body .handrive-code-search-host .ace_searchbtn[action="findNext"] {
+    width: 30px;
+    min-width: 30px;
+}
+
+body .handrive-code-search-host .ace_searchbtn[action="findAll"] {
+    width: 32px;
+    min-width: 32px;
+    height: 30px;
+}
+
+body .handrive-code-search-host .ace_search_options {
+    flex-wrap: nowrap;
+    color: var(--handrive-text-muted);
+    text-align: initial;
+}
+
+body .handrive-code-search-host .ace_search_options .ace_button {
+    float: none !important;
+    min-width: 30px;
+    padding: 0 7px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+body .handrive-code-search-host .ace_searchbtn_close {
+    box-sizing: border-box;
+    min-height: var(--handrive-popup-close-size, 34px);
+    margin: 0;
+    padding: 0;
+    background: var(--site-modal-close-bg, transparent) !important;
+    color: var(--site-modal-close-color, var(--handrive-text-secondary, currentColor)) !important;
+    line-height: 1;
+    translate: 0 0;
+    transition: background-color 0.15s ease, color 0.15s ease, translate 0.15s ease;
+}
+
+body .handrive-code-search-host .ace_searchbtn_close:hover,
+body .handrive-code-search-host .ace_searchbtn_close:focus-visible {
+    background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06))) !important;
+    color: var(--site-modal-close-hover-color, var(--handrive-text-stronger)) !important;
+    outline: 0;
+    translate: 0 var(--btn-template-hover-lift, -1px);
+}
+
+body .handrive-code-search-host .ace_searchbtn_close:active {
+    background: var(--site-modal-close-hover-bg, var(--handrive-hover-soft, rgba(0, 0, 0, 0.06))) !important;
+    color: var(--site-modal-close-hover-color, var(--handrive-text-stronger)) !important;
+    translate: 0 var(--btn-template-active-press-depth, 1px);
+}
+
+body .handrive-code-search-host .handrive-code-search-match {
+    border-radius: 2px;
+    background-color: var(--handrive-code-match-bg) !important;
+    background-image: none !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--handrive-code-match-bg) 72%, var(--handrive-text));
+}
+
+body .handrive-code-search-host .handrive-code-search-match.is-current {
+    box-shadow: inset 0 0 0 1px var(--theme-accent-strong, var(--handrive-text-stronger));
+}
+
+/* Preview code content is nested inside a separate scrolling body.  Portal
+   the viewer search box to that scroll container and make the wrapper sticky;
+   keeping the sticky element itself inside the short article would make it
+   leave the viewport as soon as the article moves. */
+body .handrive-code-search-wrapper {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 30 !important;
+    width: min(520px, calc(100% - 16px));
+    max-width: calc(100% - 16px);
+    height: 0;
+    box-sizing: border-box;
+    /* The wrapper is inserted as the first child of the viewer's scroll
+       container. Align the bounded search box to that container's right edge
+       instead of leaving it at the default left edge. */
+    margin: 0 0 0 auto;
+    overflow: visible;
+    pointer-events: none;
+}
+
+body .handrive-code-search-wrapper > .ace_search {
+    position: absolute !important;
+    top: 8px !important;
+    right: 0 !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: 100%;
+    max-width: 100%;
+    margin: 0 !important;
+    pointer-events: auto;
 }
 
 body .handrive-code-editor .ace_placeholder {

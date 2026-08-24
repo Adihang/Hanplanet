@@ -7,6 +7,7 @@ import time
 import tarfile
 from datetime import timedelta
 from pathlib import Path
+from pathlib import PurePosixPath
 
 # 윈도우에서 fcntl 대신 msvcrt 사용
 if platform.system() == 'Windows':
@@ -139,6 +140,31 @@ def _backup_archive_path(backup_root, target_date):
     return backup_root / f"hanplanet_data_{target_date.isoformat()}.tar.gz"
 
 
+def _backup_member_filter(source_path, arcname):
+    """Return a tar filter that omits per-user HanDrive files from media backups."""
+    configured_media_root = str(getattr(settings, "MEDIA_ROOT", "") or "").strip()
+    if not configured_media_root:
+        return None
+    media_root = Path(configured_media_root).resolve(strict=False)
+    if Path(source_path).resolve(strict=False) != media_root:
+        return None
+
+    archive_root = PurePosixPath(str(arcname).replace("\\", "/"))
+    excluded_root = PurePosixPath("HanDrive/users")
+
+    def filter_member(member):
+        member_path = PurePosixPath(str(member.name).replace("\\", "/"))
+        try:
+            relative_path = member_path.relative_to(archive_root)
+        except ValueError:
+            relative_path = member_path
+        if relative_path == excluded_root or excluded_root in relative_path.parents:
+            return None
+        return member
+
+    return filter_member
+
+
 def _cleanup_old_backup_archives(backup_root, retention_days):
     archives = sorted(backup_root.glob("hanplanet_data_*.tar.gz"), key=lambda p: p.name)
     if len(archives) <= retention_days:
@@ -168,7 +194,11 @@ def _create_data_backup_archive(backup_root, target_date):
                 arcname = source_path.relative_to(base_dir)
             except ValueError:
                 arcname = source_path.name
-            tar.add(source_path, arcname=str(arcname))
+            tar.add(
+                source_path,
+                arcname=str(arcname),
+                filter=_backup_member_filter(source_path, arcname),
+            )
 
     return archive_path
 

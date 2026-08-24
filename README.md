@@ -1304,7 +1304,7 @@ launchctl disable "gui/$(id -u)/homebrew.mxcl.nginx"
   - 시작 위치: [`main/apps.py`](./main/apps.py) -> [`main/access_log_scheduler.py`](./main/access_log_scheduler.py)
   - 실제 실행 프로세스: `com.hanplanet.gunicorn`
   - 백업 시각: 매일 `00:05` 이후 첫 스케줄 루프에서 1회
-  - 백업 대상: `MEDIA_ROOT`, `FORGEJO_REPOS_ROOT`
+  - 백업 대상: `MEDIA_ROOT`(단, `MEDIA_ROOT/HanDrive/users` 사용자별 파일 제외), `FORGEJO_REPOS_ROOT`
   - 백업 저장 경로: `DATA_BACKUP_ROOT` 또는 `DJANGO_DATA_BACKUP_ROOT`
   - 현재 기본 보관 개수: 최근 3일치 (`hanplanet_data_YYYY-MM-DD.tar.gz`)
 

@@ -17,6 +17,17 @@
             window.__handriveVideoPlayerRetryCount = retryCount;
             if (retryCount < 80) {
                 window.__handriveVideoPlayerRetryTimer = window.setTimeout(retry, 100);
+            } else {
+                const error = new Error('HanDrive video player bootstrap timed out: Video.js is unavailable.');
+                // 이전에는 여기서 조용히 종료되어 data-fallback-src만 가진
+                // 비디오가 빈 공간으로 남았다. 진단 가능한 이벤트와 로그를
+                // 남겨 페이지가 native fallback으로 전환할 수 있게 한다.
+                console.error(error);
+                try {
+                    window.dispatchEvent(new CustomEvent('handrive:video-player-load-failed', {
+                        detail: { error, reason: 'videojs-unavailable' },
+                    }));
+                } catch (_) {}
             }
         };
         window.__handriveVideoPlayerRetryTimer = window.setTimeout(retry, 0);
@@ -44,6 +55,9 @@
     const MEDIA_MUTED_COOKIE_NAME = 'handrive-media-muted';
     const LEGACY_MEDIA_AUDIO_VOLUME_STORAGE_KEY = 'handrive-media-audio-volume';
     const MEDIA_VOLUME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
+    // 진단용 임시 스위치. 미리보기 플레이어 안정화 확인이 끝났으므로
+    // HLS 화질 전환을 다시 기본 동작으로 사용한다.
+    const HANDRIVE_DISABLE_HLS_FOR_DIAGNOSTICS = false;
     let mediaVolumeSourceId = 0;
 
     // ── Player registry ────────────────────────────────────────────────
@@ -239,9 +253,21 @@
 
     function resolveStartupSource(el, options) {
         const allowUnsupportedFallback = Boolean(options && options.allowUnsupportedFallback);
+        const forceHls = Boolean(options && options.forceHls);
         const fallbackSrc = el.dataset.fallbackSrc || '';
         const fallbackType = el.dataset.fallbackType || 'video/mp4';
         const faststartSrc = el.dataset.faststartUrl || '';
+
+        if (forceHls) {
+            return {
+                src: '',
+                type: '',
+                kind: 'none',
+                fallbackSrc,
+                fallbackType,
+                faststartSrc,
+            };
+        }
 
         if (faststartSrc && canPlayVideoSourceType('video/mp4')) {
             return {
@@ -271,6 +297,18 @@
             fallbackType,
             faststartSrc,
         };
+    }
+
+    function shouldPreferPreviewHls(el) {
+        if (HANDRIVE_DISABLE_HLS_FOR_DIAGNOSTICS) return false;
+        if (!el || !el.closest('.handrive-list-preview-content')) return false;
+        const fallbackType = String(el.dataset.fallbackType || '').trim().toLowerCase();
+        return Boolean(
+            fallbackType === 'video/x-matroska'
+            && el.dataset.faststartReady !== '1'
+            && el.dataset.hlsManifestUrl
+            && el.dataset.hlsStatusUrl
+        );
     }
 
     function normalizeMediaPlaybackMode(mode) {
@@ -336,22 +374,35 @@
         const player   = buildPlayer(el);
         players.set(el, { player, cleanups });
 
-        setupVideoAspectRatio(player, el, cleanups);
-        setupControls(player);
-        setupControlBarHoverState(player, cleanups);
-        setupDelayedMenuPopups(player, cleanups);
-        setupResponsiveControlBar(player, cleanups);
-        setupLoop(player, cleanups);
-        setupVolumePreference(player, el, cleanups);
-        setupPip(player, cleanups);
-        setupCast(player);
-        setupThumbnailPreview(player, el, cleanups);
-        setupPersist(player);
-        setupMobile(player, cleanups);
-        setupErrors(player);
-        setupAnalytics(player);
-        setupMediaSession(player, el);
-        setupHls(player, el, cleanups);
+        // 플랫폼별 Video.js 플러그인/API 차이로 한 부가 기능이 예외를
+        // 던져도 플레이어 전체 초기화가 중단되지 않게 한다. 기존에는
+        // Android의 matchMedia/mobile UI 예외가 초기화를 중간에서 끊어
+        // 로딩 후 빈 플레이어만 남길 수 있었다.
+        const setupTasks = [
+            ['aspect-ratio', () => setupVideoAspectRatio(player, el, cleanups)],
+            ['controls', () => setupControls(player)],
+            ['controlbar-hover', () => setupControlBarHoverState(player, cleanups)],
+            ['delayed-menus', () => setupDelayedMenuPopups(player, cleanups)],
+            ['responsive-controlbar', () => setupResponsiveControlBar(player, cleanups)],
+            ['loop', () => setupLoop(player, cleanups)],
+            ['volume', () => setupVolumePreference(player, el, cleanups)],
+            ['pip', () => setupPip(player, cleanups)],
+            ['cast', () => setupCast(player)],
+            ['thumbnail', () => setupThumbnailPreview(player, el, cleanups)],
+            ['persist', () => setupPersist(player)],
+            ['mobile', () => setupMobile(player, cleanups)],
+            ['errors', () => setupErrors(player)],
+            ['analytics', () => setupAnalytics(player)],
+            ['media-session', () => setupMediaSession(player, el)],
+            ['hls', () => setupHls(player, el, cleanups)],
+        ];
+        setupTasks.forEach(([name, setupTask]) => {
+            try {
+                setupTask();
+            } catch (error) {
+                console.error(`[VideoPlayer] ${name} setup failed`, error);
+            }
+        });
     }
 
     // ── Player 생성 ───────────────────────────────────────────────────
@@ -359,8 +410,10 @@
         const isPreview  = !!el.closest('.handrive-list-preview-content');
         const savedRate  = parseFloat(ls.get('vjs-playback-rate')) || 1;
         const hasHlsFallback = Boolean(el.dataset.hlsManifestUrl && el.dataset.hlsStatusUrl);
+        const preferPreviewHls = shouldPreferPreviewHls(el);
         const startupSource = resolveStartupSource(el, {
-            allowUnsupportedFallback: !hasHlsFallback,
+            allowUnsupportedFallback: HANDRIVE_DISABLE_HLS_FOR_DIAGNOSTICS || !hasHlsFallback,
+            forceHls: preferPreviewHls,
         });
         const startupSrc = startupSource.src;
         const startupType = startupSource.type;
@@ -388,6 +441,15 @@
                 ],
             },
         });
+        if (preferPreviewHls) {
+            // Without a native source there is no loadedmetadata event to give
+            // the preview frame a height. Keep the Video.js shell visible while
+            // the admin-switched MKV is being prepared for HLS.
+            const playerElement = player.el();
+            if (playerElement) {
+                playerElement.classList.add('is-handrive-hls-pending');
+            }
+        }
 
         // 초기 소스: native 재생 가능한 faststart MP4/fallback만 먼저 사용한다.
         if (startupSrc) {
@@ -468,12 +530,20 @@
             const ratioValue = `${sourceWidth} / ${sourceHeight}`;
             mediaWrap.style.setProperty('--handrive-video-aspect-ratio', ratioValue);
             playerElement.style.setProperty('--handrive-video-aspect-ratio', ratioValue);
-            mediaWrap.dataset.videoAspectReady = '1';
 
             const hostRect = layoutHost.getBoundingClientRect();
             const maxWidth = Math.max(0, Number(layoutHost.clientWidth || hostRect.width || 0));
             const maxHeight = Math.max(0, Number(layoutHost.clientHeight || hostRect.height || 0));
             if (!maxWidth) {
+                // Preview panels can receive loadedmetadata while still hidden
+                // (especially on Android/Windows). Do not mark the wrapper as
+                // ratio-ready until it has a real layout width; otherwise the
+                // aspect-ratio CSS path can collapse the player to zero height.
+                if (mediaWrap.dataset.videoAspectReady !== '1') {
+                    mediaWrap.style.removeProperty('width');
+                    mediaWrap.style.removeProperty('height');
+                    delete mediaWrap.dataset.videoAspectReady;
+                }
                 return;
             }
 
@@ -489,6 +559,7 @@
 
             mediaWrap.style.width = `${Math.round(frameWidth)}px`;
             mediaWrap.style.height = `${Math.round(frameHeight)}px`;
+            mediaWrap.dataset.videoAspectReady = '1';
         };
 
         player.on('loadedmetadata', applyAspectRatio);
@@ -1132,11 +1203,30 @@
         });
     }
 
-    function attachThumbOverlay(player, tooltip) {
+    function hideThumbOverlay(tooltip) {
+        if (!tooltip) return;
         tooltip.hidden = true;
+        tooltip.style.left = '';
+        tooltip.style.top = '';
+        tooltip.style.bottom = '';
+    }
+
+    function attachThumbOverlay(player, tooltip) {
+        hideThumbOverlay(tooltip);
         tooltip.classList.add('vjs-thumb-preview--floating');
+        // 진행바 위에 떠 있는 썸네일은 플레이어 내부가 아니라 body에 붙어 있으므로,
+        // 소스 교체/재생 종료 시점에도 직접 숨겨야 다음 영상으로 상태가 전이되지 않는다.
+        tooltip.__handriveThumbPlayer = player;
         document.body.appendChild(tooltip);
-        player.on('dispose', () => tooltip.remove());
+
+        const hide = () => hideThumbOverlay(tooltip);
+        player.on('loadstart', hide);
+        player.on('emptied', hide);
+        player.on('ended', hide);
+        player.on('dispose', () => {
+            hide();
+            tooltip.remove();
+        });
     }
 
     function positionThumbOverlay(tooltip, progEl, event, thumbWidth) {
@@ -1257,9 +1347,7 @@
                 positionThumbOverlay(tooltip, progEl, e, entry.w || THUMB_W);
             });
 
-            progEl.addEventListener('mouseleave', () => {
-                tooltip.hidden = true;
-            });
+            progEl.addEventListener('mouseleave', () => hideThumbOverlay(tooltip));
         });
     }
 
@@ -1328,7 +1416,7 @@
             lastRatio = -1;
             lastClientX = -1;
             lastProgEl = null;
-            tooltip.hidden = true;
+            hideThumbOverlay(tooltip);
         }
 
         function cleanupThumbVideo() {
@@ -1372,7 +1460,10 @@
         });
         thumbVid.addEventListener('seeked', tryDraw);
 
+        player.on('loadstart', hideThumbnailPreview);
+        player.on('ended', hideThumbnailPreview);
         player.on('emptied', () => {
+            hideThumbnailPreview();
             thumbVid.removeAttribute('src');
             thumbVid.load();
             seeking   = false;
@@ -1462,12 +1553,17 @@
     function setupMobile(player, cleanups) {
         // videojs-mobile-ui: iOS 제외 (native 컨트롤 충돌 방지)
         if (isMobile && !isIOS && typeof player.mobileUi === 'function') {
-            player.mobileUi({ touchControls: { seekSeconds: 10, tapTimeout: 300 } });
+            try {
+                player.mobileUi({ touchControls: { seekSeconds: 10, tapTimeout: 300 } });
+            } catch (error) {
+                console.warn('[VideoPlayer] mobile UI setup skipped', error);
+            }
         }
 
         if (!isMobile) return;
 
         const videoEl = player.el().querySelector('video');
+        if (typeof window.matchMedia !== 'function') return;
         const mq      = window.matchMedia('(orientation: landscape)');
 
         const handler = (e) => {
@@ -1481,8 +1577,14 @@
             }
         };
 
-        mq.addEventListener('change', handler);
-        cleanups.push(() => mq.removeEventListener('change', handler));
+        if (typeof mq.addEventListener === 'function') {
+            mq.addEventListener('change', handler);
+            cleanups.push(() => mq.removeEventListener('change', handler));
+        } else if (typeof mq.addListener === 'function') {
+            // 구형 Android WebView/브라우저 호환
+            mq.addListener(handler);
+            cleanups.push(() => mq.removeListener(handler));
+        }
     }
 
     // ── 에러 UI ───────────────────────────────────────────────────────
@@ -1672,12 +1774,23 @@
 
     // ── HLS 소스 선택 + 화질 선택기 ──────────────────────────────────
     function setupHls(player, el, cleanups) {
+        if (HANDRIVE_DISABLE_HLS_FOR_DIAGNOSTICS) return;
         const manifestUrl = el.dataset.hlsManifestUrl || '';
         const statusUrl   = el.dataset.hlsStatusUrl   || '';
         if (!manifestUrl || !statusUrl) return;
-        const startupSource = resolveStartupSource(el, { allowUnsupportedFallback: false });
+        const preferPreviewHls = shouldPreferPreviewHls(el);
+        const startupSource = resolveStartupSource(el, {
+            allowUnsupportedFallback: false,
+            forceHls: preferPreviewHls,
+        });
         const startupSrc = startupSource.src;
         const startupType = startupSource.type;
+        // Chromium/Edge can advertise Matroska support while still failing to
+        // load some files. Preview MKV files therefore use HLS from the start;
+        // other native sources keep the deferred behavior.
+        const isUnsupportedPreview = Boolean(
+            !startupSrc && el.closest('.handrive-list-preview-content')
+        );
         const canUseNativeStartupSource = Boolean(startupSrc);
 
         const POLL_MS = 3000;
@@ -1894,6 +2007,10 @@
             hlsActive = true;
             player.handriveHlsSwitching_ = false;
             player.handriveHlsSourceActive_ = true;
+            const playerElement = player.el();
+            if (playerElement) {
+                playerElement.classList.remove('is-handrive-hls-pending');
+            }
             clearSourceTransitionSoon();
             enableQualitySelector();
             syncQualitySelectorVisibility();
@@ -2274,22 +2391,26 @@
         }
 
         function scheduleHlsReadyProbe() {
-            if (!startupSrc || latestHlsStatus === 'ready' || sourceIsHls()) return;
+            if ((!startupSrc && !isUnsupportedPreview) || latestHlsStatus === 'ready' || sourceIsHls()) return;
             if (hlsReadyProbeTimer || hlsReadyProbeIdleId) return;
             const runProbe = () => {
                 hlsReadyProbeTimer = null;
                 hlsReadyProbeIdleId = null;
                 if (shouldIgnoreHlsAsync() || sourceIsHls()) return;
                 requestHlsPreparation({
-                    allowPolling: false,
-                    allowTranscode: false,
-                    showPreparing: false,
+                    allowPolling: isUnsupportedPreview,
+                    allowTranscode: isUnsupportedPreview,
+                    forceSwitch: isUnsupportedPreview,
+                    resume: false,
+                    showPreparing: isUnsupportedPreview,
                 });
             };
             if ('requestIdleCallback' in window) {
-                hlsReadyProbeIdleId = window.requestIdleCallback(runProbe, { timeout: 1800 });
+                hlsReadyProbeIdleId = window.requestIdleCallback(runProbe, {
+                    timeout: isUnsupportedPreview ? 800 : 1800,
+                });
             } else {
-                hlsReadyProbeTimer = setTimeout(runProbe, 900);
+                hlsReadyProbeTimer = setTimeout(runProbe, isUnsupportedPreview ? 300 : 900);
             }
         }
 
@@ -2329,6 +2450,13 @@
         });
         releasePlayerMediaResources(entry.player, el);
         try { entry.player.dispose(); } catch (_) {}
+        // 오버레이는 body에 렌더링되므로 dispose 이벤트가 누락된 경우에도
+        // 이전 플레이어의 썸네일이 다음 영상 위에 남지 않도록 최종 정리한다.
+        document.querySelectorAll('.vjs-thumb-preview--floating').forEach(tooltip => {
+            if (tooltip.__handriveThumbPlayer === entry.player) {
+                tooltip.remove();
+            }
+        });
         releaseNativeMediaElement(el);
         if (el && el.dataset) {
             delete el.dataset.vjsInitialized;
@@ -2347,7 +2475,25 @@
 
     function cleanupPreview(root) {
         const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
-        const videos = Array.from(scope.querySelectorAll('video.video-js'));
+        const videoSet = new Set();
+        players.forEach((entry, el) => {
+            const playerRoot = entry && entry.player && typeof entry.player.el === 'function'
+                ? entry.player.el()
+                : null;
+            if (
+                scope === document
+                || scope === el
+                || (typeof scope.contains === 'function' && scope.contains(el))
+                || (playerRoot && (scope === playerRoot || scope.contains(playerRoot)))
+            ) {
+                videoSet.add(el);
+            }
+        });
+        scope.querySelectorAll('video.video-js, video[data-vjs-initialized], .video-js video.vjs-tech')
+            .forEach(video => {
+                if (players.has(video)) videoSet.add(video);
+            });
+        const videos = Array.from(videoSet);
         return closeVideoPictureInPicture(scope).then(() => {
             return Promise.all(videos.map(cleanup));
         });
@@ -2355,16 +2501,59 @@
 
     function cleanupRemovedVideoPlayers(node) {
         if (!(node instanceof Element)) return;
-        if (node.matches('video.video-js')) {
-            cleanup(node);
-        }
-        node.querySelectorAll('video.video-js').forEach(cleanup);
+        // Video.js moves the source <video> into its wrapper during
+        // initialization. MutationObserver reports that move as a removal,
+        // even though the node is still connected to the document. Only
+        // dispose players whose removed subtree is genuinely detached.
+        if (node.isConnected) return;
+        const removed = new Set();
+        players.forEach((entry, el) => {
+            const playerRoot = entry && entry.player && typeof entry.player.el === 'function'
+                ? entry.player.el()
+                : null;
+            if (
+                node === el
+                || node.contains(el)
+                || node === playerRoot
+                || (playerRoot && node.contains(playerRoot))
+            ) {
+                removed.add(el);
+            }
+        });
+        if (node.matches('video.video-js') && players.has(node)) removed.add(node);
+        node.querySelectorAll('video.video-js, video[data-vjs-initialized], .video-js video.vjs-tech')
+            .forEach(video => {
+                if (players.has(video)) removed.add(video);
+            });
+        // A source/tech replacement can briefly detach the old subtree and
+        // attach it again in the next task. Defer disposal and re-check both
+        // the original element and the Video.js root so that transient DOM
+        // moves (often triggered while thumbnails load) cannot destroy the
+        // active player.
+        removed.forEach(el => {
+            window.setTimeout(() => {
+                const entry = players.get(el);
+                if (!entry) return;
+                const playerRoot = entry.player && typeof entry.player.el === 'function'
+                    ? entry.player.el()
+                    : null;
+                if (el.isConnected || (playerRoot && playerRoot.isConnected)) return;
+                cleanup(el);
+            }, 0);
+        });
     }
 
     // ── DOM 스캔 · 감시 ───────────────────────────────────────────────
     function scanAndInit(root) {
         root.querySelectorAll('video.video-js:not([data-vjs-initialized])').forEach(el => {
-            if (!('IntersectionObserver' in window)) { init(el); return; }
+            // 목록 미리보기는 패널 안에서 렌더링되므로 브라우저 viewport와
+            // 교차하지 않는 것으로 판정될 수 있다. 이 경우 observer가
+            // 영원히 callback을 주지 않아 플레이어 자체가 생성되지 않는다.
+            // 미리보기는 이미 선택된 한두 개 영상만 존재하므로 즉시 초기화한다.
+            if (el.closest('.handrive-list-preview-content') || !('IntersectionObserver' in window)) {
+                init(el);
+                return;
+            }
             const io = new IntersectionObserver((entries, obs) => {
                 if (!entries[0].isIntersecting) return;
                 obs.disconnect();
@@ -2383,9 +2572,14 @@
 
         document.querySelectorAll('.handrive-list-preview-content').forEach(container => {
             new MutationObserver(records => {
-                records.forEach(record => {
-                    record.removedNodes.forEach(cleanupRemovedVideoPlayers);
-                });
+                // Video.js legitimately detaches and re-attaches its tech/source
+                // nodes while metadata, native playback, or a mobile tech is
+                // being selected. Treating every removed subtree as a dead
+                // player races that transition and disposes a player that has
+                // already rendered successfully (most visible on Android and
+                // Windows preview panes). Preview lifecycle code explicitly
+                // calls cleanupPreview() before replacing or hiding the pane,
+                // so automatic removal cleanup is both unnecessary and unsafe.
                 scanAndInit(container);
             })
                 .observe(container, { childList: true, subtree: true });

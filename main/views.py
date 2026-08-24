@@ -174,11 +174,19 @@ MINECRAFT_META_TITLE = "Minecraft Server | Hanplanet"
 MINECRAFT_META_DESCRIPTION_KO = "Minecraft 서버의 실시간 플레이어 상태와 월드 지도를 제공합니다."
 MINECRAFT_META_DESCRIPTION_EN = "Provides real-time player status and a world map for the Minecraft server."
 MINECRAFT_SERVER_IMAGE_URL = urljoin("https://www.hanplanet.com", static("media/icons/minecraft/server-og.png"))
-PROMINENCE_META_TITLE = "Prominence II Server | Hanplanet"
-PROMINENCE_META_DESCRIPTION_KO = "Prominence II: Hasturian Era v4.0.1hf 1.20.1 Fabric 서버 접속 정보와 한국어 클라이언트 모드팩, Dynmap 월드 지도를 제공합니다."
-PROMINENCE_META_DESCRIPTION_EN = "Prominence II: Hasturian Era v4.0.1hf 1.20.1 Fabric server information, a Korean client modpack, and a Dynmap world map."
-PROMINENCE_CURSEFORGE_URL = "https://www.curseforge.com/minecraft/modpacks/prominence-2-hasturian-era"
-PROMINENCE_KOREAN_PATCH_URL = "https://moru.gg/ko/pack/49788bed-e4a5-426d-b957-47e59b073fb0"
+DECEASEDCRAFT_META_TITLE = "DeceasedCraft Server | Hanplanet"
+DECEASEDCRAFT_META_DESCRIPTION_KO = "DeceasedCraft Beta 5.10.17 Minecraft 1.20.1 Forge 서버 접속 정보와 공식 CurseForge 클라이언트 모드팩 설치 안내를 제공합니다."
+DECEASEDCRAFT_META_DESCRIPTION_EN = "DeceasedCraft Beta 5.10.17 Minecraft 1.20.1 Forge server information and the official CurseForge client modpack installation guide."
+DECEASEDCRAFT_CURSEFORGE_URL = "https://www.curseforge.com/minecraft/modpacks/deceasedcraft"
+DECEASEDCRAFT_RESOURCE_PACK_URL = static(
+    "media/minecraft/deceasedcraft/DeceasedCraft-5.10.17-ko_kr-clean-resource_pack.zip"
+)
+# Keep the existing internal names while the RLCraft routes and APIs are migrated.
+PROMINENCE_META_TITLE = DECEASEDCRAFT_META_TITLE
+PROMINENCE_META_DESCRIPTION_KO = DECEASEDCRAFT_META_DESCRIPTION_KO
+PROMINENCE_META_DESCRIPTION_EN = DECEASEDCRAFT_META_DESCRIPTION_EN
+PROMINENCE_CURSEFORGE_URL = DECEASEDCRAFT_CURSEFORGE_URL
+PROMINENCE_KOREAN_PATCH_URL = ""
 PROMINENCE_PLAYER_HEAD_URL_TEMPLATE = "https://mc-heads.net/avatar/{uuid}/24.png"
 PROMINENCE_STATUS_HOST = os.getenv(
     "PROMINENCE_STATUS_HOST",
@@ -186,27 +194,29 @@ PROMINENCE_STATUS_HOST = os.getenv(
 )
 PROMINENCE_STATUS_TIMEOUT_SECONDS = 1.5
 PROMINENCE_LATEST_LOG_PATH = Path(
-    os.getenv("PROMINENCE_LATEST_LOG_PATH", "/Users/imhanbyeol/Development/rlcraft/logs/latest.log")
+    os.getenv("PROMINENCE_LATEST_LOG_PATH", "/Users/imhanbyeol/Development/deceasedcraft/logs/latest.log")
 )
 PROMINENCE_CONSOLE_OUTPUT_PATH = Path(
-    os.getenv("PROMINENCE_CONSOLE_OUTPUT_PATH", "/Users/imhanbyeol/Development/rlcraft/run/console.out")
+    os.getenv("PROMINENCE_CONSOLE_OUTPUT_PATH", "/Users/imhanbyeol/Development/deceasedcraft/run/console.out")
 )
 PROMINENCE_CONSOLE_INPUT_PATH = Path(
-    os.getenv("PROMINENCE_CONSOLE_INPUT_PATH", "/Users/imhanbyeol/Development/rlcraft/run/console.in")
+    os.getenv("PROMINENCE_CONSOLE_INPUT_PATH", "/Users/imhanbyeol/Development/deceasedcraft/run/console.in")
 )
 PROMINENCE_LAUNCHD_LOG_PATH = Path(
-    os.getenv("PROMINENCE_LAUNCHD_LOG_PATH", "/Users/imhanbyeol/Development/rlcraft/logs/launchd.stdout.log")
+    os.getenv("PROMINENCE_LAUNCHD_LOG_PATH", "/Users/imhanbyeol/Development/deceasedcraft/logs/launchd.stdout.log")
 )
 PROMINENCE_USERCACHE_PATH = Path(
-    os.getenv("PROMINENCE_USERCACHE_PATH", "/Users/imhanbyeol/Development/rlcraft/usercache.json")
+    os.getenv("PROMINENCE_USERCACHE_PATH", "/Users/imhanbyeol/Development/deceasedcraft/usercache.json")
 )
 PROMINENCE_PLAYERDATA_PATH = Path(
-    os.getenv("PROMINENCE_PLAYERDATA_PATH", "/Users/imhanbyeol/Development/rlcraft/world/playerdata")
+    os.getenv("PROMINENCE_PLAYERDATA_PATH", "/Users/imhanbyeol/Development/deceasedcraft/world/playerdata")
 )
-PROMINENCE_SERVER_VERSION = "1.20.1 Fabric 0.19.3"
+PROMINENCE_SERVER_VERSION = "Minecraft 1.20.1 · Forge 47.4.0"
 PROMINENCE_SERVER_ADDRESS = "rlc.hanplanet.com"
 PROMINENCE_SERVER_PORT = 25566
-PROMINENCE_MAP_URL = "/map/"
+PROMINENCE_MAP_URL = ""
+PROMINENCE_PAUSE_PATTERN = re.compile(r"(?:Server empty for \d+ seconds, pausing|Pausing server )", re.IGNORECASE)
+PROMINENCE_RESUME_PATTERN = re.compile(r"(?:Unpausing server|Welcome back! Server resumed)", re.IGNORECASE)
 MINECRAFT_WEATHER_ICON_URL = static("media/icons/minecraft/weather.svg")
 MINECRAFT_ITEM_ICON_BASE_URL = static("media/icons/minecraft/items/")
 MINECRAFT_ITEM_ICON_MANIFEST_URL = static("media/icons/minecraft/items/manifest.json")
@@ -8031,6 +8041,26 @@ def read_prominence_saved_player_uuids():
         return set()
 
 
+def read_prominence_pause_state(server_online, online_count):
+    """Infer Ready Player Fun's paused state from the current DeceasedCraft log."""
+    if not server_online or online_count > 0:
+        return False
+
+    path = PROMINENCE_CONSOLE_OUTPUT_PATH if PROMINENCE_CONSOLE_OUTPUT_PATH.exists() else PROMINENCE_LATEST_LOG_PATH
+    try:
+        last_pause_line = -1
+        last_resume_line = -1
+        with path.open("r", encoding="utf-8", errors="replace") as log_file:
+            for line_number, line in enumerate(log_file):
+                if PROMINENCE_PAUSE_PATTERN.search(line):
+                    last_pause_line = line_number
+                if PROMINENCE_RESUME_PATTERN.search(line):
+                    last_resume_line = line_number
+        return last_pause_line >= 0 and last_pause_line > last_resume_line
+    except OSError:
+        return False
+
+
 def read_prominence_server_status():
     """Build the RLCraft page status payload without requiring a server mod."""
     try:
@@ -8041,6 +8071,7 @@ def read_prominence_server_status():
             "onlineCount": 0,
             "maxPlayers": 0,
             "players": [],
+            "paused": False,
         }
 
     player_states = read_prominence_player_states()
@@ -8126,6 +8157,7 @@ def read_prominence_server_status():
         "maxPlayers": int(max_players or 0),
         "players": players,
         "version": version if isinstance(version, dict) else {},
+        "paused": read_prominence_pause_state(True, int(online_count or 0)),
     }
 
 
@@ -8386,7 +8418,7 @@ def rlcraft_home(request, ui_lang=None):
     encoded_current_path = quote(current_path, safe="/")
     meta_description = PROMINENCE_META_DESCRIPTION_EN if is_english else PROMINENCE_META_DESCRIPTION_KO
     context = {
-        "page_title": "Prominence II Server",
+        "page_title": "DeceasedCraft Server",
         "home_label": "Hanplanet",
         "home_url": build_public_site_nav_url("/"),
         "sub_label": "Sub",
@@ -8399,7 +8431,7 @@ def rlcraft_home(request, ui_lang=None):
         "rlcraft_is_admin": is_rlcraft_admin,
         "rlcraft_server_log_url": reverse("main:rlcraft_server_log_json") if is_rlcraft_admin else "",
         "rlcraft_server_command_url": reverse("main:rlcraft_server_command_json") if is_rlcraft_admin else "",
-        "rlcraft_server_log_title": "Prominence II Server Console" if is_english else "Prominence II 서버 콘솔",
+        "rlcraft_server_log_title": "DeceasedCraft Server Console" if is_english else "DeceasedCraft 서버 콘솔",
         "rlcraft_server_log_loading_label": "Loading server console." if is_english else "서버 콘솔을 불러오는 중입니다.",
         "rlcraft_server_log_updated_label": "Console updated." if is_english else "콘솔이 갱신되었습니다.",
         "rlcraft_server_log_failed_label": "Could not load the server console." if is_english else "서버 콘솔을 불러오지 못했습니다.",
@@ -8408,16 +8440,16 @@ def rlcraft_home(request, ui_lang=None):
         "rlcraft_server_command_sending_label": "Running" if is_english else "실행 중",
         "rlcraft_server_command_failed_label": "Command failed" if is_english else "명령 실행 실패",
         "rlcraft_server_command_empty_label": "Enter a command" if is_english else "명령어를 입력하세요",
-        "rlcraft_restart_title": "Restart Prominence II server" if is_english else "Prominence II 서버 재시작",
+        "rlcraft_restart_title": "Restart DeceasedCraft server" if is_english else "DeceasedCraft 서버 재시작",
         "rlcraft_restart_message": (
-            "Restart the Prominence II server now? Connected players may be disconnected."
+            "Restart the DeceasedCraft server now? Connected players may be disconnected."
             if is_english
-            else "Prominence II 서버를 지금 재시작할까요? 접속 중인 유저의 연결이 끊길 수 있습니다."
+            else "DeceasedCraft 서버를 지금 재시작할까요? 접속 중인 유저의 연결이 끊길 수 있습니다."
         ),
         "rlcraft_restart_cancel_label": "Cancel" if is_english else "취소",
         "rlcraft_restart_confirm_label": "Restart" if is_english else "재시작",
         "rlcraft_restart_failed_label": "The server restart request failed." if is_english else "서버 재시작 요청에 실패했습니다.",
-        "rlcraft_restart_progress_title": "Restarting Prominence II server" if is_english else "Prominence II 서버 재시작 중",
+        "rlcraft_restart_progress_title": "Restarting DeceasedCraft server" if is_english else "DeceasedCraft 서버 재시작 중",
         "rlcraft_restart_progress_close_label": "Close" if is_english else "닫기",
         "rlcraft_restart_phase_queued": "Restart request queued." if is_english else "재시작 요청을 대기열에 등록했습니다.",
         "rlcraft_restart_phase_stopping": "Stopping the server safely." if is_english else "서버를 안전하게 종료하는 중입니다.",
@@ -8425,13 +8457,16 @@ def rlcraft_home(request, ui_lang=None):
         "rlcraft_restart_phase_ready": "The server is online again." if is_english else "서버가 다시 온라인 상태가 되었습니다.",
         "rlcraft_restart_phase_failed": "The server restart could not be completed." if is_english else "서버 재시작을 완료하지 못했습니다.",
         "rlcraft_curseforge_url": PROMINENCE_CURSEFORGE_URL,
-        "rlcraft_korean_patch_url": PROMINENCE_KOREAN_PATCH_URL,
+        "rlcraft_resource_pack_url": DECEASEDCRAFT_RESOURCE_PACK_URL,
         "rlcraft_page_splitter_label": "Resize main and side areas" if is_english else "메인 영역과 사이드 영역 크기 조절",
         "rlcraft_map_url": PROMINENCE_MAP_URL,
         "rlcraft_players_panel_title": "Players" if is_english else "플레이어",
         "rlcraft_status_loading_label": "Loading player status." if is_english else "플레이어 상태를 불러오는 중입니다.",
         "rlcraft_status_failed_label": "Could not load player status." if is_english else "플레이어 상태를 불러오지 못했습니다.",
         "rlcraft_server_offline_label": "Server offline" if is_english else "서버 오프라인",
+        "rlcraft_server_active_label": "Running" if is_english else "서버 작동 중",
+        "rlcraft_map_unavailable_label": "No browser map is available for this server." if is_english else "이 서버는 브라우저 지도를 제공하지 않습니다.",
+        "rlcraft_map_unavailable_detail": "Use Xaero's World Map in the DeceasedCraft client modpack." if is_english else "DeceasedCraft 클라이언트 모드팩에 포함된 Xaero 지도에서 월드를 확인하세요.",
         "rlcraft_players_empty_label": "No players recorded yet." if is_english else "확인된 플레이어가 없습니다.",
         "rlcraft_online_label": "Online" if is_english else "온라인",
         "rlcraft_offline_label": "Offline" if is_english else "오프라인",
@@ -8439,7 +8474,7 @@ def rlcraft_home(request, ui_lang=None):
         "rlcraft_player_detail_status_label": "Status" if is_english else "상태",
         "rlcraft_player_detail_platform_label": "Server" if is_english else "서버",
         "rlcraft_player_detail_uuid_label": "UUID" if is_english else "UUID",
-        "rlcraft_player_detail_platform_value": "Prominence II · Fabric" if is_english else "Prominence II · Fabric",
+        "rlcraft_player_detail_platform_value": "DeceasedCraft · Forge" if is_english else "DeceasedCraft · Forge",
         "rlcraft_player_detail_unavailable_label": "Additional player details are not available for this server." if is_english else "이 서버에서는 추가 플레이어 상세 정보를 제공하지 않습니다.",
         "rlcraft_player_edit_apply_label": "Apply" if is_english else "적용",
         "rlcraft_player_command_sent_label": "Command sent." if is_english else "명령어를 전송했습니다.",
@@ -8452,36 +8487,36 @@ def rlcraft_home(request, ui_lang=None):
         "rlcraft_player_add_effect_label": "Add effect" if is_english else "버프 적용",
         "rlcraft_effect_options_json": json.dumps(get_minecraft_effect_options(is_english), ensure_ascii=False),
         "rlcraft_server_panel_title": "Map" if is_english else "지도",
-        "rlcraft_map_title": "Prominence II world map" if is_english else "Prominence II 월드 지도",
+        "rlcraft_map_title": "DeceasedCraft world map" if is_english else "DeceasedCraft 월드 지도",
         "rlcraft_address_label": "Server address" if is_english else "서버 주소",
         "rlcraft_copy_label": "Copy server address" if is_english else "서버 주소 복사",
         "rlcraft_copy_feedback": "Copied!" if is_english else "복사됨!",
-        "rlcraft_modpack_title": "Prominence II client modpack" if is_english else "Prominence II 클라이언트 모드팩",
+        "rlcraft_modpack_title": "DeceasedCraft client modpack" if is_english else "DeceasedCraft 클라이언트 모드팩",
         "rlcraft_modpack_description": (
-            "Install the official Prominence II: Hasturian Era profile in CurseForge for Minecraft 1.20.1. The server uses Fabric, so launch the Fabric profile and apply the optional Korean patch afterward."
+            "Install DeceasedCraft Beta 5.10.17 from CurseForge for Minecraft 1.20.1. Launch the Forge profile and connect to rlc.hanplanet.com."
             if is_english
-            else "CurseForge에서 Minecraft 1.20.1용 공식 Prominence II: Hasturian Era 프로필을 설치하세요. 서버는 Fabric을 사용하므로 Fabric 프로필로 실행한 뒤 필요하면 한국어 패치를 추가합니다."
+            else "CurseForge에서 Minecraft 1.20.1용 DeceasedCraft Beta 5.10.17 프로필을 설치하세요. Forge 프로필로 실행한 뒤 rlc.hanplanet.com에 접속하면 됩니다."
         ),
-        "rlcraft_curseforge_label": "Install with CurseForge" if is_english else "CurseForge에서 설치",
-        "rlcraft_download_label": "Korean patch guide" if is_english else "한국어 패치 안내",
+        "rlcraft_curseforge_label": "Install DeceasedCraft" if is_english else "DeceasedCraft 설치",
+        "rlcraft_resource_pack_label": "Download Korean resource pack" if is_english else "한국어 리소스팩 다운로드",
         "rlcraft_install_title": "Installation" if is_english else "설치 방법",
         "rlcraft_install_steps": (
             [
-                "Open the official Prominence II: Hasturian Era page in CurseForge and install the Minecraft 1.20.1 profile.",
-                "Launch the installed Fabric profile once from CurseForge so the required mods and configuration are created.",
-                "Select the Prominence II profile, launch Minecraft, and connect to rlc.hanplanet.com.",
+                "Open the official DeceasedCraft page in CurseForge and install the Beta 5.10.17 profile for Minecraft 1.20.1.",
+                "Launch the installed Forge profile from CurseForge so all required client files are installed.",
+                "Connect to rlc.hanplanet.com from the DeceasedCraft profile.",
             ]
             if is_english
             else [
-                "CurseForge의 공식 Prominence II: Hasturian Era 페이지를 열고 Minecraft 1.20.1 프로필을 설치합니다.",
-                "CurseForge에서 설치된 Fabric 프로필을 한 번 실행해 필요한 모드와 설정을 생성합니다.",
-                "Prominence II 프로필로 Minecraft를 실행한 뒤 rlc.hanplanet.com에 접속합니다.",
+                "CurseForge의 공식 DeceasedCraft 페이지에서 Minecraft 1.20.1용 Beta 5.10.17 프로필을 설치합니다.",
+                "CurseForge에서 설치된 Forge 프로필을 한 번 실행해 필요한 클라이언트 파일을 설치합니다.",
+                "DeceasedCraft 프로필로 Minecraft를 실행한 뒤 rlc.hanplanet.com에 접속합니다.",
             ]
         ),
         "rlcraft_license_note": (
-            "The official CurseForge profile is the required base pack. Use the external Korean patch guide for the localized resources."
+            "Use the official DeceasedCraft CurseForge profile so the client mod versions match the server."
             if is_english
-            else "공식 CurseForge 프로필이 기본 모드팩입니다. 한국어 리소스팩은 외부 한국어 패치 안내에서 확인할 수 있습니다."
+            else "서버와 모드 버전을 맞추려면 공식 DeceasedCraft CurseForge 프로필을 사용하세요."
         ),
         "meta_title": PROMINENCE_META_TITLE,
         "meta_og_title": PROMINENCE_META_TITLE,
@@ -8489,10 +8524,10 @@ def rlcraft_home(request, ui_lang=None):
         "meta_og_description": meta_description,
         "meta_canonical_url": f"https://{RLCRAFT_PUBLIC_HOST}{request.path or '/'}",
         "meta_og_url": f"https://{RLCRAFT_PUBLIC_HOST}{request.path or '/'}",
-        "meta_site_name": "Hanplanet Prominence II",
+        "meta_site_name": "Hanplanet DeceasedCraft",
         "meta_og_image": MINECRAFT_SERVER_IMAGE_URL,
         "meta_twitter_image": MINECRAFT_SERVER_IMAGE_URL,
-        "meta_image_alt": "Hanplanet Prominence II server preview image",
+        "meta_image_alt": "Hanplanet DeceasedCraft server preview image",
         "meta_robots": "index,follow",
         "sub_category": "game",
     }
